@@ -92,8 +92,9 @@ change turns out riskier; nothing lowers one but the owner.
 **Filling the queue from the backlog** is the planner's reading, not yours:
 dispatch `kerjaan2:planner` with "Repo <path>. The owner asked: <their words>.
 Run `k2 brief --role planner` first and follow it." Relay its proposal and
-questions to the owner in one message; resume it with the answers and what
-was approved. One ticket the owner names needs no planner: `k2 move <id> todo`.
+**every** question to the owner before anything starts — `todo` is a waiting
+room, and a ticket enters it only with nothing left to ask; resume the
+planner with the answers and what was approved. One ticket the owner names needs no planner: `k2 move <id> todo`.
 
 ## What you never do
 

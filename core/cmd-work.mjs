@@ -28,7 +28,11 @@ export function start(argv) {
       const r = readiness(board, t);
       if (r.reasons.length) die(`${t.id} is not ready:\n- ${r.reasons.join('\n- ')}`);
       if (r.waits.length) die(`${t.id} waits for ${r.waits.join(', ')} to land in ${main} first`);
-      const flight = B.listTickets(board, ['in_progress', 'review']).length;
+      const others = B.listTickets(board, ['in_progress', 'review']).map(B.load);
+      const soloOther = others.find((o) => o.fm.solo === 'true');
+      if (soloOther) die(`${soloOther.id} is solo and still in flight: nothing starts beside it until it is in ${main}`);
+      if (t.fm.solo === 'true' && others.length) die(`${t.id} is solo: it starts once the ${others.length} ticket(s) in flight are in ${main}`);
+      const flight = others.length;
       if (flight >= board.settings.max_parallel) die(`${flight} tickets are in flight and max_parallel is ${board.settings.max_parallel}. Only the owner raises it.`);
     }
     if (gitTry(board.root, 'rev-parse', '--verify', '--quiet', `refs/heads/${main}`).code !== 0) die(`main_branch "${main}" does not exist; fix it in settings.yml`);

@@ -5,7 +5,7 @@ import { die } from './util.mjs';
 
 export const MARK = '<!-- k2:record — written by k2 only; do not edit by hand -->';
 
-export const FM_KEYS = ['type', 'priority', 'lane', 'labels', 'blocked_by', 'related', 'touches', 'created'];
+export const FM_KEYS = ['type', 'priority', 'lane', 'solo', 'labels', 'blocked_by', 'related', 'touches', 'created'];
 export const LIST_KEYS = ['labels', 'blocked_by', 'related', 'touches'];
 export const ENUMS = {
   type: ['bug', 'feature', 'task'],
@@ -88,6 +88,7 @@ export function serialize({ fm, contract, record }) {
   const lines = ['---'];
   for (const k of FM_KEYS) {
     const v = fm[k];
+    if (k === 'solo' && v !== 'true') continue; // written only when set
     lines.push(LIST_KEYS.includes(k) ? `${k}: [${(v || []).join(', ')}]` : `${k}: ${v ?? ''}`.trimEnd());
   }
   lines.push('---', '', contract.replace(/^\n+/, '').replace(/\s+$/, ''), '');

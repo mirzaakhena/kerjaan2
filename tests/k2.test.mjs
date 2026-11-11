@@ -394,6 +394,33 @@ test('max_parallel caps the tickets in flight, and the queue sets the order', ()
   assert.match(r.k('start', a).out, /max_parallel is 1/);
 });
 
+test('a solo ticket runs with nothing beside it, and nothing starts in front of it', () => {
+  const r = repo();
+  const a = ticket(r, 'Fitur biasa', { lane: 'light' });
+  const g = ticket(r, 'Ubah struktur data', { lane: 'light' });
+  const c = ticket(r, 'Fitur sesudahnya', { lane: 'light' });
+  r.k('set', g, 'solo=true');
+  assert.match(fs.readFileSync(r.k('show', g, '--path').out.trim(), 'utf8'), /^solo: true$/m);
+  assert.ok(!/^solo:/m.test(fs.readFileSync(r.k('show', a, '--path').out.trim(), 'utf8')), 'solo is written only when set');
+  r.k('queue', 'set', a, g, c);
+  let next = r.k('next').out;
+  assert.ok(next.includes(`START  ${a}`) && !next.includes(`START  ${g}`) && !next.includes(`START  ${c}`), next);
+  assert.match(next, new RegExp(`WAIT   ${g} is solo`));
+  r.k('start', a);
+  assert.match(r.k('start', g).out, /is solo: it starts once/);
+  r.kIn(work(r, a, 'a.txt', 'a\n'), 'submit', a);
+  assert.match(r.k('start', g).out, /is solo: it starts once/, 'passed is not landed');
+  r.k('land', a);
+  next = r.k('next').out;
+  assert.ok(next.includes(`START  ${g}`) && next.includes(', solo)') && !next.includes(`START  ${c}`), next);
+  r.k('start', g);
+  assert.match(r.k('start', c).out, /is solo and still in flight/);
+  assert.match(r.k('next').out, new RegExp(`WAIT   ${g} is solo: nothing else starts`));
+  r.kIn(work(r, g, 'g.txt', 'g\n'), 'submit', g);
+  r.k('land', g);
+  assert.match(r.k('next').out, new RegExp(`START  ${c}`));
+});
+
 test('doctor finds a worktree and a branch nobody owns, and --fix removes them', () => {
   const r = repo();
   const id = ticket(r, 'Ditinggal', { lane: 'light' });

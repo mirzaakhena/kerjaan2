@@ -119,6 +119,7 @@ export function set(argv) {
       t.fm[key] = T.LIST_KEYS.includes(key) ? listArg(value.replace(/^\[|\]$/g, '')) : value;
       if (key === 'blocked_by' || key === 'related') for (const id of t.fm[key]) B.findTicket(board, id);
     }
+    if (t.fm.solo && !['true', 'false'].includes(t.fm.solo)) die('solo is true or false');
     checkEnums(t.fm);
     B.save(t);
     console.log(`${t.id} updated: ${pos.slice(1).join(' ')}`);
@@ -417,8 +418,18 @@ export function nextActions(board) {
   const room = board.settings.max_parallel - flight.length;
   const q = B.readQueue(board);
   let started = 0;
-  for (const t of orderedTodo(board)) {
+  // A solo ticket (groundwork others stand on) runs with nothing beside it.
+  const soloFlying = flight.find((t) => t.fm.solo === 'true');
+  if (soloFlying && B.listTickets(board, ['todo']).length) out.push(`WAIT   ${soloFlying.id} is solo: nothing else starts until it is in main.`);
+  for (const t of soloFlying ? [] : orderedTodo(board)) {
     if (started >= room) break;
+    if (t.fm.solo === 'true' && (flight.length || started)) {
+      const r0 = readiness(board, t);
+      if (!r0.reasons.length && !r0.waits.length) {
+        out.push(`WAIT   ${t.id} is solo: it starts once everything in flight is in main, and nothing starts in front of it.`);
+        break;
+      }
+    }
     const r = readiness(board, t);
     if (r.reasons.length) {
       out.push(`FIX    ${t.id} sits in todo but is not ready: ${r.reasons[0]}`);
@@ -429,8 +440,9 @@ export function nextActions(board) {
       out.push(`ASK    ${t.id} has a pause before it: ask the owner to go on, then \`${K()} go ${t.id}\``);
       break;
     }
-    out.push(`START  ${t.id} "${t.title}" (lane ${t.fm.lane}): run \`${K()} start ${t.id}\`, then \`${K()} next\``);
+    out.push(`START  ${t.id} "${t.title}" (lane ${t.fm.lane}${t.fm.solo === 'true' ? ', solo' : ''}): run \`${K()} start ${t.id}\`, then \`${K()} next\``);
     started++;
+    if (t.fm.solo === 'true') break;
   }
   return out;
 }
