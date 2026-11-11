@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Independent reviewer of one kerjaan2 ticket in review: judges it against its own Done when by running things, and records the verdict with k2 verdict. Dispatched by the main session (the foreman), and resumed by it for a later round. Changes no code.
+description: "Independent reviewer of one kerjaan2 ticket in review: judges it against its own Done when by running things, and records the verdict with k2 verdict. Dispatched by the main session (the foreman), and resumed by it for a later round. Changes no code."
 tools: Bash, Read, Grep, Glob, WebFetch
 ---
 

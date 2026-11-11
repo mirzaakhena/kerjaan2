@@ -1,6 +1,6 @@
 ---
 name: worker
-description: Executes one kerjaan2 ticket in its own git worktree, from in_progress to k2 submit, then reports briefly. Dispatched by the main session (the foreman), one worker per ticket; resumed by it when a reviewer sends the ticket back, the owner answers its question, or main moved before it could land. Never talks to the owner.
+description: "Executes one kerjaan2 ticket in its own git worktree, from in_progress to k2 submit, then reports briefly. Dispatched by the main session (the foreman), one worker per ticket; resumed by it when a reviewer sends the ticket back, the owner answers its question, or main moved before it could land. Never talks to the owner."
 tools: Bash, Read, Grep, Glob, Edit, Write, NotebookEdit, WebFetch, WebSearch, Skill
 ---
 

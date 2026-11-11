@@ -45,8 +45,13 @@ export function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+// Every option k2 knows. An unknown one is refused rather than left to
+// swallow the next word; text that begins with -- goes after a lone `--`.
+const VALUE_OPTS = ['type', 'priority', 'lane', 'status', 'labels', 'blocked-by', 'related', 'why', 'role', 'goal', 'pause-before', 'note', 'fail', 'by', 'undo', 'as', 'session', 'dir', 'language', 'test', 'main', 'm', 'stopped'];
+const BOOL_OPTS = ['blocking', 'force', 'contract', 'path', 'fix', 'agrees', 'differs'];
+
 // --flag value, --flag=value, --bool. Repeated flags are kept in order.
-export function parseArgs(argv, booleans = []) {
+export function parseArgs(argv) {
   const pos = [];
   const all = {};
   for (let i = 0; i < argv.length; i++) {
@@ -55,16 +60,17 @@ export function parseArgs(argv, booleans = []) {
       pos.push(...argv.slice(i + 1));
       break;
     }
-    if (a.startsWith('--') || a === '-m') {
+    if (a === '-m' || (a.startsWith('--') && a.length > 2)) {
       let name = a === '-m' ? 'm' : a.slice(2);
       let value;
       const eq = name.indexOf('=');
       if (eq >= 0) {
         value = name.slice(eq + 1);
         name = name.slice(0, eq);
-      } else if (booleans.includes(name)) {
-        value = true;
-      } else {
+      }
+      if (BOOL_OPTS.includes(name)) value = true;
+      else if (!VALUE_OPTS.includes(name)) die(`unknown option --${name}. If this is text that begins with "--", put it after a lone "--".`);
+      else if (value === undefined) {
         value = argv[++i];
         if (value === undefined) die(`--${name} needs a value`);
       }

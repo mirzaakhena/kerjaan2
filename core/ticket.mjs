@@ -40,6 +40,7 @@ function parseValue(key, raw) {
 }
 
 export function parse(text) {
+  text = text.replace(/\r\n?/g, '\n').replace(/^\uFEFF/, '');
   const m = text.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!m) die('ticket has no frontmatter');
   const fm = {};
@@ -48,6 +49,7 @@ export function parse(text) {
     if (kv) fm[kv[1]] = parseValue(kv[1], kv[2].replace(/\s+#.*$/, ''));
   }
   for (const k of LIST_KEYS) fm[k] ||= [];
+  if (fm.solo !== undefined) fm.solo = /^(true|yes|on)$/i.test(fm.solo) ? 'true' : 'false';
   const body = text.slice(m[0].length);
   const at = body.indexOf('<!-- k2:record');
   const contract = (at < 0 ? body : body.slice(0, at)).replace(/\s+$/, '') + '\n';
@@ -147,29 +149,32 @@ export function section(contract, title) {
   return m ? m[1].trim() : null;
 }
 
-// The Done when checklist: [{ n, done, owner, text }]
+// One line of a checklist, however it was typed: "- [ ]", "* [x]", "1. [ ]",
+// "- []", indented. A line the gate could not see would be a criterion
+// nobody has to meet.
+const BOX = /^\s*(?:[-*+]|\d+[.)])\s+\[( |x|X)?\]\s*(.*)$/;
+
+// The Done when checklist: [{ n, done, owner, void, text }]
 export function criteria(contract) {
   const body = section(contract, 'Done when') || '';
   const out = [];
   for (const line of body.split('\n')) {
-    const m = line.match(/^- \[( |x|X)\] (.*)$/);
-    if (m) out.push({ n: out.length + 1, done: m[1] !== ' ', owner: /^\(owner\)/i.test(m[2].trim()), void: m[2].trim().startsWith('~~'), text: m[2].trim() });
+    const m = line.match(BOX);
+    if (m) out.push({ n: out.length + 1, done: !!m[1] && m[1] !== ' ', owner: /^\(owner\)/i.test(m[2].trim()), void: m[2].trim().startsWith('~~'), text: m[2].trim() });
   }
   return out;
 }
 
-export function setCriterion(contract, n, done) {
+function rewriteCriterion(contract, n, fn) {
   let seen = 0;
   let inside = false;
   let hit = false;
   const lines = contract.split('\n').map((line) => {
     if (/^## /.test(line)) inside = /^## Done when\s*$/.test(line);
-    if (inside && /^- \[( |x|X)\] /.test(line)) {
-      seen++;
-      if (seen === n) {
-        hit = true;
-        return line.replace(/^- \[( |x|X)\]/, done ? '- [x]' : '- [ ]');
-      }
+    const m = inside && line.match(BOX);
+    if (m && ++seen === n) {
+      hit = true;
+      return fn(m[2].trim(), !!m[1] && m[1] !== ' ');
     }
     return line;
   });
@@ -177,23 +182,21 @@ export function setCriterion(contract, n, done) {
   return lines.join('\n');
 }
 
+export const setCriterion = (contract, n, done) => rewriteCriterion(contract, n, (text) => `- [${done ? 'x' : ' '}] ${text}`);
+
 // A criterion a later decision made pointless is struck, never deleted.
 export function voidCriterion(contract, n, reason) {
-  let seen = 0;
-  let inside = false;
-  let hit = false;
-  const lines = contract.split('\n').map((line) => {
-    if (/^## /.test(line)) inside = /^## Done when\s*$/.test(line);
-    const m = inside && line.match(/^- \[( |x|X)\] (.*)$/);
-    if (m && ++seen === n) {
-      if (m[2].startsWith('~~')) die(`item ${n} is already void`);
-      hit = true;
-      return `- [ ] ~~${m[2].trim()}~~ — void: ${reason}`;
-    }
-    return line;
+  return rewriteCriterion(contract, n, (text) => {
+    if (text.startsWith('~~')) die(`item ${n} is already void`);
+    return `- [ ] ~~${text}~~ — void: ${reason}`;
   });
-  if (!hit) die(`Done when has no item ${n}`);
-  return lines.join('\n');
+}
+
+// What a ticket asks for, reduced to what must not change under the work:
+// the Request and each criterion's wording. Ticks and void marks are left out.
+export function contractText(contract) {
+  const crit = criteria(contract).map((c) => c.text.replace(/^~~(.*?)~~ — void: .*$/, '$1').trim());
+  return JSON.stringify([(section(contract, 'Request') || '').replace(/\s+/g, ' ').trim(), crit]);
 }
 
 export function template(type) {

@@ -47,8 +47,12 @@ export function init(argv) {
       '',
       '# Lanes: a change under strict_paths (globs) makes a ticket strict;',
       '# a light ticket changing more files than light_max_files becomes standard.',
+      "# Globs work as in .gitignore: `*.sql` and `auth/` match at any depth, `src/pay/**` from the root.",
       'strict_paths: []',
       'light_max_files: 8',
+      '',
+      '# Minutes an agent may hold a step without handing over before `k2 next` calls it stuck.',
+      'stuck_after_minutes: 60',
       '',
       '# Model per role: sonnet, opus, haiku, a full model id, or inherit (the session\'s model).',
       'model_worker_light: sonnet',
@@ -79,13 +83,13 @@ export function create(argv, { quick = false } = {}) {
     priority: opt.priority || 'medium',
     lane: opt.lane || (quick ? 'light' : 'standard'),
     labels: listArg(opt.labels),
-    blocked_by: listArg(opt['blocked-by']),
-    related: listArg(opt.related),
+    blocked_by: listArg(opt['blocked-by']).map((x) => B.findTicket(board, x).id),
+    related: listArg(opt.related).map((x) => B.findTicket(board, x).id),
     touches: [],
     created: now().slice(0, 16),
   };
   checkEnums(fm);
-  const status = opt.status || 'backlog';
+  const status = opt.status || (quick ? 'todo' : 'backlog');
   if (!['backlog', 'todo'].includes(status)) die('a new ticket starts in backlog or todo');
   const t = B.withLock(board, 'board', () => {
     const id = B.newId(board);
@@ -120,9 +124,12 @@ export function set(argv) {
       const value = pair.slice(eq + 1);
       if (!T.FM_KEYS.includes(key) || key === 'created') die(`"${key}" is not a field that can be set (${T.FM_KEYS.filter((k) => k !== 'created').join(', ')})`);
       t.fm[key] = T.LIST_KEYS.includes(key) ? listArg(value.replace(/^\[|\]$/g, '')) : value;
-      if (key === 'blocked_by' || key === 'related') for (const id of t.fm[key]) B.findTicket(board, id);
+      if (key === 'blocked_by' || key === 'related') t.fm[key] = t.fm[key].map((x) => B.findTicket(board, x).id); // the full ID, so a later ticket cannot make a short one ambiguous
+      if (key === 'solo') {
+        if (!/^(true|yes|false|no)$/i.test(value)) die('solo is true or false');
+        t.fm.solo = /^(true|yes)$/i.test(value) ? 'true' : 'false';
+      }
     }
-    if (t.fm.solo && !['true', 'false'].includes(t.fm.solo)) die('solo is true or false');
     checkEnums(t.fm);
     B.save(t);
     console.log(`${t.id} updated: ${pos.slice(1).join(' ')}`);
@@ -149,7 +156,7 @@ export function move(argv) {
     const t = B.load(B.findTicket(board, pos[0]));
     if (!B.STATUSES.includes(to)) die(`status must be one of ${B.STATUSES.join(', ')}`);
     if (to === t.status) return console.log(`${t.id} is already in ${to}`);
-    const steer = { in_progress: 'start', review: 'submit', done: 'verdict' }[to];
+    const steer = { in_progress: 'start', review: 'submit', done: 'land' }[to];
     if (steer && !opt.force) die(`a ticket reaches ${to} through \`${K()} ${steer} ${t.id}\`, which does the checks that move stands for. (--force is the owner's word only.)`);
     if (to === 'cancel' && !opt.why) die('cancelling needs the reason: --why "<reason>"');
     if (['in_progress', 'review'].includes(t.status) && !opt.force && B.worktreeOf(board, t.id)) {
@@ -163,7 +170,9 @@ export function move(argv) {
     B.save(t);
     B.moveFile(board, t, to);
     if (to !== 'todo') B.dropFromQueue(board, t.id);
-    if (B.getState(board, t.id).passed) B.setState(board, t.id, { passed: false, needs: null });
+    // Out of flight, nothing of its run is still true: no agent, no round, no pass.
+    if (!IN_FLIGHT.includes(to)) B.dropState(board, t.id);
+    else if (B.getState(board, t.id).passed) B.setState(board, t.id, { passed: false, needs: null, judged: null });
     B.log(board, t.id, 'moved', { to, forced: !!opt.force || undefined });
     console.log(t.file);
   });
@@ -188,11 +197,12 @@ export function ls(argv) {
   for (const s of statuses) if (!B.STATUSES.includes(s)) die(`unknown status "${s}"`);
   let n = 0;
   for (const s of statuses) {
-    const list = B.listTickets(board, [s]).filter((x) => !opt.session || bornIn(x.id).startsWith(opt.session));
+    const { tickets: readable, broken } = B.loadAll(board, [s]);
+    for (const x of broken) console.log(`  !! cannot read ${x.file}: ${x.error}`);
+    const list = readable.filter((x) => !opt.session || bornIn(x.id).startsWith(opt.session));
     if (!list.length) continue;
     console.log(`${s} (${list.length})`);
-    for (const raw of list) {
-      const t = B.load(raw);
+    for (const t of list) {
       n++;
       console.log(`  ${t.id}  ${t.fm.lane.padEnd(8)} ${t.fm.priority.padEnd(6)} ${t.title}${badgeText(board, t)}`);
     }
@@ -253,10 +263,9 @@ export function readiness(board, t) {
 export function ready(argv) {
   const { pos } = parseArgs(argv);
   const board = B.openBoard();
-  const list = pos.length ? pos.map((p) => B.findTicket(board, p)) : B.listTickets(board, ['todo']);
+  const list = pos.length ? pos.map((p) => B.load(B.findTicket(board, p))) : B.loadAll(board, ['todo']).tickets;
   let bad = 0;
-  for (const raw of list) {
-    const t = B.load(raw);
+  for (const t of list) {
     const r = readiness(board, t);
     if (r.reasons.length) {
       bad++;
@@ -309,7 +318,7 @@ const PRI = { high: 0, medium: 1, low: 2 };
 // todo in working order: the queue first, then the rest by priority and age.
 export function orderedTodo(board) {
   const q = B.readQueue(board);
-  const todo = B.listTickets(board, ['todo']).map(B.load);
+  const todo = B.loadAll(board, ['todo']).tickets;
   const pos = (t) => (q.order.includes(t.id) ? q.order.indexOf(t.id) : 1e6 + PRI[t.fm.priority] * 1e3);
   return todo.sort((a, b) => pos(a) - pos(b) || a.id.localeCompare(b.id));
 }
@@ -318,9 +327,8 @@ export function orderedTodo(board) {
 
 export function inboxItems(board) {
   const items = [];
-  for (const raw of B.listTickets(board)) {
-    if (raw.status === 'cancel') continue;
-    const t = B.load(raw);
+  for (const t of B.loadAll(board).tickets) {
+    if (t.status === 'cancel') continue;
     const add = (kind, key, text) => items.push({ kind, id: t.id, title: t.title, status: t.status, key, text });
     for (const q of t.record.questions) if (q.status !== 'answered') add(q.status === 'blocking' ? 'blocking question' : 'question', q.key, q.text);
     for (const a of t.record.assumptions) if (a.status === 'unseen' && ['review', 'done'].includes(t.status)) add('assumption', a.key, a.text);
@@ -375,7 +383,7 @@ export const rejectedTwice = (st) => (st.rejections || 0) >= 2 && (st.owner_ok_r
 export const waitsForOwner = (st) => !!((st.passed && st.held) || st.stopped || rejectedTwice(st));
 
 export function occupying(board) {
-  return B.listTickets(board, IN_FLIGHT).map(B.load).filter((t) => !waitsForOwner(B.getState(board, t.id)));
+  return B.loadAll(board, IN_FLIGHT).tickets.filter((t) => !waitsForOwner(B.getState(board, t.id)));
 }
 
 // Minutes an agent has held the current step past the limit, or null.
@@ -424,7 +432,8 @@ function dispatchLines(board, t, role, st, why) {
 
 export function nextActions(board) {
   const out = [];
-  const tickets = B.listTickets(board).map(B.load);
+  const { tickets, broken } = B.loadAll(board);
+  for (const x of broken) out.push(`FIX    cannot read ${x.file}: ${x.error}. Repair the file by hand; until then this ticket is invisible to the board.`);
   const flight = tickets.filter((t) => IN_FLIGHT.includes(t.status));
   const unmerged = tickets.filter((t) => B.isPassed(board, t));
 
@@ -518,7 +527,8 @@ export function status() {
   const board = B.openBoard();
   const counts = B.STATUSES.map((s) => `${s} ${B.listTickets(board, [s]).length}`).join(' · ');
   console.log(`Board ${board.dir}\n${counts}`);
-  const tickets = B.listTickets(board).map(B.load);
+  const { tickets, broken } = B.loadAll(board);
+  for (const x of broken) console.log(`!! cannot read ${x.file}: ${x.error}`);
   const live = tickets.filter((t) => IN_FLIGHT.includes(t.status));
   if (live.length) console.log('\nIn flight');
   for (const t of live) {
@@ -539,6 +549,15 @@ export function status() {
   }
 }
 
+export function bind(board, t, role, agentId) {
+  const st = B.getState(board, t.id);
+  const step = stepOf(t, st);
+  if (st[role]?.agent === agentId && st[role].step === step && !st[role].ended) return false;
+  B.setState(board, t.id, { [role]: { agent: agentId, step, at: Date.now() } });
+  B.log(board, t.id, 'agent', { role, agent: agentId, step });
+  return true;
+}
+
 export function agent(argv) {
   const { pos } = parseArgs(argv);
   const board = B.openBoard();
@@ -546,9 +565,7 @@ export function agent(argv) {
   if (!['worker', 'reviewer'].includes(role) || !agentId) die('usage: agent <id> <worker|reviewer> <agentId>');
   B.withLock(board, 'board', () => {
     const t = B.load(B.findTicket(board, ref));
-    const st = B.getState(board, t.id);
-    B.setState(board, t.id, { [role]: { agent: agentId, step: stepOf(t, st), at: Date.now() } });
-    B.log(board, t.id, 'agent', { role, agent: agentId, step: stepOf(t, st) });
+    bind(board, t, role, agentId);
     console.log(`${t.id}: ${role} is agent ${agentId}`);
   });
 }
@@ -646,6 +663,27 @@ export function doctor(argv) {
   }
   for (const t of tickets.filter((x) => IN_FLIGHT.includes(x.status))) {
     if (!B.worktreeOf(board, t.id)) say(`${t.id} is in ${t.status} but has no worktree (\`${K()} start ${t.id}\` makes it again)`);
+  }
+  for (const t of tickets.filter((x) => x.status === 'done')) {
+    const br = B.branchOf(board, t.id);
+    if (br && gitTry(board.root, 'merge-base', '--is-ancestor', br, board.settings.main_branch).code !== 0) say(`${t.id} is in done but its branch ${br} holds commits ${board.settings.main_branch} does not have: it did not land. Move it back (\`${K()} move ${t.id} in_progress --force\`) and hand it over again.`);
+  }
+  for (const x of B.loadAll(board).broken) say(`cannot read ${x.file}: ${x.error}`);
+  if (gitTry(board.root, 'rev-parse', '-q', '--verify', 'MERGE_HEAD').code === 0) say(`the main tree is in the middle of a merge; nothing can land until it is finished or aborted`);
+  const stateDir = path.join(board.state, 'tickets');
+  if (fs.existsSync(stateDir)) {
+    for (const f of fs.readdirSync(stateDir)) {
+      const id = f.replace(/\.json$|\..*\.tmp$/, '');
+      if (!live(byId.get(id))) say(`leftover state of ${id}, which is not in flight`, () => fs.rmSync(path.join(stateDir, f), { force: true }));
+    }
+  }
+  if (fs.existsSync(board.state)) {
+    for (const f of fs.readdirSync(board.state).filter((n) => /\.lock(\.dead\..*)?$/.test(n))) {
+      const dir = path.join(board.state, f);
+      const pids = ['pid', 'child'].map((n) => { try { return Number(fs.readFileSync(path.join(dir, n), 'utf8')); } catch { return 0; } }).filter(Boolean);
+      const alive = pids.some((p) => { try { process.kill(p, 0); return true; } catch { return false; } });
+      if (!alive) say(`stale lock ${f} (its holder is gone)`, () => fs.rmSync(dir, { recursive: true, force: true }));
+    }
   }
   const q = B.readQueue(board);
   for (const id of q.order) if (byId.get(id)?.status !== 'todo') say(`queue.yml lists ${id}, which is not in todo`, () => B.dropFromQueue(board, id));

@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Prepares the queue of a kerjaan2 board from its backlog: splits tickets that are too big, sets what each touches and its lane, records questions and assumptions, proposes an order. Dispatched by the main session (the foreman) when the owner asks what can be worked on; resumed with the owner's answers and approval. Never talks to the owner, never touches code.
+description: "Prepares the queue of a kerjaan2 board from its backlog: splits tickets that are too big, sets what each touches and its lane, records questions and assumptions, proposes an order. Dispatched by the main session (the foreman) when the owner asks what can be worked on; resumed with the owner's answers and approval. Never talks to the owner, never touches code."
 tools: Bash, Read, Grep, Glob, Edit, Write
 ---
 

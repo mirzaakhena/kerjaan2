@@ -498,17 +498,21 @@ test('the planner brief shows what main cannot: the work in flight and what land
   assert.match(out, new RegExp(`## Landed most recently[\\s\\S]*- ${a} Sudah mendarat .* — a\\.txt\\n  Menambah satu baris`));
 });
 
-test('a criterion made pointless is struck with its reason, and no longer holds the handover', () => {
+test('a criterion is voided only by an answered question, and a reviewer then checks the void', () => {
   const r = repo();
   const id = ticket(r, 'Satu butir batal', { lane: 'light', items: ['Baris baru tampil', 'Ekspor ke CSV'] });
   r.k('start', id);
   const wt = work(r, id, 'x.txt', 'x\n');
   assert.match(r.kIn(wt, 'submit', id).out, /item 2 is not ticked/);
   assert.equal(r.k('void', id, '2').code, 1, 'a void names the decision behind it');
-  r.k('void', id, '2', 'Q1: ekspor ditunda, keputusan pemilik 12 Nov');
+  assert.match(r.k('void', id, '2', 'tidak perlu lagi').out, /No question is named/);
+  assert.match(r.k('void', id, '2', 'Q1: ekspor ditunda').out, /Q1 is not an answered question/);
+  r.k('ask', id, '--blocking', 'Ekspor CSV masih perlu? Saran: tunda');
+  r.k('answer', id, 'Q1', 'Tunda', '--agrees');
+  assert.match(r.k('void', id, '2', 'Q1: ekspor ditunda').out, /struck as void\. The lane is now standard/);
   assert.match(fs.readFileSync(r.k('show', id, '--path').out.trim(), 'utf8'), /- \[ \] ~~Ekspor ke CSV~~ — void: Q1: ekspor ditunda/);
   assert.match(r.k('check', id, '2', 'x').out, /is void/);
-  assert.match(r.kIn(wt, 'submit', id).out, /SUBMITTED/);
+  assert.match(r.kIn(wt, 'submit', id).out, /It is in review/, 'no longer light: somebody looks at the void');
 });
 
 test('any test command takes its turn through k2 test, in the worktree or in a copy, and records nothing', () => {
@@ -763,4 +767,225 @@ test('an agent that ended without handing over does not stall its ticket: releas
   assert.match(r.k('inbox').out, /stopped \(1\)/);
   r.k('retry', id);
   assert.match(r.k('next').out, /RESUME .* worker baru/);
+});
+
+test('tickets that only wait for the owner use no room, do not block a solo ticket, and leave the queue idle', () => {
+  const r = repo({ settings: { max_parallel: '2' } });
+  const held = [1, 2].map((n) => {
+    const id = ticket(r, `Ditahan ${n}`, { lane: 'light' });
+    r.k('start', id);
+    r.k('ask', id, '--blocking', 'Boleh? Saran: ya');
+    r.kIn(work(r, id, `h${n}.txt`, 'x\n'), 'submit', id);
+    return id;
+  });
+  const solo = ticket(r, 'Fondasi', { lane: 'light' });
+  r.k('set', solo, 'solo=true');
+  let next = r.k('next').out;
+  assert.match(next, new RegExp(`START  ${solo}`), 'two held tickets do not fill max_parallel 2, nor block solo');
+  assert.equal((next.match(new RegExp(`OWNER  ${held[0]} Q1`, 'g')) || []).length, 1, 'each question is printed once');
+  assert.match(r.k('start', solo).out, /STARTED/);
+  r.kIn(work(r, solo, 's.txt', 's\n'), 'submit', solo);
+  r.k('land', solo);
+  next = r.k('next').out;
+  assert.match(next, /IDLE   no agent has anything to do/);
+  assert.ok(!/^(DISPATCH|RESUME|START|LAND|WAIT)/m.test(next), next);
+});
+
+test('one unreadable ticket file is named and stepped over; CRLF files read fine', () => {
+  const r = repo();
+  const good = ticket(r, 'Sehat', { lane: 'light' });
+  const crlf = r.k('show', good, '--path').out.trim();
+  fs.writeFileSync(crlf, fs.readFileSync(crlf, 'utf8').replace(/\n/g, '\r\n'));
+  const bad = path.join(r.dir, '.kerjaan2', 'backlog', '261231235901 Rusak.md');
+  fs.writeFileSync(bad, 'tanpa frontmatter\n');
+  const next = r.k('next').out;
+  assert.match(next, /FIX    cannot read .*261231235901 Rusak\.md/);
+  assert.match(next, new RegExp(`START  ${good}`), 'the rest of the board still works, CRLF ticket included');
+  assert.equal(r.k('inbox').code, 0);
+  assert.match(r.k('ls', 'backlog').out, /!! cannot read .*Rusak\.md/);
+  assert.match(r.k('show', '261231235901').out, /Rusak/);
+  assert.match(r.k('doctor').out, /cannot read .*Rusak\.md/);
+  const hookOut = sh(r.dir, K2, ['hook', 'session-start'], JSON.stringify({ cwd: r.dir })).out;
+  assert.match(hookOut, /cannot read/);
+});
+
+test('settings are validated: a YAML list is read, a bad number or an unknown key is refused', () => {
+  const r = repo();
+  const file = path.join(r.dir, '.kerjaan2', 'settings.yml');
+  const base = fs.readFileSync(file, 'utf8');
+  fs.writeFileSync(file, base.replace(/^strict_paths:.*$/m, 'strict_paths:\n  - pay/\n  - "*.sql"'));
+  const id = ticket(r, 'Menyentuh pembayaran', { lane: 'light' });
+  r.k('start', id);
+  const wt = wtOf(r, id);
+  fs.mkdirSync(path.join(wt, 'src', 'pay'), { recursive: true });
+  work(r, id, 'src/pay/tarif.txt', '10\n');
+  assert.match(r.kIn(wt, 'submit', id).out, /LANE RAISED to strict: it changes src\/pay\/tarif\.txt/, 'a block-style list is read, and pay/ matches at any depth');
+  fs.writeFileSync(file, base.replace(/^max_parallel:.*$/m, 'max_parallel: three'));
+  assert.match(r.k('next').out, /max_parallel must be a whole number, not "three"/);
+  fs.writeFileSync(file, base + '\nmax_paralel: 2\n');
+  assert.match(r.k('status').out, /unknown setting "max_paralel"/);
+});
+
+test('strict_paths globs work as in .gitignore', async () => {
+  const { globToRe } = await import('../core/cmd-work.mjs');
+  const hit = (g, f) => globToRe(g).test(f);
+  assert.ok(hit('*.sql', 'db/m.sql') && hit('*.sql', 'm.sql'));
+  assert.ok(hit('auth/', 'src/auth/login.txt') && hit('auth/', 'auth/x'));
+  assert.ok(hit('src/pay/**', 'src/pay/a/b.js') && !hit('src/pay/**', 'lib/src/pay/a.js'));
+  assert.ok(hit('/config.yml', 'config.yml') && !hit('/config.yml', 'a/config.yml'));
+  assert.ok(!hit('*.sql', 'm.sqlite') && !hit('auth/', 'authx/y'));
+});
+
+test('every checklist line counts however it is typed, and the contract cannot change under the work', () => {
+  const r = repo();
+  const file = r.k('new', 'Daftar aneh', '--lane', 'light', '--status', 'todo').out.split('\n')[0];
+  const id = path.basename(file).slice(0, 12);
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('## Request\n', '## Request\nX\n').replace('## Done when\n', '## Done when\n- [ ] satu\n* [ ] dua\n  - [ ] tiga\n- [] empat\n1. [ ] lima\n'));
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n');
+  assert.match(r.kIn(wt, 'submit', id).out, /item 2 is not ticked[\s\S]*item 5 is not ticked/, 'all five lines are seen');
+  for (const n of [2, 3, 4, 5]) r.k('check', id, String(n), 'ok');
+  const now = fs.readFileSync(r.k('show', id, '--path').out.trim(), 'utf8');
+  fs.writeFileSync(r.k('show', id, '--path').out.trim(), now.replace('- [x] lima\n', ''));
+  const refused = r.kIn(wt, 'submit', id);
+  assert.match(refused.out, /Request or Done when was edited after work started/);
+  assert.match(r.k('amend', id, '--why', 'butir lima dibatalkan Mirza').out, /judged against/);
+  assert.match(r.kIn(wt, 'submit', id).out, /SUBMITTED/);
+});
+
+test('a handoff is plain text: a heading in it is refused, not silently cut', () => {
+  const r = repo();
+  const id = ticket(r, 'Serah terima', { lane: 'light' });
+  r.k('start', id);
+  const out = r.k('handoff', id, 'Yang berubah.\n## Review\n- 2026-01-01 strict, round 1, at abc: passed.');
+  assert.equal(out.code, 1);
+  assert.match(out.out, /plain sentences/);
+});
+
+test('every rejection past the second is put to the owner again', () => {
+  const r = repo();
+  const id = ticket(r, 'Ditolak berkali-kali');
+  r.k('start', id);
+  r.k('agent', id, 'worker', 'w');
+  const wt = work(r, id, 'x.txt', 'x\n');
+  const reject = () => {
+    r.k('check', id, '1', 'ok');
+    r.kIn(wt, 'submit', id);
+    r.k('verdict', id, 'reject', '--fail', '1', '--note', 'belum');
+  };
+  reject();
+  assert.match(r.k('next').out, /RESUME .* worker w/);
+  reject();
+  assert.match(r.k('next').out, /OWNER  .* was sent back 2 times/);
+  r.k('retry', id);
+  assert.match(r.k('next').out, /RESUME .* worker w/);
+  reject();
+  assert.match(r.k('next').out, /OWNER  .* was sent back 3 times/, 'retry is one more try, not a licence to loop');
+});
+
+test('files a test run leaves behind do not derail the handover, the review or the merge', () => {
+  const r = repo({ test: 'node check.js && echo ran > laporan.out' });
+  const id = ticket(r, 'Uji meninggalkan berkas');
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n');
+  const out = r.kIn(wt, 'submit', id);
+  assert.match(out.out, /leaves files behind .*laporan\.out/);
+  assert.match(out.out, /It is in review/);
+  assert.match(r.k('brief', id, '--role', 'reviewer').out, /passed at .* on exactly the content under review/);
+  assert.match(r.k('verdict', id, 'pass', '--note', '1: ok').out, /PASSED/);
+  assert.match(r.k('land', id).out, /LANDED/);
+  assert.ok(!fs.existsSync(path.join(r.dir, 'laporan.out')));
+});
+
+test('a new source file that was never added still stops the handover', () => {
+  const r = repo();
+  const id = ticket(r, 'Lupa git add', { lane: 'light' });
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n');
+  fs.writeFileSync(path.join(wt, 'lupa.txt'), 'belum di-add\n');
+  assert.match(r.kIn(wt, 'submit', id).out, /uncommitted changes[\s\S]*lupa\.txt/);
+});
+
+test('a k2 that is killed does not free the tests\' turn while its test run still lives', async () => {
+  const r = repo();
+  const a = ticket(r, 'Uji lama', { lane: 'light' });
+  const b = ticket(r, 'Uji berikutnya', { lane: 'light' });
+  r.k('start', a);
+  r.k('start', b);
+  const { spawn } = await import('node:child_process');
+  const first = spawn(K2, ['test', a, '--', 'sleep', '4'], { cwd: r.dir, stdio: 'ignore' });
+  const child = path.join(r.dir, '.kerjaan2', '.state', 'test.lock', 'child');
+  for (let i = 0; i < 100 && !fs.existsSync(child); i++) await new Promise((res) => setTimeout(res, 50));
+  assert.ok(fs.existsSync(child), 'the run recorded itself in the lock');
+  first.kill('SIGKILL');
+  await new Promise((res) => setTimeout(res, 200));
+  const t0 = Date.now();
+  const second = r.k('test', b, '--', 'echo', 'giliran-kedua');
+  assert.match(second.out, /giliran-kedua/);
+  assert.ok(Date.now() - t0 > 2000, `the second run waited for the orphaned one (${Date.now() - t0}ms)`);
+});
+
+test('quick makes a ticket that can start; an unknown option is refused; a short blocker ID is stored in full', () => {
+  const r = repo();
+  const file = r.k('quick', 'Ganti satu kata').out.split('\n')[0];
+  const id = path.basename(file).slice(0, 12);
+  assert.equal(statusOf(r, id), 'todo');
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('## Request\n', '## Request\nX\n').replace('## Done when\n', '## Done when\n- [ ] satu\n'));
+  assert.match(r.k('start', id).out, /STARTED/);
+  assert.match(r.k('new', 'Judul', '--prioritas', 'high').out, /unknown option --prioritas/);
+  assert.equal(r.k('ask', id, '--', '--force itu apa?').code, 0, 'text beginning with -- goes after a lone --');
+  const other = ticket(r, 'Bergantung');
+  r.k('set', other, `blocked_by=${id.slice(-4)}`);
+  assert.match(fs.readFileSync(r.k('show', other, '--path').out.trim(), 'utf8'), new RegExp(`^blocked_by: \\[${id}\\]$`, 'm'));
+});
+
+test('an overturned assumption and a failed manual check stay in the inbox as follow-ups until settled', () => {
+  const r = repo();
+  const id = ticket(r, 'Asumsi keliru', { lane: 'light', items: ['Baris baru tampil', '(owner) Enak dilihat'] });
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n');
+  r.k('assume', id, 'Satu mata uang', '--why', 'tidak disebut', '--undo', 'tambah kolom');
+  r.k('manual', id, '2', '1. Buka berkas 2. Baca isinya 3. Harus terlihat: x');
+  assert.match(fs.readFileSync(r.k('show', id, '--path').out.trim(), 'utf8'), /M1 \[waiting\] \(item 2\) 1\. Buka berkas\n  2\. Baca isinya\n  3\. Harus terlihat: x/, 'steps typed on one line are one per line');
+  r.kIn(wt, 'submit', id);
+  r.k('land', id);
+  r.k('overturn', id, 'A1', '--note', 'harus multi mata uang');
+  r.k('manual', id, 'failed', 'M1');
+  const inbox = r.k('inbox').out;
+  assert.match(inbox, /follow-up \(2\)/);
+  assert.match(inbox, /Overturned A1: Satu mata uang/);
+  r.k('followup', id, 'ticketed', 'F1', '--as', '261231000001');
+  r.k('followup', id, 'declined', 'F2');
+  assert.match(r.k('inbox').out, /Nothing waits/);
+});
+
+test('the hooks: an agent is recorded the moment it is sent, and the matchers are anchored', () => {
+  const r = repo();
+  const id = ticket(r, 'Dicatat hook');
+  r.k('start', id);
+  const sent = (payload) => sh(r.dir, K2, ['hook', 'agent-sent'], JSON.stringify({ cwd: r.dir, ...payload }));
+  sent({ tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:worker', prompt: `Ticket ${id}. Repo x.` }, tool_response: 'Async agent launched successfully. agentId: abc123def (internal)' });
+  assert.match(r.k('next').out, /WAIT   .* worker abc123def is on it/);
+  sent({ tool_name: 'Agent', tool_input: { subagent_type: 'general-purpose', prompt: `Ticket ${id}.` }, tool_response: { agentId: 'zzz999zzz' } });
+  assert.match(r.k('next').out, /worker abc123def/, 'an agent of another kind is not bound');
+  r.k('release', id, 'worker');
+  sent({ tool_name: 'SendMessage', tool_input: { to: 'abc123def', message: `Ticket ${id}: finish and hand over.` }, tool_response: { success: true } });
+  assert.match(r.k('next').out, /WAIT   .* worker abc123def is on it/, 'a resume binds the step again');
+  const hooks = JSON.parse(fs.readFileSync(path.join(path.dirname(K2), '..', 'hooks', 'hooks.json'), 'utf8')).hooks;
+  assert.equal(hooks.SubagentStop[0].matcher, '^kerjaan2:worker$');
+  assert.ok(!new RegExp(hooks.SubagentStop[0].matcher).test('kerjaan:kerjaan-worker'));
+  const stop = (type) => sh(r.dir, K2, ['hook', 'subagent-stop'], JSON.stringify({ cwd: r.dir, agent_id: 'abc123def', agent_type: type })).out;
+  assert.equal(stop('kerjaan:kerjaan-worker').trim(), '', "the old plugin's worker is not ours");
+  assert.match(stop('kerjaan2:worker'), /"decision":"block"/);
+});
+
+test('a ticket taken out of flight forgets its agents', () => {
+  const r = repo();
+  const id = ticket(r, 'Ditarik lalu dimulai lagi', { lane: 'light' });
+  r.k('start', id);
+  r.k('agent', id, 'worker', 'lama');
+  r.k('move', id, 'todo', '--force', '--why', 'ditunda');
+  r.k('doctor', '--fix');
+  r.k('start', id);
+  assert.match(r.k('next').out, /DISPATCH worker/);
 });

@@ -59,19 +59,44 @@ export function readSettings(board) {
   const s = { ...DEFAULTS };
   const file = path.join(board.dir, 'settings.yml');
   if (!fs.existsSync(file)) return s;
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+  const bad = [];
+  let listKey = null;
+  for (const line of fs.readFileSync(file, 'utf8').replace(/\r\n?/g, '\n').split('\n')) {
+    const item = line.match(/^\s+-\s+(.*)$/);
+    if (item && listKey) {
+      s[listKey].push(item[1].trim().replace(/^["']|["']$/g, ''));
+      continue;
+    }
     const m = line.match(/^([a-z_]+):(.*)$/);
-    if (!m) continue;
+    if (!m) {
+      if (line.trim() && !line.trim().startsWith('#')) bad.push(`cannot read the line "${line.trim()}"`);
+      listKey = null;
+      continue;
+    }
     const key = m[1];
     const raw = m[2].trim();
+    listKey = null;
+    if (!(key in DEFAULTS)) {
+      bad.push(`unknown setting "${key}"`);
+      continue;
+    }
     const def = DEFAULTS[key];
     if (Array.isArray(def)) {
+      // both YAML forms: [a, b] on the line, or "- a" lines under it
       const inner = raw.replace(/^\[/, '').replace(/\]$/, '').trim();
       s[key] = inner ? inner.split(',').map((x) => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean) : [];
-    } else if (typeof def === 'number') s[key] = raw === '' ? def : Number(raw);
-    else if (typeof def === 'boolean') s[key] = raw === 'true';
-    else s[key] = raw.replace(/^"(.*)"$/, '$1');
+      if (!raw) listKey = key;
+    } else if (typeof def === 'number') {
+      if (raw === '') s[key] = def;
+      else if (!/^\d+$/.test(raw)) bad.push(`${key} must be a whole number, not "${raw}"`);
+      else s[key] = Number(raw);
+    } else if (typeof def === 'boolean') {
+      if (!['true', 'false', ''].includes(raw)) bad.push(`${key} must be true or false, not "${raw}"`);
+      s[key] = raw === 'true';
+    } else s[key] = raw.replace(/^"(.*)"$/, '$1');
   }
+  if (s.max_parallel < 1) bad.push('max_parallel must be at least 1');
+  if (bad.length) die(`${file} has ${bad.length} problem${bad.length === 1 ? '' : 's'}, and k2 will not guess at limits:\n- ${bad.join('\n- ')}`);
   return s;
 }
 
@@ -172,7 +197,26 @@ export function findTicket(board, ref) {
 }
 
 export function load(t) {
-  return { ...t, ...T.parse(fs.readFileSync(t.file, 'utf8')) };
+  try {
+    return { ...t, ...T.parse(fs.readFileSync(t.file, 'utf8')) };
+  } catch (e) {
+    die(`cannot read the ticket ${t.file}: ${e.message}. Repair the file by hand (it needs its frontmatter between two --- lines).`);
+  }
+}
+
+// Every ticket that can be read, and the files that cannot: one damaged file
+// must not take the whole board down.
+export function loadAll(board, statuses = STATUSES) {
+  const tickets = [];
+  const broken = [];
+  for (const raw of listTickets(board, statuses)) {
+    try {
+      tickets.push({ ...raw, ...T.parse(fs.readFileSync(raw.file, 'utf8')) });
+    } catch (e) {
+      broken.push({ ...raw, error: e.message });
+    }
+  }
+  return { tickets, broken };
 }
 
 export function save(t) {

@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as B from './board.mjs';
-import { nextActions, inboxItems } from './cmd-board.mjs';
+import { nextActions, inboxItems, bind } from './cmd-board.mjs';
 
 function input() {
   try {
@@ -76,11 +76,44 @@ function subagentStop(inp) {
   }
 }
 
+// The foreman is told to record each agent with `k2 agent`. This does it for
+// it the moment the agent is sent or resumed, so a forgotten step cannot put
+// a second worker into the same worktree.
+function agentSent(inp) {
+  const board = boardAt(inp.cwd);
+  if (!board) return;
+  const ti = inp.tool_input || {};
+  const text = String(ti.prompt || ti.message || '');
+  const id = text.match(/\b\d{12}\b/)?.[0];
+  if (!id) return;
+  let t;
+  try {
+    t = B.load(B.findTicket(board, id));
+  } catch {
+    return;
+  }
+  if (!['in_progress', 'review'].includes(t.status)) return;
+  const st = B.getState(board, t.id);
+  let role = null;
+  let agentId = null;
+  if (inp.tool_name === 'SendMessage') {
+    agentId = String(ti.to || '');
+    role = ['worker', 'reviewer'].find((r) => st[r]?.agent === agentId) || null;
+  } else {
+    role = String(ti.subagent_type || '').match(/^kerjaan2:(worker|reviewer)$/)?.[1] || null;
+    const resp = typeof inp.tool_response === 'string' ? inp.tool_response : JSON.stringify(inp.tool_response ?? '');
+    agentId = resp.match(/agent[_ ]?id\\?["':\s]+([A-Za-z0-9_-]{6,})/i)?.[1] || null;
+  }
+  if (!role || !agentId) return;
+  B.withLock(board, 'board', () => bind(board, t, role, agentId));
+}
+
 export function hook(argv) {
   try {
     const inp = input();
     if (argv[0] === 'session-start') sessionStart(inp);
     else if (argv[0] === 'subagent-stop') subagentStop(inp);
+    else if (argv[0] === 'agent-sent') agentSent(inp);
   } catch {
     // never break the session
   }

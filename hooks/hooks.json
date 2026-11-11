@@ -1,10 +1,14 @@
 {
-  "description": "kerjaan2 — tell a starting, resumed or just-summarized session what the board has in flight, and keep a worker from ending before its ticket is handed over",
+  "description": "kerjaan2 \u2014 tell a starting, resumed or just-summarized session what the board has in flight; record each worker and reviewer the moment it is sent; and keep a worker from ending before its ticket is handed over",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/k2\" hook session-start", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/k2\" hook session-start",
+            "timeout": 10
+          }
         ]
       }
     ],
@@ -12,7 +16,23 @@
       {
         "matcher": "^kerjaan2:worker$",
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/k2\" hook subagent-stop", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/k2\" hook subagent-stop",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Agent|Task|SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/k2\" hook agent-sent",
+            "timeout": 10
+          }
         ]
       }
     ]

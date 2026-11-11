@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { die, git, gitTry, run, now, today, parseArgs, slugify, fmtDuration } from './util.mjs';
 import * as B from './board.mjs';
 import * as T from './ticket.mjs';
@@ -11,6 +12,31 @@ import { lessons, holdReason } from './cmd-record.mjs';
 
 const K = () => B.k2Name();
 const NO_BOARD = ':(exclude).kerjaan2';
+
+// ----- the contract does not move under the work -----
+
+const contractPrint = (contract) => createHash('sha1').update(T.contractText(contract)).digest('hex').slice(0, 12);
+
+// What the ticket asked for when work started (or when the owner last
+// confirmed a change), against what its file says now.
+function contractMoved(board, t) {
+  const sealed = B.readLog(board, t.id).reverse().find((e) => e.contract)?.contract;
+  if (!sealed || sealed === contractPrint(t.contract)) return null;
+  return `its Request or Done when was edited after work started. Only the owner changes what a ticket in flight asks for: put the change to them, then \`${K()} amend ${t.id} --why "<their words>"\`; or restore the wording`;
+}
+
+export function amend(argv) {
+  const { pos, opt } = parseArgs(argv);
+  const board = B.openBoard();
+  if (!opt.why) die('amend needs the owner\'s words: --why "<what changed and why>"');
+  B.withLock(board, 'board', () => {
+    const t = B.load(B.findTicket(board, pos[0]));
+    t.record.decisions.push(T.makeEntry(`${today()} the owner changed what this ticket asks for: ${opt.why}`));
+    B.save(t);
+    B.log(board, t.id, 'amended', { contract: contractPrint(t.contract) });
+    console.log(`${t.id}: the contract as it stands now is the one it is judged against.`);
+  });
+}
 
 // ----- start -----
 
@@ -62,7 +88,7 @@ export function start(argv) {
       B.moveFile(board, t, 'in_progress');
       B.dropFromQueue(board, t.id);
       B.setState(board, t.id, { mode: 'first', round: 1, slot, started: now() });
-      B.log(board, t.id, 'started', { branch, base: git(board.root, 'rev-parse', '--short', main) });
+      B.log(board, t.id, 'started', { branch, base: git(board.root, 'rev-parse', '--short', main), contract: contractPrint(t.contract) });
     } else B.setState(board, t.id, { slot });
     pending = { t, wt, branch, slot, inFlight };
   });
@@ -196,11 +222,16 @@ export function test(argv) {
 
 // ----- submit -----
 
-function globToRe(glob) {
-  let g = glob.replace(/^\.\//, '');
+// As in .gitignore: a pattern with no slash inside it (`*.sql`, `auth/`)
+// matches at any depth; one with a slash is taken from the repo root.
+export function globToRe(glob) {
+  let g = glob.trim().replace(/^\.\//, '');
+  const anywhere = !g.replace(/\/$/, '').includes('/');
+  g = g.replace(/^\//, '');
   if (g.endsWith('/')) g += '**';
-  const re = g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '.*');
-  return new RegExp(`^${re}$`);
+  if (anywhere) g = `**/${g}`;
+  const re = g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '(?:.*/)?');
+  return new RegExp(`^${re}`.replace(/\(\?:\.\*\/\)\?$/, '.*') + '$');
 }
 
 function changedFiles(wt, main) {
@@ -306,6 +337,8 @@ export function submit(argv) {
         if (!fresh.record.manual.some((m) => m.text.startsWith(`(item ${c.n})`))) gaps.push(`item ${c.n} is the owner's to check: write its steps with \`${K()} manual ${t.id} ${c.n} "<steps>"\``);
       } else if (!c.done) gaps.push(`item ${c.n} is not ticked: \`${K()} check ${t.id} ${c.n} "<what you ran and saw>"\``);
     }
+    const moved = contractMoved(board, fresh);
+    if (moved) gaps.push(moved);
     if (!fresh.record.handoff) gaps.push(`no handoff: \`${K()} handoff ${t.id} "<what changed, why, what must not break>"\``);
 
     // The lane follows what was really changed. It only ever rises.
@@ -380,6 +413,8 @@ export function verdict(argv) {
     // A verdict comes from the reviewer the foreman sent for this step, not from whoever can type the command.
     const sent = st.reviewer?.agent && st.reviewer.step === (integration ? `integrate:${st.integrations || 1}:reviewer` : `review:${st.round || 1}`);
     if (!sent) die(`no reviewer was sent for this step of ${t.id}. A verdict is the reviewer's alone; a worker never judges its own ticket. (Foreman: dispatch one, then \`${K()} agent ${t.id} reviewer <agentId>\`.)`);
+    const moved = contractMoved(board, t);
+    if (moved) die(`${t.id}: ${moved}. Report this in one line instead of a verdict, and end.`);
     const round = st.round || 1;
     const what = integration ? 'conflict resolution' : `${t.fm.lane}, round ${round}`;
     if (result === 'reject' && !notes.length) die('a rejection says what failed: --note "<kind of mistake, every instance, how you saw it>"');
@@ -426,11 +461,12 @@ export function accept(argv) {
     const wt = B.worktreeOf(board, t.id) || die(`${t.id} has no worktree`);
     if (dirt(board, t.id, wt)) die(`its worktree ${wt} holds uncommitted changes; have its worker commit or discard them first`);
     t.record.review.push(T.makeEntry(`${today()} accepted by the owner without passing review: ${opt.why}`));
+    const f = T.addKeyed(t.record, 'followups', 'open', 'Accepted over its reviewer\'s findings (see Review): what the reviewer found is still true.');
     B.save(t);
     B.moveFile(board, t, 'review');
     B.setState(board, t.id, { passed: true, passedAt: Date.now(), judged: git(wt, 'rev-parse', 'HEAD') });
     B.log(board, t.id, 'accepted', { by: 'owner' });
-    console.log(`ACCEPTED ${t.id} on the owner's word. Land it with \`${K()} land ${t.id}\`.\nWhat the reviewer found is still true: create the follow-up now, \`${K()} new "<what is left>" --related ${t.id}\`, unless the owner said to drop it.`);
+    console.log(`ACCEPTED ${t.id} on the owner's word. Land it with \`${K()} land ${t.id}\`.\nWhat the reviewer found is still true, and ${f.key} holds it in the inbox: create the follow-up (\`${K()} new "<what is left>" --related ${t.id}\`, then \`${K()} followup ${t.id} ticketed ${f.key}\`), or \`${K()} followup ${t.id} declined ${f.key}\` if the owner drops it.`);
   });
 }
 
@@ -479,6 +515,8 @@ export function land(argv) {
     }
     if (st0.needs) die(`${t.id} holds the front of the merge queue and is being brought up to date with ${main} (waiting for its ${st0.needs}); land it after that`);
 
+    const moved = contractMoved(board, t);
+    if (moved) return hold(moved);
     const current = gitTry(board.root, 'symbolic-ref', '--short', 'HEAD').out;
     if (current !== main) return hold(`the main tree is on branch "${current}", not ${main}`);
     // A merge already open in the main tree is the owner's, never ours to touch.
@@ -737,7 +775,7 @@ export function history(argv) {
       case 'conflict': return `conflict with main in ${(e.files || []).join(', ')}`;
       case 'integrate': return `main moved before it could land${e.conflict ? ' (conflict)' : ' (tests failed on the merged state)'}`;
       case 'integrated': return `brought up to date at ${e.commit}`;
-      case 'landed': return `landed in main (${(e.files || []).length} file(s)); worktree and branch removed`;
+      case 'landed': return `landed in ${board.settings.main_branch} (${(e.files || []).length} file(s)); worktree and branch removed`;
       case 'held': return `held: ${e.reason}`;
       case 'check': return `item ${e.n} ticked: ${e.evidence}`;
       case 'question': return `question ${e.key}${e.blocking ? ' (blocking)' : ''}`;

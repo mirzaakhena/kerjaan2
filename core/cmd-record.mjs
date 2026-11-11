@@ -97,9 +97,15 @@ function settleAssumption(argv, status) {
       a.sub.push(`${status === 'confirmed' ? 'Confirmed' : 'Overturned'} by ${who(opt)}, ${today()}${opt.note ? `: ${opt.note}` : ''}`);
       B.log(board, t.id, 'assumption-' + status, { key: a.key });
     }
-    const tail = status === 'overturned' && t.status === 'done'
-      ? ` The ticket is done: create the follow-up with \`${K()} new "<title>" --related ${t.id}\`.`
-      : '';
+    let tail = '';
+    if (status === 'overturned') {
+      for (const k of keys) {
+        const a = T.findKeyed(t.record, 'assumptions', k);
+        const f = T.addKeyed(t.record, 'followups', 'open', `Overturned ${a.key}: ${a.text}${opt.note ? ` — the owner: ${opt.note}` : ''}`.slice(0, 600));
+        tail += ` ${f.key} holds it until it is ticketed or declined.`;
+      }
+      tail += ` Create the ticket: \`${K()} new "<title>" --related ${t.id}\`, then \`${K()} followup ${t.id} ticketed <F>\`.`;
+    }
     return `${t.id}: ${keys.join(', ')} ${status}.${tail}`;
   });
 }
@@ -140,9 +146,18 @@ export function void_(argv) {
     const reason = pos.slice(2).join(' ').replace(/\s+/g, ' ').trim();
     if (!reason) die('void <id> <n> "<the decision that made it pointless: Q2, or the owner\'s words and date>"');
     if (reason.length > 200) die('the reason is one line');
+    const keys = reason.match(/\bQ\d+\b/g) || [];
+    const answered = keys.filter((k) => t.record.questions.some((q) => q.key === k && q.status === 'answered'));
+    if (!answered.length) die(`a criterion is voided only by a decision of the owner that is on record: name the answered question (Q<n>) that made it pointless. ${keys.length ? `${keys.join(', ')} is not an answered question of this ticket.` : 'No question is named.'} No such answer yet? Ask it: ${K()} ask ${t.id} --blocking "<question>"`);
     t.contract = T.voidCriterion(t.contract, n, reason);
+    let raised = '';
+    if (t.fm.lane === 'light') {
+      t.fm.lane = 'standard';
+      t.record.decisions.push(T.makeEntry(`${today()} lane raised to standard by k2: item ${n} was voided, and a reviewer checks that`));
+      raised = ' The lane is now standard: a reviewer checks the void.';
+    }
     B.log(board, t.id, 'void', { n, reason });
-    return `${t.id}: item ${n} struck as void. The reviewer checks that the reason names a decision of the owner.`;
+    return `${t.id}: item ${n} struck as void.${raised}`;
   });
 }
 
@@ -158,6 +173,8 @@ export function uncheck(argv) {
 export function manual(argv) {
   const { pos, opt } = parseArgs(argv);
   const verb = pos[1];
+  // Steps typed on one line are still steps: one per line in the ticket.
+  const steps = (text) => (text.includes('\n') ? text : text.replace(/\s+(?=(?:[2-9]|[1-9]\d)[.)]\s)/g, '\n'));
   if (verb === 'ok' || verb === 'failed') {
     return edit(pos[0], (t, board) => {
       const m = T.findKeyed(t.record, 'manual', pos[2]);
@@ -166,7 +183,9 @@ export function manual(argv) {
       const n = Number(m.text.match(/^\(item (\d+)\)/)?.[1]);
       if (n && verb === 'ok') t.contract = T.setCriterion(t.contract, n, true);
       B.log(board, t.id, 'manual-' + verb, { key: m.key });
-      return `${t.id} ${m.key}: ${verb}.${verb === 'failed' ? ` Create the follow-up: ${K()} new "<title>" --type bug --related ${t.id}` : ''}`;
+      if (verb !== 'failed') return `${t.id} ${m.key}: ${verb}.`;
+      const f = T.addKeyed(t.record, 'followups', 'open', `Manual check ${m.key} failed: ${m.text}${opt.note ? ` — the owner: ${opt.note}` : ''}`.slice(0, 600));
+      return `${t.id} ${m.key}: failed. ${f.key} holds it until it is ticketed or declined: \`${K()} new "<title>" --type bug --related ${t.id}\`, then \`${K()} followup ${t.id} ticketed ${f.key}\`.`;
     });
   }
   edit(pos[0], (t, board) => {
@@ -174,14 +193,14 @@ export function manual(argv) {
     const c = T.criteria(t.contract).find((x) => x.n === n);
     if (!c) die(`usage: manual <id> <item number> "<steps>"  |  manual <id> ok|failed <M1>`);
     const old = t.record.manual.find((m) => m.text.startsWith(`(item ${n})`));
-    const e = T.makeEntry(pos.slice(2).join(' '), 1800);
+    const e = T.makeEntry(steps(pos.slice(2).join(' ')), 1800);
     if (old) {
       old.text = `(item ${n}) ${e.text}`;
       old.sub = e.sub;
       old.status = 'waiting';
       return `${t.id} ${old.key} rewritten.`;
     }
-    const m = T.addKeyed(t.record, 'manual', 'waiting', `(item ${n}) ${pos.slice(2).join(' ')}`, [], 1800);
+    const m = T.addKeyed(t.record, 'manual', 'waiting', `(item ${n}) ${steps(pos.slice(2).join(' '))}`, [], 1800);
     B.log(board, t.id, 'manual', { key: m.key, n });
     return `${t.id} ${m.key} recorded for item ${n}: the owner checks it by hand; it does not hold the ticket.`;
   });
@@ -194,6 +213,7 @@ export function handoff(argv) {
     const words = text.split(/\s+/).filter(Boolean).length;
     if (!words) die('the handoff is empty');
     if (words > 180) die(`the handoff is ${words} words; keep it to about 150: what changed, why, what must not break.`);
+    if (/^\s*(#|<!--)/m.test(text)) die('the handoff is plain sentences: no line may begin with # or <!--, which would cut it short and read as another section of the ticket');
     t.record.handoff = text;
     return `${t.id}: handoff written (${words} words).`;
   });
