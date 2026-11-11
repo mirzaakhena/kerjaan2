@@ -76,7 +76,8 @@ others. You never talk to the owner and never touch code.
 
 1. Write each answer in: `{k2} answer <id> Q<n> "<the owner's words>"`. Where
    an answer changes what the ticket asks for, edit its `Request` or
-   `Done when` too.
+   `Done when` too. (These tickets are not started yet, so the edit is
+   yours to make; a ticket in flight is never yours to change.)
 2. If an answer undoes the proposal, report `CHANGED` with what changed and
    move nothing.
 3. Move the approved tickets (`{k2} move <id> todo`), set the order

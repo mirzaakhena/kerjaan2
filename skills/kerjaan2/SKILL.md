@@ -11,10 +11,9 @@ agents. You never write a ticket's code yourself. The board's state lives on
 disk, so a session that was summarized or replaced loses nothing: `k2 status`
 says where everything stands, `k2 next` says what to do.
 
-```bash
-command -v k2 >/dev/null || alias k2="${CLAUDE_PLUGIN_ROOT}/bin/k2"   # k2 is on PATH when the plugin is enabled
-k2 help          # every command, one screen
-```
+`k2` is on PATH while the plugin is enabled (`k2 help` lists every command).
+If the shell does not find it, call it by its full path every time:
+`${CLAUDE_PLUGIN_ROOT}/bin/k2`.
 
 ## The loop
 
@@ -26,18 +25,39 @@ Whenever work is in flight or the owner says "work the queue":
 | `k2 next` says | You do |
 |---|---|
 | `START <id>` | `k2 start <id>` (makes the worktree), then `k2 next` |
-| `DISPATCH <role>` | Call the Agent tool with the `subagent_type`, `model` and `prompt` it prints, in the background. Then `k2 agent <id> <role> <agentId>` |
-| `RESUME <role> <agentId>` | SendMessage to that agent with the text it prints, then `k2 agent ...` as printed. If the agent cannot be resumed, dispatch a new one |
+| `DISPATCH <role>` | Call the Agent tool with the `subagent_type`, `model` and `prompt` it prints, in the background. Then `k2 agent <id> <role> <agentId>` (a hook records it too; doing it twice is harmless) |
+| `RESUME <role> <agentId>` | SendMessage to that agent with the text it prints, then `k2 agent ...` as printed. If the agent cannot be resumed, dispatch a new one with the prompt on that line |
 | `WAIT` | Nothing. A notification arrives when the agent reports; never poll or sleep. A passed ticket waiting in the merge queue lands in its turn: never land out of order |
-| `LAND <id>` | `k2 land <id>`. It merges into main, moves the ticket to `done`, removes the worktree and the branch |
-| `OWNER` | Something only the owner decides. **Never open a question while an agent is working or a ticket can still move**: a dialog nobody answers would stall the whole queue. Keep going; put the `OWNER` lines to the owner when `k2 next` ends in `IDLE`, or at once if the owner writes to you |
-| `IDLE` | Summarize for the owner; offer what `k2 inbox` holds |
+| `STUCK` | The agent has held its step too long. Ask it where it stands (SendMessage); if its report already came or it does not answer, `k2 release <id> <role>`, then `k2 next` |
+| `LAND <id>` | `k2 land <id>`. It merges into main, moves the ticket to `done`, removes the worktree and the branch. Whatever it answers instead (`WAITING`, `INTEGRATE`, `BACK`, `HELD`), run `k2 next`: it knows what follows |
+| `FIX` | Yours to repair now: a ticket in `todo` that is not ready (fill the gap, or `k2 move <id> backlog`), or a ticket file that cannot be read |
+| `OWNER` | Something only the owner decides. **Never open a question while an agent is working or a ticket can still move**: a dialog nobody answers would stall the whole queue. Keep going; put the `OWNER` lines to the owner when `k2 next` says `IDLE`, or at once if the owner writes to you |
+| `IDLE` | Nothing is left for agents. Give the owner the summary (below), with every `OWNER` line and what `k2 inbox` holds |
 
 Several `DISPATCH` lines are dispatched together, in one message: tickets run
-side by side. When an agent's report arrives, run `k2 next`; never act on a
-report from memory. A worker's `NEED — question for ticket <id>` goes to that
-ticket's worker by SendMessage (its agent ID is in `k2 status`), and the
-answer back to the asker.
+side by side.
+
+**When an agent's report arrives, run `k2 next`**; never act on a report from
+memory. What its first line means:
+
+- `SUBMITTED`, `PASSED`, `REJECTED`: the board already moved; `next` says what
+  follows.
+- `STOPPED — <reason>`: the work is impossible as asked.
+  `k2 release <id> worker --stopped "<its reason>"`: the ticket then waits for
+  the owner and uses no room.
+- `NEED — question for ticket <other>: ...`: a worker bringing main in cannot
+  tell what another ticket meant. Find that ticket's worker in
+  `k2 history <other>` (the `agent` lines), put the question to it by
+  SendMessage, and send the answer to the asker by SendMessage. If that
+  worker cannot be resumed, answer from the other ticket's `Handoff` and diff
+  yourself, saying that you did.
+- A report arrived and `next` still says `WAIT` for that same agent: it ended
+  without handing over. `k2 release <id> <role>`, then `next`.
+
+**The summary at `IDLE`**, from `k2 status`, `k2 inbox` and the reports: what
+landed and in which round; what was sent back and why; what is held before
+its merge and on which question; every question, assumption, manual check and
+follow-up waiting for the owner; anything stopped or released.
 
 ## The owner
 
@@ -56,10 +76,14 @@ your recommendation first.
   (`k2 followup <id> ticketed|declined F1`), merges that are held. Offer it
   when the queue is idle and whenever the owner asks what needs them. Never
   settle an item on your own.
-- When the owner accepts a ticket its reviewer sent back twice
-  (`k2 accept <id> --why "..."`), what the reviewer found is still true:
-  create the follow-up ticket for it, `related` to this one, unless the owner
-  says to drop it.
+- An overturned assumption, a failed manual check and a ticket the owner
+  accepted over its reviewer (`k2 accept <id> --why "..."`) each leave a
+  follow-up in the inbox: create the ticket and mark it
+  (`k2 followup <id> ticketed F1 --as <new id>`), or `declined` on the
+  owner's word.
+- A change to what a ticket in flight asks for is the owner's alone: edit
+  its `Request` or `Done when`, then `k2 amend <id> --why "<their words>"`.
+  Without that, the board refuses the ticket as changed under the work.
 - `--force` on `k2 move`, `k2 retry`, `k2 accept`, `k2 go` and raising `max_parallel` are
   the owner's word only.
 
@@ -107,7 +131,9 @@ change turns out riskier; nothing lowers one but the owner.
 
 **Filling the queue from the backlog** is the planner's reading, not yours:
 dispatch `kerjaan2:planner` with "Repo <path>. The owner asked: <their words>.
-Run `k2 brief --role planner` first and follow it." Relay its proposal and
+Run `k2 brief --role planner` first and follow it." Its report says
+`PROPOSAL` (relay it), `QUEUED` (run `k2 next`), `CHANGED` (an answer undid
+the proposal: relay what changed, nothing moved) or `NOTHING READY` (say why). Relay its proposal and
 **every** question to the owner before anything starts — `todo` is a waiting
 room, and a ticket enters it only with nothing left to ask; resume the
 planner with the answers and what was approved. Everything in `in_progress` runs side by side, so what may enter `todo` is

@@ -342,7 +342,7 @@ berkasnya dibatasi ±60 baris.
 ## 10. Satu CLI: `k2`
 
 Node 18+, tanpa dependensi, tersedia di PATH lewat folder `bin/` plugin.
-Keluarannya teks pendek; `--json` untuk mesin.
+Keluarannya teks pendek.
 
 | Kelompok | Perintah |
 |---|---|
@@ -358,21 +358,21 @@ Keluarannya teks pendek; `--json` untuk mesin.
 
 ## 11. Hooks (adaptor Claude Code)
 
-Empat hook, tidak ada yang berjalan di setiap pemanggilan alat.
+Tiga hook, tidak ada yang berjalan di setiap pemanggilan alat.
 
 | Kejadian | Yang dilakukan | Menggantikan |
 |---|---|---|
-| `SessionStart` (mulai, lanjut, sesudah ringkas) | Menyuntikkan `k2 status`: yang berjalan, ID agennya, isi kotak masuk | Aturan "awal sesi", `handoff.md`, hook penebak persen konteks |
-| `SubagentStart` (agen kerjaan2) | Mencatat agen, sesi, dan letak transkripnya ke `.state/` | Viewer menebak dari transkrip |
-| `SubagentStop` (agen kerjaan2) | Menolak berhenti bila pengerja belum `submit` dan belum mencatat pertanyaan menahan; mencatat selesai | Sebagian besar `on-ticket-review.sh` |
-| `PostToolUse` pada Agent | Menyuntikkan `k2 next` ke mandor begitu agen melapor | Pengingat "panggil peninjau" |
+| `SessionStart` (mulai, lanjut, sesudah ringkas) | Menyuntikkan apa yang sedang berjalan dan apa yang menunggu pemilik | Aturan "awal sesi", `handoff.md`, hook penebak persen konteks |
+| `PostToolUse` pada `Agent` dan `SendMessage` | Mencatat ID agen ke tiketnya begitu agen dikirim atau dilanjutkan | Mandor yang harus ingat `k2 agent`; mencegah pengerja kedua masuk worktree yang sama |
+| `SubagentStop` (pengerja kerjaan2) | Menolak sekali bila pengerja belum menyerahkan; bila ia tetap berakhir, menandainya di papan sehingga `k2 next` mengirim lagi | Sebagian besar `on-ticket-review.sh` |
 
 Karena ID agen tersimpan di disk, mandor yang konteksnya baru diringkas cukup
-membaca `k2 status` untuk melanjutkan agen yang sama.
+membaca `k2 status` untuk melanjutkan agen yang sama. Menjalankan `k2 next`
+setelah laporan agen tetap aturan mandor, bukan hook.
 
-Perlu dibuktikan di Tahap 1: apakah masukan hook pemanggilan alat di dalam
-subagen memuat ID agennya (dipakai untuk mengikat agen ke tiket). Bila tidak,
-pengikatan dilakukan dari baris pertama laporan agen.
+Belum terbukti di sesi sungguhan: apakah `agent_id` pada `SubagentStop` sama
+dengan ID yang dikembalikan alat `Agent`, dan apakah ketiga hook menyala.
+Semua hook diuji dengan masukan tiruan.
 
 ## 12. Viewer
 
@@ -522,3 +522,34 @@ Tidak diambil sekarang, dengan konsekuensinya:
 - **Batas jalur untuk proyek mock.** Jalur tetap bisa naik sendiri di papan
   mana pun.
 - **Uji pemicu skill.** Deskripsi skill belum pernah diukur.
+
+### Tinjauan independen atas 0.9.0 (12 November 2026)
+
+Satu agen peninjau independen memeriksa 0.9.0 dan menemukan dua puluh cacat.
+Semuanya diperbaiki di 0.10.0 atas keputusan pemilik. Yang mengubah rancangan:
+
+- **`k2 land` transaksional.** Commit merge yang gagal membatalkan semua
+  langkahnya; tiket tetap di `review` dan ditahan. Merge milik pemilik yang
+  sedang terbuka di pohon utama tidak pernah disentuh.
+- **Hanya isi yang dinilai yang masuk main.** Ujung cabang harus commit yang
+  dinilai peninjau (atau yang lolos gerbang, di jalur `light`). Commit sesudah
+  itu mengembalikan tiket ke pengerjanya untuk diserahkan ulang. Apa pun yang
+  diubah pengerja saat membawa main masuk dilihat peninjau, di jalur mana pun.
+- **Agen yang menghilang tidak memacetkan tiket.** `k2 next` menyebutnya
+  `STUCK` setelah `stuck_after_minutes`; `k2 release` membebaskan langkahnya;
+  `--stopped` menyerahkan tiket kepada pemilik.
+- **Tiket yang hanya menunggu pemilik tidak memakai jatah** `max_parallel` dan
+  tidak menahan tiket `solo`.
+- **Kontrak dibekukan saat mulai.** `Request` dan `Done when` yang berubah di
+  tengah jalan ditolak sampai pemilik mengesahkannya dengan `k2 amend`.
+- **Gerbang diperketat:** putusan hanya dari peninjau yang dikirim untuk
+  langkah itu; lolos butuh satu catatan per butir; `k2 void` wajib menyebut
+  pertanyaan yang sudah dijawab dan menaikkan jalur `light` ke `standard`;
+  setiap penolakan sesudah yang kedua diajukan lagi kepada pemilik.
+- **Ketahanan:** satu berkas tiket rusak tidak mematikan papan; pengaturan
+  divalidasi; berkas sisa uji ditoleransi; kunci uji bertahan selama jalan
+  ujinya hidup; penulisan keadaan di bawah kunci.
+
+Yang tetap berbasis kepercayaan, dengan sadar: bukti pada `k2 check`, baris
+"Red-proof" di jalur `strict` (peninjau `strict` merusak ulang sendiri), dan
+kebenaran ID agen yang dicatat. CLI tidak bisa mengenali siapa pemanggilnya.
