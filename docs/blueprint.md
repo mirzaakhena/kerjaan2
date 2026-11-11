@@ -358,12 +358,13 @@ Keluarannya teks pendek.
 
 ## 11. Hooks (adaptor Claude Code)
 
-Tiga hook, tidak ada yang berjalan di setiap pemanggilan alat.
+Empat hook. Tidak ada yang berjalan di setiap pemanggilan alat: penjaga peran hanya menyala pada perintah Bash yang memanggil `k2`.
 
 | Kejadian | Yang dilakukan | Menggantikan |
 |---|---|---|
 | `SessionStart` (mulai, lanjut, sesudah ringkas) | Menyuntikkan apa yang sedang berjalan dan apa yang menunggu pemilik | Aturan "awal sesi", `handoff.md`, hook penebak persen konteks |
 | `PostToolUse` pada `Agent` dan `SendMessage` | Mencatat ID agen ke tiketnya begitu agen dikirim atau dilanjutkan | Mandor yang harus ingat `k2 agent`; mencegah pengerja kedua masuk worktree yang sama |
+| `PreToolUse` pada `Bash` yang memanggil `k2` | **Penjaga peran**: di dalam subagen, menolak perintah milik pihak lain sebelum dijalankan (pengerja tidak bisa memberi putusan, menjawab untuk pemilik, mengesahkan kontrak, atau merge; peninjau tidak bisa menyentuh pekerjaan; hanya sesi utama yang berbicara atas nama pemilik) | Gerbang yang sebelumnya hanya berbasis kepercayaan |
 | `SubagentStop` (pengerja kerjaan2) | Menolak sekali bila pengerja belum menyerahkan; bila ia tetap berakhir, menandainya di papan sehingga `k2 next` mengirim lagi | Sebagian besar `on-ticket-review.sh` |
 
 Karena ID agen tersimpan di disk, mandor yang konteksnya baru diringkas cukup
@@ -371,7 +372,9 @@ membaca `k2 status` untuk melanjutkan agen yang sama. Menjalankan `k2 next`
 setelah laporan agen tetap aturan mandor, bukan hook.
 
 Belum terbukti di sesi sungguhan: apakah `agent_id` pada `SubagentStop` sama
-dengan ID yang dikembalikan alat `Agent`, dan apakah ketiga hook menyala.
+dengan ID yang dikembalikan alat `Agent`, dan apakah keempat hook menyala. Dokumentasi Claude Code menyatakan
+masukan hook di dalam subagen memuat `agent_id` dan `agent_type`; penjaga
+peran bergantung pada itu.
 Semua hook diuji dengan masukan tiruan.
 
 ## 12. Viewer
@@ -403,7 +406,7 @@ kerjaan2/
 ├── roles/                  teks peran yang dicetak `k2 brief`                          ← netral
 ├── viewer/                 (Tahap 3)                                                   ← netral
 ├── skills/kerjaan2/        ┐
-├── agents/                 ├ adaptor Claude Code: skill mandor, tiga pembungkus tipis, tiga hook
+├── agents/                 ├ adaptor Claude Code: skill mandor, tiga pembungkus tipis, empat hook
 ├── hooks/                  ┘
 ├── .claude-plugin/
 ├── docs/                   cetak biru ini
@@ -424,7 +427,7 @@ Skill, teks peran, CLI, dan viewer berbahasa Inggris; prosa tiket mengikuti
 
 | Tahap | Isi | Dicoba dengan |
 |---|---|---|
-| 1. Inti | Format, `k2` (papan, catatan, `start`/`submit`/`verdict`/`land` untuk satu tiket), skill, tiga agen, tiga hook, tiga jalur | Beberapa tiket nyata, satu per satu, di satu proyek |
+| 1. Inti | Format, `k2` (papan, catatan, `start`/`submit`/`verdict`/`land` untuk satu tiket), skill, tiga agen, empat hook, tiga jalur | Beberapa tiket nyata, satu per satu, di satu proyek |
 | 2. Paralel | Beberapa tiket bersamaan, mode integrasi, slot uji, `doctor`, kotak masuk lengkap | Satu batch 3–4 tiket yang sengaja bertumpuk berkas |
 | 3. Viewer | Mockup → Ruang kendali, Papan, Riwayat | Memantau batch Tahap 2 dari HP |
 
@@ -585,3 +588,15 @@ pertanyaannya sendiri, `k2 agent <id> reviewer <apa saja>` lalu `k2 verdict`,
 bukan kesengajaan. Penegakan yang sungguh-sungguh hanya mungkin di luar CLI
 (hook yang menolak perintah itu bila dipanggil dari dalam subagen), dan itu
 belum dibangun.
+
+### Penjaga peran (keputusan pemilik, 12 November 2026)
+
+Dibangun di 0.12.0 sebagai hook `PreToolUse`. Daftar perintah per peran ada di
+`core/cmd-hook.mjs` (`MAY`): pengerja hanya menulis catatan tiketnya dan
+`submit`; peninjau hanya `verdict`, `followup`, dan `learn`; planner hanya
+menyiapkan antrean; subagen lain hanya membaca; sesi utama tidak dibatasi.
+
+Batasnya: hanya berlaku di Claude Code dengan plugin terpasang; hanya melihat
+perintah yang memanggil `k2` lewat alat Bash (agen yang sengaja menyunting
+berkas papan langsung, atau memanggil `node core/run.mjs`, tidak tertangkap);
+dan belum terbukti di sesi sungguhan.

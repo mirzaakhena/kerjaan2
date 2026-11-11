@@ -118,12 +118,74 @@ function agentSent(inp) {
   B.withLock(board, 'board', () => bind(board, t, role, agentId));
 }
 
+// ----- the role guard -----
+//
+// k2 itself cannot tell who runs it. Claude Code can: a tool call made inside
+// a subagent carries that agent's id and type. So this hook, before any Bash
+// call that runs k2, refuses the commands that belong to somebody else: a
+// worker cannot give a verdict, answer for the owner or land; a reviewer
+// cannot touch the work; nobody but the main session speaks for the owner.
+
+const READ = ['help', 'brief', 'show', 'ls', 'status', 'history', 'inbox', 'next', 'ready', 'test', 'hook'];
+const MAY = {
+  worker: [...READ, 'submit', 'check', 'uncheck', 'handoff', 'decide', 'assume', 'ask', 'learn', 'void', 'manual'],
+  reviewer: [...READ, 'verdict', 'followup', 'learn'],
+  planner: [...READ, 'new', 'set', 'rename', 'move', 'queue', 'ask', 'answer', 'assume', 'decide', 'commit-board', 'learn'],
+  other: READ,
+};
+
+// Every k2 invocation in a shell command line: [{ cmd, args }]
+export function k2Calls(line) {
+  const calls = [];
+  for (const part of String(line || '').split(/&&|\|\||[;|\n]|\$\(|`/)) {
+    const m = part.match(/(?:^|[\s(])(?:[^\s"']*\/)?k2\s+([a-z][a-z-]*)(.*)$/);
+    if (m) calls.push({ cmd: m[1], args: m[2].trim().split(/\s+/).filter(Boolean) });
+  }
+  return calls;
+}
+
+export function refusal(role, { cmd, args }) {
+  const allowed = MAY[role] || MAY.other;
+  const who = role === 'other' ? 'a subagent that is no kerjaan2 worker, reviewer or planner' : `the ${role}`;
+  if (!allowed.includes(cmd)) return `\`k2 ${cmd}\` is not ${who}'s to run.`;
+  if (args.includes('--force')) return `--force is the owner's word, given through the main session; it is not ${who}'s to pass.`;
+  // The owner settles a manual check or a follow-up; a worker only writes the steps.
+  if (cmd === 'manual' && ['ok', 'failed'].includes(args[1])) return 'a manual check is settled by the owner, through the main session.';
+  if (cmd === 'followup' && ['ticketed', 'declined'].includes(args[1])) return 'a follow-up is settled by the owner, through the main session.';
+  if (cmd === 'queue' && args[0] === 'set' && role !== 'planner') return 'the queue is the planner\'s to set.';
+  if (cmd === 'move' && !['todo', 'backlog'].includes(args[1])) return `the planner moves tickets between backlog and todo only.`;
+  if (cmd === 'set' && role === 'planner') return null;
+  return null;
+}
+
+function guard(inp) {
+  if (!inp.agent_id) return; // the main session: the foreman, who speaks for the owner
+  if (inp.tool_name && inp.tool_name !== 'Bash') return;
+  const calls = k2Calls(inp.tool_input?.command);
+  if (!calls.length) return;
+  if (!boardAt(inp.cwd)) return;
+  const role = String(inp.agent_type || '').match(/^kerjaan2:(worker|reviewer|planner)$/)?.[1] || 'other';
+  for (const call of calls) {
+    const why = refusal(role, call);
+    if (!why) continue;
+    console.log(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: `kerjaan2: ${why} Nothing was run. If the ticket needs it, say so in your report; the foreman or the owner decides.`,
+      },
+    }));
+    return;
+  }
+}
+
 export function hook(argv) {
   try {
     const inp = input();
     if (argv[0] === 'session-start') sessionStart(inp);
     else if (argv[0] === 'subagent-stop') subagentStop(inp);
     else if (argv[0] === 'agent-sent') agentSent(inp);
+    else if (argv[0] === 'guard') guard(inp);
   } catch {
     // never break the session
   }

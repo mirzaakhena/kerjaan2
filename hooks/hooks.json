@@ -1,5 +1,5 @@
 {
-  "description": "kerjaan2 \u2014 tell a starting, resumed or just-summarized session what the board has in flight; record each worker and reviewer the moment it is sent; and keep a worker from ending before its ticket is handed over",
+  "description": "kerjaan2 \u2014 tell a starting, resumed or just-summarized session what the board has in flight; record each worker and reviewer the moment it is sent; keep a worker from ending before its ticket is handed over; and refuse, inside a subagent, the k2 commands that belong to somebody else",
   "hooks": {
     "SessionStart": [
       {
@@ -31,6 +31,19 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/k2\" hook agent-sent",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(*k2 *)",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/k2\" hook guard",
             "timeout": 10
           }
         ]
