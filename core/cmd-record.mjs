@@ -156,7 +156,7 @@ export function void_(argv) {
       t.record.decisions.push(T.makeEntry(`${today()} lane raised to standard by k2: item ${n} was voided, and a reviewer checks that`));
       raised = ' The lane is now standard: a reviewer checks the void.';
     }
-    B.log(board, t.id, 'void', { n, reason });
+    B.log(board, t.id, 'void', { n, reason, contract: B.contractPrint(t.contract) });
     return `${t.id}: item ${n} struck as void.${raised}`;
   });
 }
@@ -208,8 +208,9 @@ export function manual(argv) {
 
 export function handoff(argv) {
   const { pos } = parseArgs(argv);
+  // Read before the board is locked: an open stdin must not hold everybody up.
+  const text = pos.slice(1).join(' ').trim() || (process.stdin.isTTY ? '' : fs.readFileSync(0, 'utf8').trim());
   edit(pos[0], (t) => {
-    const text = pos.slice(1).join(' ').trim() || fs.readFileSync(0, 'utf8').trim();
     const words = text.split(/\s+/).filter(Boolean).length;
     if (!words) die('the handoff is empty');
     if (words > 180) die(`the handoff is ${words} words; keep it to about 150: what changed, why, what must not break.`);

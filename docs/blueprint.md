@@ -403,7 +403,7 @@ kerjaan2/
 ├── roles/                  teks peran yang dicetak `k2 brief`                          ← netral
 ├── viewer/                 (Tahap 3)                                                   ← netral
 ├── skills/kerjaan2/        ┐
-├── agents/                 ├ adaptor Claude Code: skill mandor, tiga pembungkus tipis, dua hook
+├── agents/                 ├ adaptor Claude Code: skill mandor, tiga pembungkus tipis, tiga hook
 ├── hooks/                  ┘
 ├── .claude-plugin/
 ├── docs/                   cetak biru ini
@@ -424,7 +424,7 @@ Skill, teks peran, CLI, dan viewer berbahasa Inggris; prosa tiket mengikuti
 
 | Tahap | Isi | Dicoba dengan |
 |---|---|---|
-| 1. Inti | Format, `k2` (papan, catatan, `start`/`submit`/`verdict`/`land` untuk satu tiket), skill, tiga agen, empat hook, tiga jalur | Beberapa tiket nyata, satu per satu, di satu proyek |
+| 1. Inti | Format, `k2` (papan, catatan, `start`/`submit`/`verdict`/`land` untuk satu tiket), skill, tiga agen, tiga hook, tiga jalur | Beberapa tiket nyata, satu per satu, di satu proyek |
 | 2. Paralel | Beberapa tiket bersamaan, mode integrasi, slot uji, `doctor`, kotak masuk lengkap | Satu batch 3–4 tiket yang sengaja bertumpuk berkas |
 | 3. Viewer | Mockup → Ruang kendali, Papan, Riwayat | Memantau batch Tahap 2 dari HP |
 
@@ -553,3 +553,35 @@ Semuanya diperbaiki di 0.10.0 atas keputusan pemilik. Yang mengubah rancangan:
 Yang tetap berbasis kepercayaan, dengan sadar: bukti pada `k2 check`, baris
 "Red-proof" di jalur `strict` (peninjau `strict` merusak ulang sendiri), dan
 kebenaran ID agen yang dicatat. CLI tidak bisa mengenali siapa pemanggilnya.
+
+### Pemeriksaan ulang atas 0.10.0 (12 November 2026)
+
+Peninjau yang sama memeriksa ulang. Dari 19 temuan pertama: 9 teratasi, 10
+teratasi sebagian; dan perbaikan 0.10.0 sendiri memasukkan cacat baru. Yang
+diubah di 0.11.0:
+
+- **Berkas tak terlacak tidak pernah ditebak sebagai "sisa uji".** Aturan
+  artefak di 0.10.0 bisa menyembunyikan berkas sumber yang lupa di-commit,
+  sehingga main menjadi merah. Sekarang berkas tak terlacak selalu menghentikan
+  serah-terima; proyek yang ujinya meninggalkan berkas harus mengabaikannya
+  lewat `.gitignore`.
+- **Setiap kali tiket kembali, langkahnya baru.** Peninjau yang dikirim untuk
+  langkah sebelumnya tidak lagi dihitung, sehingga putusan tidak bisa
+  diberikan atas isi yang belum ia lihat.
+- **Segel kontrak mencakup seluruh kontrak**, termasuk tanda batal; centang
+  hanya dihitung bila dibuat `k2 check`.
+- **Jalur hanya turun atas kata pemilik** (`k2 set ... --force`).
+- **Tiket yang berhenti di depan antrean merge menepi.**
+- **Kontrak yang berubah saat ditinjau** muncul di papan untuk pemilik;
+  `k2 amend` mengembalikan tiket ke pengerjanya.
+- Commit merge berjalan di luar kunci papan; hook pencatat agen membaca tiket
+  dari "Ticket <id>" dan ID agen dari kolom jawabannya.
+
+**Yang tetap berbasis kepercayaan, dan batasnya.** CLI tidak tahu siapa
+pemanggilnya. Seorang pengerja yang melanggar instruksinya masih bisa
+menjalankan perintah milik pemilik atau mandor: `k2 amend`, `k2 answer` atas
+pertanyaannya sendiri, `k2 agent <id> reviewer <apa saja>` lalu `k2 verdict`,
+`k2 set ... --force`, `k2 accept`. Gerbang-gerbang itu menahan kekeliruan,
+bukan kesengajaan. Penegakan yang sungguh-sungguh hanya mungkin di luar CLI
+(hook yang menolak perintah itu bila dipanggil dari dalam subagen), dan itu
+belum dibangun.

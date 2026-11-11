@@ -63,6 +63,11 @@ below.
 built.** The answer is under `Questions` below. Do not start over: change what
 the answer changes, then go through the steps below from step 2.
 
+@@ mode:amended
+**The owner changed what this ticket asks for.** The contract below is the new
+one; the reason is the last line under `Decisions`. Do not start over: build
+what changed, then go through the steps below from step 2.
+
 @@ mode:resubmit
 **This ticket's branch changed after it was handed over.** Commits were added
 that nobody judged, so it came back. Nothing lands that was not handed over:
@@ -70,7 +75,7 @@ look at what was added (`git -C "{wt}" log --oneline -5`), make sure it
 belongs to this ticket and nothing else, then go through the steps below from
 step 2 and submit again.
 
-@@ mode:first,mode:answered,mode:resubmit
+@@ mode:first,mode:answered,mode:resubmit,mode:amended
 Steps:
 
 1. Read the project's own rules in the worktree (`CLAUDE.md`, `AGENTS.md`),

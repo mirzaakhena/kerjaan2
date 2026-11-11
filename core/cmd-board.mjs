@@ -41,7 +41,8 @@ export function init(argv) {
       'worktree_setup:',
       'worktree_teardown:',
       '',
-      '# Tickets worked side by side; true when test runs in different worktrees share nothing.',
+      '# Tickets somebody is working on at once (one that only waits for the owner uses no room);',
+      '# and true when test runs in different worktrees share nothing.',
       'max_parallel: 3',
       'parallel_tests: false',
       '',
@@ -113,10 +114,12 @@ function checkEnums(fm) {
 }
 
 export function set(argv) {
-  const { pos } = parseArgs(argv);
+  const { pos, opt } = parseArgs(argv);
   const board = B.openBoard();
+  const rank = { light: 0, standard: 1, strict: 2 };
   B.withLock(board, 'board', () => {
     const t = B.load(B.findTicket(board, pos[0]));
+    const laneBefore = t.fm.lane;
     for (const pair of pos.slice(1)) {
       const eq = pair.indexOf('=');
       if (eq < 0) die(`expected key=value, got "${pair}"`);
@@ -131,6 +134,8 @@ export function set(argv) {
       }
     }
     checkEnums(t.fm);
+    if (rank[t.fm.lane] < rank[laneBefore] && !opt.force) die(`${laneBefore} → ${t.fm.lane} lowers the lane, and with it who looks at this ticket. Only the owner lowers one: --force, on their word.`);
+    if (rank[t.fm.lane] < rank[laneBefore]) t.record.decisions.push(T.makeEntry(`${now().slice(0, 10)} lane lowered from ${laneBefore} to ${t.fm.lane} on the owner's word`));
     B.save(t);
     console.log(`${t.id} updated: ${pos.slice(1).join(' ')}`);
   });
@@ -337,7 +342,8 @@ export function inboxItems(board) {
     const st = B.getState(board, t.id);
     if (B.isPassed(board, t) && st.held) add('not merged', '', `held: ${st.held}`);
     if (rejectedTwice(st) && t.status === 'in_progress') add('rejected twice', '', 'decide: another fix, or accept with a follow-up');
-    if (st.stopped) add('stopped', '', `its worker stopped: ${st.stopped}`);
+    if (st.stopped) add('stopped', '', `its ${st.stoppedRole || 'worker'} stopped: ${st.stopped}`);
+    if (IN_FLIGHT.includes(t.status) && B.contractMoved(board, t)) add('contract changed', '', 'what it asks for was edited after work started: confirm the change (amend) or restore the wording');
     for (const role of ['worker', 'reviewer']) {
       const stuck = stuckFor(board, t, st, role);
       if (stuck !== null) add('stuck', '', `${role} ${st[role].agent} has been on it for ${stuck}m without handing over`);
@@ -346,7 +352,7 @@ export function inboxItems(board) {
   return items;
 }
 
-const KIND_ORDER = ['blocking question', 'stopped', 'stuck', 'rejected twice', 'not merged', 'question', 'manual check', 'assumption', 'follow-up'];
+const KIND_ORDER = ['blocking question', 'contract changed', 'stopped', 'stuck', 'rejected twice', 'not merged', 'question', 'manual check', 'assumption', 'follow-up'];
 
 export function inbox() {
   const board = B.openBoard();
@@ -370,10 +376,13 @@ function modelFor(board, role, lane) {
   return m && m !== 'inherit' ? m : null;
 }
 
+// A step is one stretch of work one agent was sent for. Every way a ticket
+// can come back (a rejection, an answer, an amendment, a hand-over repeated)
+// makes a new step, so nobody sent for an earlier one still counts.
 export function stepOf(t, st) {
   if (t.status === 'review' && st.passed) return `integrate:${st.integrations || 1}:${st.needs || 'worker'}`;
-  if (t.status === 'review') return `review:${st.round || 1}`;
-  return `${st.mode || 'first'}:${st.round || 1}:${st.answers || 0}`;
+  if (t.status === 'review') return `review:${st.round || 1}:${st.resubmits || 0}:${st.answers || 0}`;
+  return `${st.mode || 'first'}:${st.round || 1}:${st.answers || 0}:${st.resubmits || 0}`;
 }
 
 // Asked of the owner again after every further rejection, not only the second.
@@ -381,6 +390,8 @@ export const rejectedTwice = (st) => (st.rejections || 0) >= 2 && (st.owner_ok_r
 
 // A ticket that only waits for the owner uses no room: nobody works on it.
 export const waitsForOwner = (st) => !!((st.passed && st.held) || st.stopped || rejectedTwice(st));
+
+const ownerLine = (t, st) => `OWNER  ${t.id} its ${st.stoppedRole || 'worker'} stopped: ${st.stopped}\n       Owner decides: try again (\`${K()} retry ${t.id}\`), or drop it (\`${K()} move ${t.id} cancel --force --why "<reason>"\`).`;
 
 export function occupying(board) {
   return B.loadAll(board, IN_FLIGHT).tickets.filter((t) => !waitsForOwner(B.getState(board, t.id)));
@@ -439,6 +450,7 @@ export function nextActions(board) {
 
   for (const t of unmerged) {
     const st = B.getState(board, t.id);
+    if (st.stopped) out.push(ownerLine(t, st));
     if (!st.held) continue;
     const qs = t.record.questions.filter((q) => q.status === 'blocking');
     if (qs.length) for (const q of qs) out.push(`OWNER  ${t.id} ${q.key}: ${q.text}\n       it was built on the recommended option, passed, and is held before the merge. Record the answer: ${K()} answer ${t.id} ${q.key} "<answer>" --agrees|--differs`);
@@ -459,8 +471,10 @@ export function nextActions(board) {
     for (const q of t.record.questions.filter((x) => x.status === 'blocking')) {
       out.push(`OWNER  ${t.id} ${q.key}: ${q.text}\n       its worker builds the recommended option meanwhile; the ticket is held before it merges. Record the answer: ${K()} answer ${t.id} ${q.key} "<answer>" --agrees|--differs`);
     }
-    if (st.stopped) {
-      out.push(`OWNER  ${t.id} its worker stopped: ${st.stopped}\n       Owner decides: try again (\`${K()} retry ${t.id}\`), or drop it (\`${K()} move ${t.id} cancel --force --why "<reason>"\`).`);
+    if (B.contractMoved(board, t)) {
+      out.push(`OWNER  ${t.id} what it asks for was edited after work started. Put the change to the owner: confirm it (\`${K()} amend ${t.id} --why "<their words>"\`, which sends it back to its worker), or restore the wording.`);
+    } else if (st.stopped) {
+      out.push(ownerLine(t, st));
     } else if (t.status === 'review') {
       out.push(...dispatchLines(board, t, 'reviewer', st, (st.round || 1) > 1 ? `the fix is in; round ${st.round}` : 'review it'));
     } else if (rejectedTwice(st)) {
@@ -470,6 +484,7 @@ export function nextActions(board) {
         fix: 'the reviewer sent it back; findings are in the ticket',
         answered: 'the owner answered its question',
         resubmit: 'its branch changed after it was handed over: check it and hand it over again',
+        amended: 'the owner changed what it asks for',
       }[st.mode] || 'work the ticket';
       out.push(...dispatchLines(board, t, 'worker', st, why));
     }
@@ -584,7 +599,7 @@ export function retry(argv) {
   B.withLock(board, 'board', () => {
     const t = B.findTicket(board, parseArgs(argv).pos[0]);
     const st = B.getState(board, t.id);
-    B.setState(board, t.id, { owner_ok_rejections: st.rejections || 0, stopped: null });
+    B.setState(board, t.id, { owner_ok_rejections: st.rejections || 0, stopped: null, stoppedRole: null, ...(st.passed ? { passedAt: Date.now() } : {}) });
     B.log(board, t.id, 'retry', { by: 'owner' });
     console.log(`${t.id}: another try, on the owner's word. Run \`${K()} next\`.`);
   });
@@ -601,7 +616,7 @@ export function release(argv) {
     const t = B.findTicket(board, pos[0]);
     const st = B.getState(board, t.id);
     if (!st[role]?.agent) die(`${t.id} has no ${role} recorded`);
-    B.setState(board, t.id, { [role]: { ...st[role], ended: true }, ...(opt.stopped ? { stopped: String(opt.stopped) } : {}) });
+    B.setState(board, t.id, { [role]: { ...st[role], ended: true }, ...(opt.stopped ? { stopped: String(opt.stopped), stoppedRole: role } : {}) });
     B.log(board, t.id, 'released', { role, agent: st[role].agent, stopped: opt.stopped || undefined });
     console.log(opt.stopped
       ? `${t.id}: its ${role} stopped (${opt.stopped}). The ticket waits for the owner and uses no room meanwhile.`
@@ -639,7 +654,11 @@ export function doctor(argv) {
       }
     } else console.log(`FOUND  ${text}${fix ? '   (--fix removes it)' : ''}`);
   };
-  const live = (t) => t && IN_FLIGHT.includes(t.status);
+  const unlanded = (t) => {
+    const br = t && t.status === 'done' && B.branchOf(board, t.id);
+    return !!br && gitTry(board.root, 'merge-base', '--is-ancestor', br, board.settings.main_branch).code !== 0;
+  };
+  const live = (t) => t && (IN_FLIGHT.includes(t.status) || unlanded(t));
 
   gitTry(board.root, 'worktree', 'prune');
   if (fs.existsSync(board.wtRoot)) {

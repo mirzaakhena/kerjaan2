@@ -8,7 +8,7 @@ It is a rewrite of [kerjaan](https://github.com/mirzaakhena/kerjaan) from what
 that board taught over some 900 tickets. The design and its reasons are in
 [`docs/blueprint.md`](docs/blueprint.md) (Indonesian).
 
-Status: **stage 1 of 3** — the core (board, `k2`, skill, three agents, two
+Status: **stage 1 of 3** — the core (board, `k2`, skill, three agents, three
 hooks) works and is being tried on real tickets. The viewer is stage 3.
 
 ## The board

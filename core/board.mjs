@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { die, run, gitTry, now, sleep, idStamp } from './util.mjs';
 import * as T from './ticket.mjs';
 
@@ -362,6 +363,17 @@ export const isPassed = (board, t) => t.status === 'review' && !!getState(board,
 export function mergeQueue(board) {
   return listTickets(board, ['review'])
     .map((t) => ({ ...t, st: getState(board, t.id) }))
-    .filter((t) => t.st.passed && !t.st.held)
+    .filter((t) => t.st.passed && !t.st.held && !t.st.stopped)
     .sort((a, b) => (a.st.passedAt || 0) - (b.st.passedAt || 0) || a.id.localeCompare(b.id));
+}
+
+// ----- the contract does not move under the work -----
+
+export const contractPrint = (contract) => createHash('sha1').update(T.contractText(contract)).digest('hex').slice(0, 12);
+
+// True when what the ticket asks for differs from what it asked when work
+// started, or when the owner (or `k2 void`) last sealed a change.
+export function contractMoved(board, t) {
+  const sealed = readLog(board, t.id).reverse().find((e) => e.contract)?.contract;
+  return !!sealed && sealed !== contractPrint(t.contract);
 }

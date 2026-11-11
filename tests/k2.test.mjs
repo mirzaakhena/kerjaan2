@@ -213,7 +213,9 @@ test('two tickets side by side: the first lands at once, the second is brought u
   assert.match(r.kIn(wb, 'submit', b).out, /INTEGRATED .*A reviewer looks at what you changed/s);
   assert.match(r.k('next').out, /reviewer .*look only at what its worker changed/);
   const rb = r.k('brief', b, '--role', 'reviewer').out;
-  assert.match(rb, /Only the conflict resolution/);
+  assert.match(rb, /Only what changed after this ticket passed/);
+  assert.match(rb, /log --first-parent --cc -p [0-9a-f]{12}\.\.HEAD/, 'it reads from the commit it judged');
+  assert.ok(!rb.includes('per `Done when` line'), 'no per-criterion template here');
   assert.ok(!rb.includes('Depth: standard'), 'one depth, not two');
   assert.equal(r.k('verdict', b, 'pass').code, 1, 'say what was checked');
   r.k('verdict', b, 'pass', '--note', 'kedua maksud terjaga');
@@ -826,9 +828,9 @@ test('settings are validated: a YAML list is read, a bad number or an unknown ke
   assert.match(r.k('status').out, /unknown setting "max_paralel"/);
 });
 
-test('strict_paths globs work as in .gitignore', async () => {
-  const { globToRe } = await import('../core/cmd-work.mjs');
-  const hit = (g, f) => globToRe(g).test(f);
+test('strict_paths globs: the common shapes', async () => {
+  const { globHit } = await import('../core/cmd-work.mjs');
+  const hit = globHit;
   assert.ok(hit('*.sql', 'db/m.sql') && hit('*.sql', 'm.sql'));
   assert.ok(hit('auth/', 'src/auth/login.txt') && hit('auth/', 'auth/x'));
   assert.ok(hit('src/pay/**', 'src/pay/a/b.js') && !hit('src/pay/**', 'lib/src/pay/a.js'));
@@ -848,7 +850,7 @@ test('every checklist line counts however it is typed, and the contract cannot c
   const now = fs.readFileSync(r.k('show', id, '--path').out.trim(), 'utf8');
   fs.writeFileSync(r.k('show', id, '--path').out.trim(), now.replace('- [x] lima\n', ''));
   const refused = r.kIn(wt, 'submit', id);
-  assert.match(refused.out, /Request or Done when was edited after work started/);
+  assert.match(refused.out, /edited after work started/);
   assert.match(r.k('amend', id, '--why', 'butir lima dibatalkan Mirza').out, /judged against/);
   assert.match(r.kIn(wt, 'submit', id).out, /SUBMITTED/);
 });
@@ -883,18 +885,28 @@ test('every rejection past the second is put to the owner again', () => {
   assert.match(r.k('next').out, /OWNER  .* was sent back 3 times/, 'retry is one more try, not a licence to loop');
 });
 
-test('files a test run leaves behind do not derail the handover, the review or the merge', () => {
-  const r = repo({ test: 'node check.js && echo ran > laporan.out' });
-  const id = ticket(r, 'Uji meninggalkan berkas');
+test('an untracked file is never guessed to be a test artefact: the handover waits until git ignores it or holds it', () => {
+  const r = repo({ test: 'node check.js && echo ran > laporan.out && test -f pembantu.txt' });
+  const id = ticket(r, 'Uji meninggalkan berkas', { lane: 'light' });
   r.k('start', id);
   const wt = work(r, id, 'x.txt', 'x\n');
+  fs.writeFileSync(path.join(wt, 'pembantu.txt'), 'dibutuhkan uji, belum di-commit\n');
   const out = r.kIn(wt, 'submit', id);
-  assert.match(out.out, /leaves files behind .*laporan\.out/);
-  assert.match(out.out, /It is in review/);
-  assert.match(r.k('brief', id, '--role', 'reviewer').out, /passed at .* on exactly the content under review/);
-  assert.match(r.k('verdict', id, 'pass', '--note', '1: ok').out, /PASSED/);
+  assert.equal(out.code, 1);
+  assert.match(out.out, /uncommitted changes[\s\S]*pembantu\.txt/);
+  sh(wt, 'git', ['add', 'pembantu.txt']);
+  sh(wt, 'git', ['commit', '-qm', 'pembantu']);
+  const again = r.kIn(wt, 'submit', id);
+  assert.equal(again.code, 1);
+  assert.match(again.out, /test run left files that git does not ignore: laporan\.out[\s\S]*\.gitignore/);
+  assert.equal(statusOf(r, id), 'in_progress');
+  fs.writeFileSync(path.join(wt, '.gitignore'), 'laporan.out\n');
+  sh(wt, 'git', ['add', '.gitignore']);
+  sh(wt, 'git', ['commit', '-qm', 'abaikan laporan']);
+  assert.match(r.kIn(wt, 'submit', id).out, /SUBMITTED/);
   assert.match(r.k('land', id).out, /LANDED/);
-  assert.ok(!fs.existsSync(path.join(r.dir, 'laporan.out')));
+  assert.ok(fs.existsSync(path.join(r.dir, 'pembantu.txt')), 'what the tests needed is in main');
+  assert.equal(sh(r.dir, 'sh', ['-c', 'node check.js && test -f pembantu.txt']).code, 0);
 });
 
 test('a new source file that was never added still stops the handover', () => {
@@ -988,4 +1000,116 @@ test('a ticket taken out of flight forgets its agents', () => {
   r.k('doctor', '--fix');
   r.k('start', id);
   assert.match(r.k('next').out, /DISPATCH worker/);
+});
+
+// ----- found by the second round of the independent review (0.10.0) -----
+
+test('after a ticket comes back in the same round, its earlier reviewer no longer counts: a new one is sent, and nobody else can pass it', () => {
+  const r = repo();
+  const id = ticket(r, 'Kembali di putaran yang sama');
+  r.k('start', id);
+  r.k('agent', id, 'worker', 'w');
+  const wt = work(r, id, 'x.txt', 'x\n');
+  r.kIn(wt, 'submit', id);
+  r.k('verdict', id, 'pass', '--note', '1: ok');
+  fs.writeFileSync(path.join(wt, 'tambahan.txt'), 'belum dinilai\n');
+  sh(wt, 'git', ['add', '-A']);
+  sh(wt, 'git', ['commit', '-qm', 'sesudah putusan']);
+  assert.equal(r.k('land', id).code, 3);
+  r.kIn(wt, 'submit', id);
+  const next = r.k('next').out;
+  assert.match(next, /RESUME .* reviewer rv/, 'the reviewer is sent again, not waited for');
+  assert.ok(!/WAIT .* reviewer/.test(next), next);
+  assert.match(r.kIn(r.dir, 'verdict', id, 'pass', '--note', '1: ok').out, /no reviewer was sent for this step/);
+  assert.equal(statusOf(r, id), 'review');
+  assert.ok(!fs.existsSync(path.join(r.dir, 'tambahan.txt')));
+});
+
+test('a void mark or a tick typed into the file by hand does not get past the gates', () => {
+  const r = repo();
+  const id = ticket(r, 'Diketik tangan', { lane: 'light', items: ['Baris baru tampil', 'Hal sulit yang tidak dikerjakan'] });
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n');
+  const file = r.k('show', id, '--path').out.trim();
+  const orig = fs.readFileSync(file, 'utf8');
+  fs.writeFileSync(file, orig.replace('- [ ] Hal sulit yang tidak dikerjakan', '- [ ] ~~Hal sulit yang tidak dikerjakan~~ — void: tidak perlu'));
+  assert.match(r.kIn(wt, 'submit', id).out, /edited after work started/);
+  fs.writeFileSync(file, orig.replace('- [ ] Hal sulit yang tidak dikerjakan', '- [x] Hal sulit yang tidak dikerjakan'));
+  assert.match(r.kIn(wt, 'submit', id).out, /item 2 was ticked by hand/);
+  assert.equal(statusOf(r, id), 'in_progress');
+});
+
+test('a lane is lowered only on the owner\'s word', () => {
+  const r = repo();
+  const id = ticket(r, 'Jalur ketat', { lane: 'strict' });
+  assert.match(r.k('set', id, 'lane=light').out, /lowers the lane/);
+  assert.match(fs.readFileSync(r.k('show', id, '--path').out.trim(), 'utf8'), /^lane: strict$/m);
+  assert.equal(r.k('set', id, 'lane=light', '--force').code, 0);
+  assert.equal(r.k('set', id, 'lane=strict').code, 0, 'raising needs nothing');
+});
+
+test('a stopped ticket at the front of the merge queue steps aside, and the queue moves on', () => {
+  const r = repo();
+  const ids = ['A', 'B', 'C'].map((x) => ticket(r, `Antre ${x}`, { lane: 'light' }));
+  for (const id of ids) r.k('start', id);
+  const wts = ids.map((id, i) => work(r, id, i === 2 ? 'c.txt' : 'app.txt', `baris ${i}\n`));
+  ids.forEach((id, i) => r.kIn(wts[i], 'submit', id));
+  const [a, b, c] = ids;
+  r.k('land', a);
+  assert.equal(r.k('land', b).code, 3);
+  r.k('agent', b, 'worker', 'wb');
+  assert.match(r.k('release', b, 'worker', '--stopped', 'konflik tidak bisa diselesaikan').out, /waits for the owner/);
+  const next = r.k('next').out;
+  assert.match(next, new RegExp(`OWNER  ${b} its worker stopped: konflik tidak bisa diselesaikan`));
+  assert.match(next, new RegExp(`LAND   ${c}`));
+  assert.match(r.k('land', c).out, /LANDED/);
+  r.k('retry', b);
+  assert.match(r.k('next').out, new RegExp(`RESUME ${b} worker wb`));
+});
+
+test('a contract changed during review is put to the owner, and an amendment sends the ticket back to its worker', () => {
+  const r = repo();
+  const id = ticket(r, 'Kontrak berubah saat ditinjau');
+  r.k('start', id);
+  r.k('agent', id, 'worker', 'w');
+  const wt = work(r, id, 'x.txt', 'x\n');
+  r.kIn(wt, 'submit', id);
+  const file = r.k('show', id, '--path').out.trim();
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('## Done when\n', '## Done when\n- [ ] Butir baru dari pemilik\n'));
+  assert.match(r.k('verdict', id, 'pass', '--note', '1: ok', '--note', '2: ok').out, /edited after work started/);
+  const next = r.k('next').out;
+  assert.match(next, new RegExp(`OWNER  ${id} .*edited after work started`));
+  assert.ok(!/(WAIT|RESUME|DISPATCH) .* reviewer/.test(next), next);
+  assert.match(r.k('inbox').out, /contract changed \(1\)/);
+  assert.match(r.k('amend', id, '--why', 'pemilik menambah satu butir').out, /back with its worker/);
+  assert.equal(statusOf(r, id), 'in_progress');
+  assert.match(r.k('next').out, /RESUME .* worker w — the owner changed what it asks for/);
+  assert.match(r.k('brief', id, '--role', 'worker').out, /mode: amended/);
+});
+
+test('a verdict can hold a note for every criterion however many there are; strict_paths follow .gitignore', async () => {
+  const r = repo();
+  const items = Array.from({ length: 16 }, (_, i) => `Butir ${i + 1}`);
+  const id = ticket(r, 'Enam belas butir', { items });
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n', { checks: items.map((_, i) => i + 1) });
+  r.kIn(wt, 'submit', id);
+  const notes = items.flatMap((_, i) => ['--note', `${i + 1}: ok`]);
+  assert.match(r.k('verdict', id, 'pass', ...notes).out, /PASSED/);
+  const { globHit } = await import('../core/cmd-work.mjs');
+  assert.ok(globHit('pay', 'src/pay/x.js') && globHit('/pay', 'pay/x') && globHit('pay/*', 'pay/a/b') && !globHit('/pay', 'src/pay/x'));
+  assert.ok(globHit('*.sql', 'db/m.sql') && globHit('auth/', 'src/auth/login.txt') && !globHit('auth/', 'src/auth') && !globHit('*.sql', 'm.sqlite'));
+});
+
+test('the agent-sent hook binds the ticket the prompt is about, not the first number in it', () => {
+  const r = repo();
+  const a = ticket(r, 'Tiket A');
+  const b = ticket(r, 'Tiket B');
+  r.k('start', a);
+  r.k('start', b);
+  r.k('agent', a, 'worker', 'pekerja-a');
+  sh(r.dir, K2, ['hook', 'agent-sent'], JSON.stringify({ cwd: r.dir, tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:worker', prompt: `Lessons from ${a} apply. Ticket ${b}. Repo x. Run k2 brief ${b} --role worker.` }, tool_response: { content: 'agent id: palsu999', agentId: 'pekerja-b' } }));
+  const next = r.k('next').out;
+  assert.match(next, new RegExp(`WAIT   ${a} worker pekerja-a`));
+  assert.match(next, new RegExp(`WAIT   ${b} worker pekerja-b`));
 });

@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { die, git, gitTry, run, now, today, parseArgs, slugify, fmtDuration } from './util.mjs';
 import * as B from './board.mjs';
 import * as T from './ticket.mjs';
-import { readiness, occupying } from './cmd-board.mjs';
+import { readiness, occupying, stepOf } from './cmd-board.mjs';
 import { lessons, holdReason } from './cmd-record.mjs';
 
 const K = () => B.k2Name();
@@ -15,16 +15,12 @@ const NO_BOARD = ':(exclude).kerjaan2';
 
 // ----- the contract does not move under the work -----
 
-const contractPrint = (contract) => createHash('sha1').update(T.contractText(contract)).digest('hex').slice(0, 12);
+const contractPrint = B.contractPrint;
+const MOVED = (id) => `its Request, Done when or another part of what it asks for was edited after work started. Only the owner changes what a ticket in flight asks for: the foreman puts it to them and runs \`${K()} amend ${id} --why "<their words>"\`; or the wording is restored`;
+const contractMoved = (board, t) => (B.contractMoved(board, t) ? MOVED(t.id) : null);
 
-// What the ticket asked for when work started (or when the owner last
-// confirmed a change), against what its file says now.
-function contractMoved(board, t) {
-  const sealed = B.readLog(board, t.id).reverse().find((e) => e.contract)?.contract;
-  if (!sealed || sealed === contractPrint(t.contract)) return null;
-  return `its Request or Done when was edited after work started. Only the owner changes what a ticket in flight asks for: put the change to them, then \`${K()} amend ${t.id} --why "<their words>"\`; or restore the wording`;
-}
-
+// The owner changes what a ticket in flight asks for. What was built or
+// judged against the old wording goes back to its worker.
 export function amend(argv) {
   const { pos, opt } = parseArgs(argv);
   const board = B.openBoard();
@@ -34,7 +30,11 @@ export function amend(argv) {
     t.record.decisions.push(T.makeEntry(`${today()} the owner changed what this ticket asks for: ${opt.why}`));
     B.save(t);
     B.log(board, t.id, 'amended', { contract: contractPrint(t.contract) });
-    console.log(`${t.id}: the contract as it stands now is the one it is judged against.`);
+    if (!['in_progress', 'review'].includes(t.status)) return console.log(`${t.id}: the contract as it stands now is the one it is judged against.`);
+    const st = B.getState(board, t.id);
+    if (t.status === 'review') B.moveFile(board, t, 'in_progress');
+    B.setState(board, t.id, { mode: 'amended', answers: (st.answers || 0) + 1, passed: false, passedAt: null, needs: null, held: null, judged: null });
+    console.log(`${t.id}: the contract as it stands now is the one it is judged against. It is back with its worker, who builds what changed and hands it over again. Run \`${K()} next\`.`);
   });
 }
 
@@ -121,17 +121,11 @@ const tail = (text, n) => text.split('\n').filter((l) => l.trim()).slice(-n).joi
 
 // ----- tests -----
 
-// Uncommitted changes in a worktree, leaving out the files its own test run
-// leaves behind (recorded when a run created them): those are not the
-// ticket's, and they must not make every later step fail.
+// Uncommitted changes in a worktree: anything git would see, new files
+// included. k2 never guesses that an untracked file "is only a test
+// artefact": a source file somebody forgot to add looks exactly the same.
 function dirt(board, id, wt) {
-  const left = B.getState(board, id).artefacts || [];
-  return gitTry(wt, 'status', '--porcelain').out.split('\n').filter((l) => {
-    if (!l) return false;
-    if (!l.startsWith('?? ')) return true;
-    const p = l.slice(3).replace(/^"|"$/g, '');
-    return !left.some((a) => p === a || p.startsWith(a.endsWith('/') ? a : a + '/') || a.startsWith(p));
-  }).join('\n');
+  return gitTry(wt, 'status', '--porcelain').out;
 }
 
 const untracked = (wt) => gitTry(wt, 'status', '--porcelain').out.split('\n').filter((l) => l.startsWith('?? ')).map((l) => l.slice(3).replace(/^"|"$/g, ''));
@@ -177,12 +171,8 @@ function runTests(board, t, wt, by) {
     return { exit: r.status ?? 1, seconds: (Date.now() - t0) / 1000 };
   };
   const res = board.settings.parallel_tests ? go(null) : B.withLock(board, 'test', go, { waitMs: 3 * 3600 * 1000 });
-  // What the run left behind that was not there before is the run's, not the ticket's.
+  // What the run left behind that was not there before: reported, never hidden.
   const left = untracked(wt).filter((p) => !before.has(p));
-  if (left.length) {
-    const known = B.getState(board, t.id).artefacts || [];
-    B.setState(board, t.id, { artefacts: [...new Set([...known, ...left])] });
-  }
   const after = fingerprint(board, t.id, wt);
   const output = fs.readFileSync(outFile, 'utf8');
   const stable = fp && fp === after;
@@ -222,16 +212,25 @@ export function test(argv) {
 
 // ----- submit -----
 
-// As in .gitignore: a pattern with no slash inside it (`*.sql`, `auth/`)
-// matches at any depth; one with a slash is taken from the repo root.
-export function globToRe(glob) {
+// As in .gitignore. A pattern with no slash inside it (`*.sql`, `pay`,
+// `auth/`) matches at any depth; one with a slash, or a leading one, is taken
+// from the repo root. A pattern that matches a folder covers all in it; one
+// ending in a slash matches folders only.
+export function globHit(glob, file) {
   let g = glob.trim().replace(/^\.\//, '');
-  const anywhere = !g.replace(/\/$/, '').includes('/');
+  // `dir/**` is `dir/`: the folder, and with it all that is in it.
+  const dirOnly = /\/(\*\*)?$/.test(g);
+  g = g.replace(/\/\*\*$/, '').replace(/\/+$/, '');
+  const anchored = g.includes('/');
   g = g.replace(/^\//, '');
-  if (g.endsWith('/')) g += '**';
-  if (anywhere) g = `**/${g}`;
-  const re = g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '(?:.*/)?');
-  return new RegExp(`^${re}`.replace(/\(\?:\.\*\/\)\?$/, '.*') + '$');
+  const body = g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '(?:.*/)?');
+  const re = new RegExp(`^${anchored ? '' : '(?:.*/)?'}${body}$`);
+  const parts = file.split('/');
+  for (let i = 1; i <= parts.length; i++) {
+    if (dirOnly && i === parts.length) break; // the whole path is a file
+    if (re.test(parts.slice(0, i).join('/'))) return true;
+  }
+  return false;
 }
 
 function changedFiles(wt, main) {
@@ -315,7 +314,11 @@ export function submit(argv) {
         return;
       }
       ran = `passed in ${fmtDuration(r.seconds)}`;
-      if (r.left.length) console.log(`note: the test run leaves files behind that git does not ignore (${r.left.slice(0, 5).join(', ')}). k2 leaves them out of its checks; add them to .gitignore.`);
+      if (r.left.length) {
+        console.log(`NOT SUBMITTED ${t.id}: the tests passed, but the test run left files that git does not ignore: ${r.left.slice(0, 8).join(', ')}.\nAs long as they show up as untracked, nobody can tell them from a source file that was never added. Add them to .gitignore, commit that on this branch, and submit again.`);
+        process.exitCode = 1;
+        return;
+      }
     }
   }
   const head = git(wt, 'rev-parse', '--short', 'HEAD');
@@ -331,11 +334,19 @@ export function submit(argv) {
     const fresh = B.load(B.findTicket(board, t.id));
     const gaps = [];
     const crit = T.criteria(fresh.contract);
+    // Ticks count only when `k2 check` made them, since the last time a reviewer unticked.
+    const checked = new Set();
+    for (const e of B.readLog(board, t.id)) {
+      if (e.event === 'check') checked.add(e.n);
+      else if (e.event === 'uncheck') checked.delete(e.n);
+      else if (e.event === 'verdict' && e.result === 'reject') for (const n of String(e.failed || '').split(',').map(Number)) checked.delete(n);
+    }
     for (const c of crit) {
       if (c.void) continue;
       if (c.owner) {
         if (!fresh.record.manual.some((m) => m.text.startsWith(`(item ${c.n})`))) gaps.push(`item ${c.n} is the owner's to check: write its steps with \`${K()} manual ${t.id} ${c.n} "<steps>"\``);
       } else if (!c.done) gaps.push(`item ${c.n} is not ticked: \`${K()} check ${t.id} ${c.n} "<what you ran and saw>"\``);
+      else if (!checked.has(c.n)) gaps.push(`item ${c.n} was ticked by hand, with no evidence on record: \`${K()} check ${t.id} ${c.n} "<what you ran and saw>"\``);
     }
     const moved = contractMoved(board, fresh);
     if (moved) gaps.push(moved);
@@ -345,7 +356,7 @@ export function submit(argv) {
     const files = changedFiles(wt, main);
     let lane = fresh.fm.lane;
     let why = '';
-    const hot = files.filter((f) => board.settings.strict_paths.some((g) => globToRe(g).test(f)));
+    const hot = files.filter((f) => board.settings.strict_paths.some((g) => globHit(g, f)));
     if (hot.length && lane !== 'strict') {
       lane = 'strict';
       why = `it changes ${hot.slice(0, 3).join(', ')}, under strict_paths`;
@@ -387,7 +398,6 @@ export function verdict(argv) {
   const notes = (all.note || []).map((n) => String(n).replace(/\s+/g, ' ').trim()).filter(Boolean);
   const noteLimit = result === 'reject' ? 900 : 320;
   for (const n of notes) if (n.length > noteLimit) die(`a note has ${n.length} characters; the limit for a ${result} is ${noteLimit}. Evidence, not a transcript.`);
-  if (notes.length > 14) die('at most 14 notes: one per criterion, one per kind of finding');
   B.withLock(board, 'board', () => {
     const t = B.load(B.findTicket(board, pos[0]));
     const st = B.getState(board, t.id);
@@ -411,10 +421,12 @@ export function verdict(argv) {
       }
     }
     // A verdict comes from the reviewer the foreman sent for this step, not from whoever can type the command.
-    const sent = st.reviewer?.agent && st.reviewer.step === (integration ? `integrate:${st.integrations || 1}:reviewer` : `review:${st.round || 1}`);
+    const sent = st.reviewer?.agent && !st.reviewer.ended && st.reviewer.step === stepOf(t, st);
     if (!sent) die(`no reviewer was sent for this step of ${t.id}. A verdict is the reviewer's alone; a worker never judges its own ticket. (Foreman: dispatch one, then \`${K()} agent ${t.id} reviewer <agentId>\`.)`);
     const moved = contractMoved(board, t);
-    if (moved) die(`${t.id}: ${moved}. Report this in one line instead of a verdict, and end.`);
+    if (moved) die(`${t.id}: ${moved}. There is nothing to judge until then; the board already shows it to the foreman. Report this in one line instead of a verdict, and end.`);
+    const limit = T.criteria(t.contract).length + 6;
+    if (notes.length > limit) die(`at most ${limit} notes: one per criterion, a few for findings`);
     const round = st.round || 1;
     const what = integration ? 'conflict resolution' : `${t.fm.lane}, round ${round}`;
     if (result === 'reject' && !notes.length) die('a rejection says what failed: --note "<kind of mistake, every instance, how you saw it>"');
@@ -525,13 +537,13 @@ export function land(argv) {
 
     // Only what was judged lands. A commit added after the pass was seen by nobody.
     const tip = git(board.root, 'rev-parse', branch);
-    if (st0.judged && tip !== st0.judged) {
+    if (tip !== st0.judged) {
       B.withLock(board, 'board', () => {
         B.moveFile(board, B.findTicket(board, t.id), 'in_progress');
         B.setState(board, t.id, { mode: 'resubmit', resubmits: (st0.resubmits || 0) + 1, passed: false, passedAt: null, needs: null, held: null, judged: null });
-        B.log(board, t.id, 'moved', { to: 'in_progress', why: `the branch changed after it passed (${st0.judged.slice(0, 7)} → ${tip.slice(0, 7)})` });
+        B.log(board, t.id, 'moved', { to: 'in_progress', why: `the branch changed after it passed (${(st0.judged || 'no judged commit on record').slice(0, 7)} → ${tip.slice(0, 7)})` });
       });
-      console.log(`BACK ${t.id}: its branch changed after it passed (judged ${st0.judged.slice(0, 7)}, now ${tip.slice(0, 7)}). Nothing lands that was not handed over and judged: it is in in_progress again. Run \`${K()} next\`.`);
+      console.log(`BACK ${t.id}: its branch changed after it passed (judged ${(st0.judged || 'nothing on record').slice(0, 7)}, now ${tip.slice(0, 7)}). Nothing lands that was not handed over and judged: it is in in_progress again. Run \`${K()} next\`.`);
       process.exitCode = 3;
       return;
     }
@@ -583,6 +595,7 @@ export function land(argv) {
     // The ticket reaches done in the very commit that brings its code into
     // main. If that commit fails, every step taken for it is taken back.
     const undo = [];
+    let message = [];
     try {
       B.withLock(board, 'board', () => {
         t = B.load(B.findTicket(board, t.id));
@@ -602,9 +615,12 @@ export function land(argv) {
         const paths = [`:(glob)${B.BOARD_DIR}/*/${t.id} *`, `${B.BOARD_DIR}/log/${t.id}.jsonl`];
         for (const f of ['queue.yml', 'lessons.md']) if (fs.existsSync(path.join(board.dir, f))) paths.push(`${B.BOARD_DIR}/${f}`);
         git(board.root, 'add', '-A', '--', ...paths);
-        const c = gitTry(board.root, 'commit', '-q', '-m', `${t.id} ${t.title}`, '-m', `Lane ${t.fm.lane}, ${rounds} round${rounds === 1 ? '' : 's'}. Ticket: ${B.BOARD_DIR}/done/${t.id}`);
-        if (c.code !== 0) throw new Error(c.err || c.out || 'git commit failed');
+        message = [`${t.id} ${t.title}`, `Lane ${t.fm.lane}, ${rounds} round${rounds === 1 ? '' : 's'}. Ticket: ${B.BOARD_DIR}/done/${t.id}`];
       });
+      // Outside the board lock: the project's commit hooks may take minutes,
+      // and other agents keep writing their tickets meanwhile.
+      const c = gitTry(board.root, 'commit', '-q', '-m', message[0], '-m', message[1]);
+      if (c.code !== 0) throw new Error(c.err || c.out || 'git commit failed');
     } catch (e) {
       for (const u of undo) {
         try {
@@ -675,7 +691,7 @@ export function brief(argv) {
   if (!theirs) die(`${t.id} is in ${t.status}; there is nothing for a ${role} to do on it. Report that and end.`);
   if (!wt) die(`${t.id} has no worktree. Report that and end; the foreman runs \`${K()} start ${t.id}\`.`);
 
-  const vars = { ...base, id: t.id, wt, branch, test: s.test_command || '(none)' };
+  const vars = { ...base, id: t.id, wt, branch, test: s.test_command || '(none)', judged: (st.judged || `${s.main_branch}`).slice(0, 12) };
   console.log(`# k2 brief — ${role} — ${t.id} "${t.title}"`);
   console.log(`Lane: ${t.fm.lane} · mode: ${mode} · round ${st.round || 1} · ticket prose in ${s.language}`);
   console.log(`Worktree: ${wt}   (branch ${branch}; the main tree ${board.root} is not yours to change)`);

@@ -25,8 +25,14 @@ function boardAt(cwd) {
 // What a session needs to know when it starts, resumes, or was just summarized:
 // the work in flight and its agents live on disk, not in anyone's memory.
 function sessionStart(inp) {
-  const board = boardAt(inp.cwd);
-  if (!board) return;
+  let board;
+  try {
+    board = B.openBoard({ cwd: inp.cwd || process.cwd() });
+  } catch (e) {
+    // A board that exists but cannot be read (bad settings) is worth saying; no board is not.
+    if (/problem|settings/.test(e.message || '')) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: `kerjaan2: the board here cannot be read. ${e.message}` } }));
+    return;
+  }
   const actions = nextActions(board);
   const inbox = inboxItems(board);
   const live = actions.filter((a) => !a.startsWith('START') && !a.startsWith('OWNER'));
@@ -70,7 +76,7 @@ function subagentStop(inp) {
     const k = B.k2Name();
     console.log(JSON.stringify({
       decision: 'block',
-      reason: `Ticket ${id} is still yours and not handed over. Finish it and run \`${k} submit ${id}\`. A decision only the owner can make does not stop you: record it with \`${k} ask ${id} --blocking "<question; options; your recommendation>"\`, build the option you recommended, and submit. Only if the work is truly impossible, report STOPPED — <reason> in one line.`,
+      reason: `Ticket ${id} is still yours and not handed over. Finish it and run \`${k} submit ${id}\`. (If you are bringing main in and cannot tell what another ticket meant, you may end with your NEED line instead: the foreman brings you the answer.) A decision only the owner can make does not stop you: record it with \`${k} ask ${id} --blocking "<question; options; your recommendation>"\`, build the option you recommended, and submit. Only if the work is truly impossible, report STOPPED — <reason> in one line.`,
     }));
     return;
   }
@@ -84,7 +90,9 @@ function agentSent(inp) {
   if (!board) return;
   const ti = inp.tool_input || {};
   const text = String(ti.prompt || ti.message || '');
-  const id = text.match(/\b\d{12}\b/)?.[0];
+  // The ticket the message is about: named as "Ticket <id>", or the only ID in it.
+  const ids = [...new Set(text.match(/\b\d{12}\b/g) || [])];
+  const id = text.match(/\bTicket (\d{12})\b/i)?.[1] || (ids.length === 1 ? ids[0] : null);
   if (!id) return;
   let t;
   try {
@@ -101,8 +109,10 @@ function agentSent(inp) {
     role = ['worker', 'reviewer'].find((r) => st[r]?.agent === agentId) || null;
   } else {
     role = String(ti.subagent_type || '').match(/^kerjaan2:(worker|reviewer)$/)?.[1] || null;
-    const resp = typeof inp.tool_response === 'string' ? inp.tool_response : JSON.stringify(inp.tool_response ?? '');
-    agentId = resp.match(/agent[_ ]?id\\?["':\s]+([A-Za-z0-9_-]{6,})/i)?.[1] || null;
+    // The tool's own field first; its text only when the answer is plain text.
+    const resp = inp.tool_response;
+    if (resp && typeof resp === 'object') agentId = resp.agentId || resp.agent_id || null;
+    else agentId = String(resp ?? '').match(/\bagentId: ([A-Za-z0-9_-]{6,})/)?.[1] || null;
   }
   if (!role || !agentId) return;
   B.withLock(board, 'board', () => bind(board, t, role, agentId));

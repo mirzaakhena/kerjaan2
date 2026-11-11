@@ -152,7 +152,7 @@ export function section(contract, title) {
 // One line of a checklist, however it was typed: "- [ ]", "* [x]", "1. [ ]",
 // "- []", indented. A line the gate could not see would be a criterion
 // nobody has to meet.
-const BOX = /^\s*(?:[-*+]|\d+[.)])\s+\[( |x|X)?\]\s*(.*)$/;
+const BOX = /^\s*(?:[-*+]|\d+[.)])\s*\[([ xX]*)\]\s*(.*)$/;
 
 // The Done when checklist: [{ n, done, owner, void, text }]
 export function criteria(contract) {
@@ -160,7 +160,7 @@ export function criteria(contract) {
   const out = [];
   for (const line of body.split('\n')) {
     const m = line.match(BOX);
-    if (m) out.push({ n: out.length + 1, done: !!m[1] && m[1] !== ' ', owner: /^\(owner\)/i.test(m[2].trim()), void: m[2].trim().startsWith('~~'), text: m[2].trim() });
+    if (m) out.push({ n: out.length + 1, done: /x/i.test(m[1]), owner: /^\(owner\)/i.test(m[2].trim()), void: m[2].trim().startsWith('~~'), text: m[2].trim() });
   }
   return out;
 }
@@ -174,7 +174,7 @@ function rewriteCriterion(contract, n, fn) {
     const m = inside && line.match(BOX);
     if (m && ++seen === n) {
       hit = true;
-      return fn(m[2].trim(), !!m[1] && m[1] !== ' ');
+      return fn(m[2].trim(), /x/i.test(m[1]));
     }
     return line;
   });
@@ -192,11 +192,14 @@ export function voidCriterion(contract, n, reason) {
   });
 }
 
-// What a ticket asks for, reduced to what must not change under the work:
-// the Request and each criterion's wording. Ticks and void marks are left out.
+// What a ticket asks for, as it must not change under the work: the whole
+// contract, with only the ticks left out. A void mark is part of it, so one
+// typed in by hand breaks the seal; `k2 void` seals again itself.
 export function contractText(contract) {
-  const crit = criteria(contract).map((c) => c.text.replace(/^~~(.*?)~~ — void: .*$/, '$1').trim());
-  return JSON.stringify([(section(contract, 'Request') || '').replace(/\s+/g, ' ').trim(), crit]);
+  return contract.split('\n').map((line) => {
+    const m = line.match(BOX);
+    return m ? `- [ ] ${m[2].trim()}` : line.trimEnd();
+  }).join('\n').trim();
 }
 
 export function template(type) {

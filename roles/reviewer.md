@@ -67,23 +67,29 @@ mistake elsewhere; criteria whose code changed since the commit you judged
 whose code is untouched is carried — say so on its line.
 
 @@ mode:integrate
-**Only the conflict resolution.** This ticket already passed; `{main}` moved,
-and its worker merged it in and resolved conflicts by hand. Read the merge:
-`git -C "{wt}" show --remerge-diff HEAD 2>/dev/null || git -C "{wt}" show HEAD`.
-Judge one thing: does what the worker changed to bring `{main}` in keep what
-both sides meant, and nothing more? The intents are under "Landed since this
-ticket started". Everything else is carried. Your verdict takes one note:
-`{k2} verdict {id} pass --note "<what both sides meant, and that it is kept>"`.
+**Only what changed after this ticket passed.** `{main}` moved before it
+could land, and its worker brought `{main}` in by hand: a conflict resolved,
+or a fix because the tests failed on the merged state. Read exactly that:
+`git -C "{wt}" log --first-parent --cc -p {judged}..HEAD`
+Judge one thing: does it keep what both sides meant, and nothing more? The
+intents are under "Landed since this ticket started". Everything else is
+carried. Your verdict takes one note:
 
-@@ always
-Record the verdict. For a review of the whole ticket: one `--note "<n>: ..."`
-per `Done when` line, every line, evidence and not output:
+```
+{k2} verdict {id} pass --note "<what both sides meant, and that it is kept>"
+{k2} verdict {id} reject --note "<what the change loses or adds, and how you saw it>"
+```
+
+@@ mode:first,mode:round2
+Record the verdict: one `--note "<n>: ..."` per `Done when` line, every line,
+evidence and not output:
 
 ```
 {k2} verdict {id} pass --note "1: <what proved it>" --note "2: <...>" --note "note: <finding that did not block>"
 {k2} verdict {id} reject --fail 2,3 --note "<kind of mistake: every instance, and the command that showed it>"
 ```
 
+@@ always
 A pass is short. A rejection is written in full, for a worker who must fix
 it without asking you: per kind of mistake, every instance, the command you
 ran and the lines of its output that show it.
