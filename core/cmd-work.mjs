@@ -7,7 +7,7 @@ import { die, git, gitTry, run, now, today, parseArgs, slugify, fmtDuration } fr
 import * as B from './board.mjs';
 import * as T from './ticket.mjs';
 import { readiness } from './cmd-board.mjs';
-import { lessons } from './cmd-record.mjs';
+import { lessons, holdReason } from './cmd-record.mjs';
 
 const K = () => B.k2Name();
 const NO_BOARD = ':(exclude).kerjaan2';
@@ -247,7 +247,6 @@ export function submit(argv) {
       } else if (!c.done) gaps.push(`item ${c.n} is not ticked: \`${K()} check ${t.id} ${c.n} "<what you ran and saw>"\``);
     }
     if (!fresh.record.handoff) gaps.push(`no handoff: \`${K()} handoff ${t.id} "<what changed, why, what must not break>"\``);
-    for (const q of fresh.record.questions) if (q.status === 'blocking') gaps.push(`question ${q.key} still waits for the owner: report STOPPED — question ${q.key}`);
 
     // The lane follows what was really changed. It only ever rises.
     const files = changedFiles(wt, main);
@@ -277,10 +276,11 @@ export function submit(argv) {
     }
     const light = lane === 'light';
     B.moveFile(board, fresh, 'review');
-    B.setState(board, t.id, { submitted: head, conflict: false, passed: light, passedAt: light ? Date.now() : null });
+    const waits = light ? holdReason(fresh) : null;
+    B.setState(board, t.id, { submitted: head, conflict: false, passed: light, passedAt: light ? Date.now() : null, held: waits });
     B.log(board, t.id, 'submitted', { commit: head, lane, to: 'review', passed: light || undefined, files: files.length, fingerprint: fp });
     console.log(`SUBMITTED ${t.id} at ${head}; tests: ${ran}.`);
-    console.log(light ? `Lane light: the gates passed; no reviewer. The foreman lands it. Do not touch its code from here on.` : `It is in review. Do not touch its code from here on.`);
+    console.log(light ? `Lane light: the gates passed; no reviewer. ${waits ? `It is held before the merge: it ${waits}.` : 'The foreman lands it.'} Do not touch its code from here on.` : `It is in review. Do not touch its code from here on.`);
   });
 }
 
@@ -317,9 +317,10 @@ export function verdict(argv) {
     }
     if (result === 'pass') {
       B.save(t);
-      B.setState(board, t.id, { passed: true, passedAt: Date.now() });
+      const waits = holdReason(t);
+      B.setState(board, t.id, { passed: true, passedAt: Date.now(), held: waits });
       B.log(board, t.id, 'verdict', { result, round, commit: head });
-      return console.log(`PASSED ${t.id} in round ${round}. It reaches done when it lands: the foreman runs \`${K()} land ${t.id}\`.`);
+      return console.log(waits ? `PASSED ${t.id} in round ${round}. It is held before the merge: it ${waits}.` : `PASSED ${t.id} in round ${round}. It reaches done when it lands: the foreman runs \`${K()} land ${t.id}\`.`);
     }
     for (const n of String(opt.fail || '').split(',').map(Number).filter(Boolean)) t.contract = T.setCriterion(t.contract, n, false);
     B.save(t);
@@ -365,6 +366,13 @@ export function land(argv) {
 
   // The merge queue: only the front ticket lands, and it keeps the front
   // until it is in main. A merge that was held rejoins at the back.
+  const unanswered = holdReason(t);
+  if (unanswered) {
+    B.setState(board, t.id, { held: unanswered });
+    console.log(`HELD ${t.id}: it ${unanswered}. Nothing was changed.`);
+    process.exitCode = 4;
+    return;
+  }
   if (st0.held) B.setState(board, t.id, { held: null, passedAt: Date.now() });
   const queue = B.mergeQueue(board);
   const place = queue.findIndex((q) => q.id === t.id);

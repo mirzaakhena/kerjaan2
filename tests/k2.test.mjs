@@ -254,7 +254,7 @@ test('a held merge steps out of the merge queue, and rejoins at the back once cl
   r.git('checkout', '-q', 'main');
   assert.match(r.k('inbox').out, /not merged \(1\)/);
   const next = r.k('next').out;
-  assert.match(next, new RegExp(`HELD   ${a}`));
+  assert.match(next, new RegExp(`OWNER  ${a} cannot land: the main tree is on branch`));
   assert.match(next, new RegExp(`LAND   ${b} is at the front`), 'the queue moves on without the held one');
   assert.match(r.k('land', b).out, /LANDED/);
   assert.match(r.k('land', a).out, /LANDED .*tests passed on the merged state/);
@@ -331,22 +331,64 @@ test('the lane rises with what was really changed, and strict asks for the red-p
   assert.match(r.kIn(w2, 'submit', hot).out, /It is in review/);
 });
 
-test('a blocking question holds only its ticket; the answer resumes the worker', () => {
+test('a question for the owner never stops the work: it is built on the recommendation, reviewed, and held before the merge', () => {
   const r = repo();
   const a = ticket(r, 'Perlu keputusan');
-  const b = ticket(r, 'Jalan terus');
+  const b = ticket(r, 'Jalan terus', { lane: 'light' });
+  r.k('start', a);
+  r.k('start', b);
+  r.k('agent', a, 'worker', 'wa');
+  assert.match(r.k('ask', a, '--blocking', 'Hapus data lama? Saran: tidak').out, /Do not stop: build the option you recommended/);
+  let next = r.k('next').out;
+  assert.match(next, new RegExp(`OWNER  ${a} Q1`));
+  assert.match(next, new RegExp(`WAIT   ${a} worker wa`), 'its worker keeps working');
+  const wa = work(r, a, 'app.txt', 'line one\nline two\nline 3\n');
+  assert.match(r.kIn(wa, 'submit', a).out, /It is in review/);
+  assert.match(r.k('verdict', a, 'pass', '--note', '1: ok').out, /held before the merge: it waits for the owner's answer to Q1/);
+  const held = r.k('land', a);
+  assert.equal(held.code, 4);
+  assert.match(held.out, /HELD .*waits for the owner's answer to Q1/);
+  r.kIn(work(r, b, 'b.txt', 'b\n'), 'submit', b);
+  assert.match(r.k('land', b).out, /LANDED/, 'the held ticket does not block the merge queue');
+  next = r.k('next').out;
+  assert.match(next, new RegExp(`OWNER  ${a} Q1.*\\n.*held before the merge`));
+  assert.match(next, /IDLE   no agent has anything to do/);
+  assert.match(r.k('inbox').out, /blocking question \(1\)/);
+  assert.match(r.k('answer', a, 'Q1', 'Jangan dihapus').out, /--agrees .* or --differs/);
+  assert.match(r.k('answer', a, 'Q1', 'Jangan dihapus', '--agrees').out, /joins the merge queue/);
+  assert.match(r.k('land', a).out, /LANDED/);
+  assert.match(fs.readFileSync(r.k('show', a, '--path').out.trim(), 'utf8'), /Q1 \[answered\].*\n  → Jangan dihapus \(owner, /);
+});
+
+test('an answer that differs from what was built sends the ticket back to its worker', () => {
+  const r = repo();
+  const a = ticket(r, 'Dibangun dengan saran');
   r.k('start', a);
   r.k('agent', a, 'worker', 'wa');
-  assert.match(r.k('ask', a, '--blocking', 'Hapus data lama? Saran: tidak').out, /Q1 recorded as blocking/);
-  const next = r.k('next').out;
-  assert.match(next, new RegExp(`ASK    ${a} Q1`));
-  assert.match(next, new RegExp(`START  ${b}`), 'the other ticket is not held');
-  assert.match(r.k('inbox').out, /blocking question \(1\)/);
-  assert.match(r.kIn(wtOf(r, a), 'submit', a).out, /question Q1 still waits/);
-  r.k('answer', a, 'Q1', 'Jangan dihapus');
+  r.k('ask', a, '--blocking', 'Format A atau B? Saran: A');
+  r.kIn(work(r, a, 'app.txt', 'A\n'), 'submit', a);
+  r.k('verdict', a, 'pass', '--note', '1: ok');
+  assert.match(r.k('answer', a, 'Q1', 'B', '--differs').out, /in in_progress again/);
+  assert.equal(statusOf(r, a), 'in_progress');
   assert.match(r.k('next').out, /RESUME .* worker wa — the owner answered/);
-  assert.match(r.k('brief', a, '--role', 'worker').out, /The owner answered your question/);
-  assert.match(fs.readFileSync(r.k('show', a, '--path').out.trim(), 'utf8'), /Q1 \[answered\].*\n  → Jangan dihapus \(owner, /);
+  assert.match(r.k('brief', a, '--role', 'worker').out, /chose differently from what you\s+built/);
+  const wt = wtOf(r, a);
+  fs.writeFileSync(path.join(wt, 'app.txt'), 'B\n');
+  sh(wt, 'git', ['commit', '-qam', 'B']);
+  assert.match(r.kIn(wt, 'submit', a).out, /It is in review/);
+  r.k('verdict', a, 'pass', '--note', '1: ok');
+  assert.match(r.k('land', a).out, /LANDED/);
+});
+
+test('in backlog, a question for the owner keeps the ticket out of todo until it is answered', () => {
+  const r = repo();
+  const file = r.k('new', 'Belum jelas').out.split('\n')[0];
+  const id = path.basename(file).slice(0, 12);
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('## Request\n', '## Request\nX\n').replace('## Done when\n', '## Done when\n- [ ] satu\n'));
+  assert.match(r.k('ask', id, '--blocking', 'Batasnya berapa?').out, /cannot enter todo/);
+  assert.match(r.k('move', id, 'todo').out, /question Q1 is still open/);
+  r.k('answer', id, 'Q1', 'Seratus');
+  assert.equal(r.k('move', id, 'todo').code, 0);
 });
 
 test('assumptions show on done tickets until the owner has seen them', () => {
@@ -444,9 +486,9 @@ test('the stop hook sends back a worker that ends before handing over, and lets 
   assert.equal(hook({ stop_hook_active: true }).trim(), '');
   assert.equal(hook({ agent_id: 'someone-else' }).trim(), '');
   r.k('ask', id, '--blocking', 'Boleh hapus?');
-  assert.equal(hook().trim(), '', 'a worker waiting on the owner may end');
+  assert.match(hook(), /"decision":"block"/, 'a question for the owner is no reason to stop');
   const start = sh(r.dir, K2, ['hook', 'session-start'], JSON.stringify({ cwd: r.dir })).out;
-  assert.match(JSON.parse(start).hookSpecificOutput.additionalContext, /ASK .* Q1/);
+  assert.match(JSON.parse(start).hookSpecificOutput.additionalContext, /1 item\(s\) wait for the owner/);
 });
 
 test('the rules an agent reads stay under 6,000 words', () => {

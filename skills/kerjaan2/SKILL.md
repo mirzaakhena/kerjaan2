@@ -30,7 +30,7 @@ Whenever work is in flight or the owner says "work the queue":
 | `RESUME <role> <agentId>` | SendMessage to that agent with the text it prints, then `k2 agent ...` as printed. If the agent cannot be resumed, dispatch a new one |
 | `WAIT` | Nothing. A notification arrives when the agent reports; never poll or sleep. A passed ticket waiting in the merge queue lands in its turn: never land out of order |
 | `LAND <id>` | `k2 land <id>`. It merges into main, moves the ticket to `done`, removes the worktree and the branch |
-| `ASK` / `HELD` | Put it to the owner (below). Everything else carries on meanwhile |
+| `OWNER` | Something only the owner decides. **Never open a question while an agent is working or a ticket can still move**: a dialog nobody answers would stall the whole queue. Keep going; put the `OWNER` lines to the owner when `k2 next` ends in `IDLE`, or at once if the owner writes to you |
 | `IDLE` | Summarize for the owner; offer what `k2 inbox` holds |
 
 Several `DISPATCH` lines are dispatched together, in one message: tickets run
@@ -44,9 +44,12 @@ answer back to the asker.
 Only you talk to the owner, and every decision goes through AskUserQuestion,
 your recommendation first.
 
-- **Blocking questions** (`ASK`): put the question with its options; record
-  the answer word for word with `k2 answer <id> Q1 "<answer>"`. Only that
-  ticket waited.
+- **Questions that came up during the work** (`OWNER <id> Q1`): the worker
+  did not wait. It built the option it recommended; the ticket was reviewed
+  and is held before its merge. Put the question with its options, the built
+  one first, and record the answer word for word:
+  `k2 answer <id> Q1 "<answer>" --agrees` when the owner chose what was
+  built (it merges), `--differs` when not (it goes back to its worker).
 - **The inbox** (`k2 inbox`): assumptions agents made (`k2 confirm <id> A1|all`,
   or `k2 overturn <id> A1` and a follow-up ticket), manual checks
   (`k2 manual <id> ok|failed M1`), suggested follow-ups

@@ -323,7 +323,7 @@ export function inboxItems(board) {
     for (const f of t.record.followups) if (f.status === 'open' && t.status === 'done') add('follow-up', f.key, f.text);
     const st = B.getState(board, t.id);
     if (B.isPassed(board, t) && st.held) add('not merged', '', `held: ${st.held}`);
-    if (st.rejections >= 2 && t.status === 'in_progress') add('rejected twice', '', 'decide: another fix, or accept with a follow-up');
+    if (st.rejections >= 2 && t.status === 'in_progress' && !st.owner_ok_round) add('rejected twice', '', 'decide: another fix, or accept with a follow-up');
   }
   return items;
 }
@@ -389,7 +389,10 @@ export function nextActions(board) {
 
   for (const t of unmerged) {
     const st = B.getState(board, t.id);
-    if (st.held) out.push(`HELD   ${t.id} cannot land: ${st.held}. Tell the owner; once cleared: ${K()} land ${t.id} (it rejoins the merge queue at the back)`);
+    if (!st.held) continue;
+    const qs = t.record.questions.filter((q) => q.status === 'blocking');
+    if (qs.length) for (const q of qs) out.push(`OWNER  ${t.id} ${q.key}: ${q.text}\n       it was built on the recommended option, passed, and is held before the merge. Record the answer: ${K()} answer ${t.id} ${q.key} "<answer>" --agrees|--differs`);
+    else out.push(`OWNER  ${t.id} cannot land: ${st.held}. Once the owner cleared it: ${K()} land ${t.id} (it rejoins the merge queue at the back)`);
   }
   const mq = B.mergeQueue(board);
   mq.forEach((t0, i) => {
@@ -402,14 +405,14 @@ export function nextActions(board) {
   });
   for (const t of flight) {
     const st = B.getState(board, t.id);
-    const blocking = t.record.questions.filter((q) => q.status === 'blocking');
+    for (const q of t.record.questions.filter((x) => x.status === 'blocking')) {
+      out.push(`OWNER  ${t.id} ${q.key}: ${q.text}\n       its worker builds the recommended option meanwhile; the ticket is held before it merges. Record the answer: ${K()} answer ${t.id} ${q.key} "<answer>" --agrees|--differs`);
+    }
     if (st.passed) continue;
     if (t.status === 'review') {
       out.push(...dispatchLines(board, t, 'reviewer', st, (st.round || 1) > 1 ? `the fix is in; round ${st.round}` : 'review it'));
-    } else if (blocking.length) {
-      for (const q of blocking) out.push(`ASK    ${t.id} ${q.key} (owner): ${q.text}\n       record the answer: ${K()} answer ${t.id} ${q.key} "<answer>"`);
     } else if ((st.rejections || 0) >= 2 && !st.owner_ok_round) {
-      out.push(`ASK    ${t.id} was sent back twice. Owner decides: another fix (\`${K()} retry ${t.id}\`), or accept as is (\`${K()} accept ${t.id} --why "<owner's words>"\`).`);
+      out.push(`OWNER  ${t.id} was sent back twice. Owner decides: another fix (\`${K()} retry ${t.id}\`), or accept as is (\`${K()} accept ${t.id} --why "<owner's words>"\`).`);
     } else {
       const why = { fix: 'the reviewer sent it back; findings are in the ticket', answered: 'the owner answered its question' }[st.mode] || 'work the ticket';
       out.push(...dispatchLines(board, t, 'worker', st, why));
@@ -437,7 +440,7 @@ export function nextActions(board) {
     }
     if (r.waits.length) continue;
     if (q.pause.includes(t.id) && !B.getState(board, t.id).go) {
-      out.push(`ASK    ${t.id} has a pause before it: ask the owner to go on, then \`${K()} go ${t.id}\``);
+      out.push(`OWNER  ${t.id} has a pause before it: ask the owner to go on, then \`${K()} go ${t.id}\``);
       break;
     }
     out.push(`START  ${t.id} "${t.title}" (lane ${t.fm.lane}${t.fm.solo === 'true' ? ', solo' : ''}): run \`${K()} start ${t.id}\`, then \`${K()} next\``);
@@ -450,7 +453,11 @@ export function nextActions(board) {
 export function next() {
   const board = B.openBoard();
   const actions = nextActions(board);
-  if (actions.length) return console.log(actions.join('\n'));
+  if (actions.length) {
+    console.log(actions.join('\n'));
+    if (actions.every((a) => a.startsWith('OWNER'))) console.log('IDLE   no agent has anything to do: everything left waits for the owner. Put the OWNER lines and the inbox to them now.');
+    return;
+  }
   const items = inboxItems(board);
   const backlog = B.listTickets(board, ['backlog']).length;
   const todo = B.listTickets(board, ['todo']).length;

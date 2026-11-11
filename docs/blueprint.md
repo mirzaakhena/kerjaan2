@@ -163,20 +163,37 @@ selesai (peran, model, ID agen), jalan uji (perintah, lama, sidik jari isi),
 sinkron dan merge (commit), putaran tinjauan. Manusia tidak membacanya; viewer
 menggambarnya sebagai linimasa dan `k2` memakainya untuk gerbang.
 
-## 5. Saat pengerja ragu
+## 5. Saat ragu: antrean tidak pernah menunggu pemilik
+
+`todo` adalah ruang tunggu: tiket masuk ke sana hanya bila tidak ada lagi yang
+perlu ditanyakan. Karena itu **planner menutup semua celah di depan**, selagi
+pemilik masih ada: setiap titik terbuka (dua tafsir, pilihan alternatif, batas
+yang tidak disebut, kasus galat yang tidak dijelaskan) menjadi pertanyaan, dan
+tiket tidak bisa masuk `todo` sebelum semuanya dijawab.
+
+Pertanyaan baru tetap bisa muncul saat membangun. Pengerja tidak pernah
+berhenti menunggu (keputusan pemilik, 12 November 2026):
 
 | Jenis keraguan | Yang dilakukan pengerja | Akibatnya |
 |---|---|---|
-| Bisa dibatalkan dengan murah | `k2 assume`: asumsi, alasannya, dan cara membatalkannya; lalu lanjut | Lencana "≈ asumsi" di kartu sampai pemilik melihatnya |
-| Tak bisa dibatalkan, atau mengubah arah produk (hapus data, biaya, mengubah perilaku yang sudah dipakai) | `k2 ask --blocking`; berhenti | **Hanya tiket itu** yang menunggu; tiket lain jalan terus |
-| Tidak menahan pekerjaan | `k2 ask`; lanjut | Muncul di kotak masuk |
+| Murah dibatalkan | `k2 assume`: asumsi, alasannya, cara membatalkannya; lanjut | Lencana "≈ asumsi" sampai pemilik melihatnya |
+| Tak bisa dibatalkan, atau mengubah arah produk | `k2 ask --blocking`, lalu **membangun pilihan yang ia sarankan** | Tiket ditinjau seperti biasa, lalu **ditahan sebelum merge**. Setuju (`--agrees`): langsung masuk antrean merge. Tidak (`--differs`): kembali ke pengerja |
+| Tidak mengubah apa yang dibangun | `k2 ask`; lanjut | Muncul di kotak masuk |
 
-Asumsi punya tiga keadaan: `unseen` → `confirmed` atau `overturned`. Membatalkan
-asumsi pada tiket yang sudah `done` otomatis membuat tiket susulan yang
-ber-`related` ke tiket asal.
+Tiket yang ditahan keluar dari antrean merge, jadi tidak menghalangi tiket
+lain; hanya tiket yang `blocked_by` kepadanya yang ikut menunggu. Mandor tidak
+pernah membuka pertanyaan selagi masih ada agen yang bekerja: baris `OWNER`
+dari `k2 next` dikumpulkan dan diajukan saat antrean diam.
 
-Planner tetap mengumpulkan pertanyaan di depan, tetapi hanya yang berjenis
-kedua. Sisanya ia tulis sebagai asumsi rencana.
+Asumsi punya tiga keadaan: `unseen` → `confirmed` atau `overturned`.
+
+**Yang tidak boleh berjalan berdampingan** juga diputuskan planner:
+
+| Hubungan | Tanda | Akibat |
+|---|---|---|
+| Butuh hasil tiket lain | `blocked_by` | Mulai setelah tiket itu masuk main |
+| Pekerjaan fondasi (struktur data, antarmuka bersama, ganti nama lintas berkas) | `solo: true` | Berjalan sendirian; tidak ada yang mulai di sampingnya atau menyalipnya |
+| Hanya menyentuh berkas yang sama | — | Paralel; antrean merge yang membereskan |
 
 ## 6. Kotak masuk pemilik
 

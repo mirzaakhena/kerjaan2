@@ -20,32 +20,58 @@ function edit(ref, fn) {
 
 const who = (opt) => opt.by || 'owner';
 
+const openBlocking = (t) => t.record.questions.filter((q) => q.status === 'blocking');
+const HOLD = (keys) => `waits for the owner's answer to ${keys.join(', ')}`;
+
 export function ask(argv) {
   const { pos, opt } = parseArgs(argv, ['blocking']);
   edit(pos[0], (t, board) => {
     const e = T.addKeyed(t.record, 'questions', opt.blocking ? 'blocking' : 'open', pos.slice(1).join(' '));
     B.log(board, t.id, 'question', { key: e.key, blocking: !!opt.blocking });
-    return opt.blocking
-      ? `${t.id} ${e.key} recorded as blocking: this ticket waits for the owner. Commit what you have, then report STOPPED — question ${e.key}.`
-      : `${t.id} ${e.key} recorded. It does not hold the work up: carry on.`;
+    if (!opt.blocking) return `${t.id} ${e.key} recorded. It does not hold the work up: carry on.`;
+    if (['in_progress', 'review'].includes(t.status)) {
+      return `${t.id} ${e.key} recorded for the owner. Do not stop: build the option you recommended, and submit as usual. The ticket will be reviewed, then held before it merges until the owner has answered.`;
+    }
+    return `${t.id} ${e.key} recorded: the ticket cannot enter todo until the owner has answered.`;
   });
 }
 
 export function answer(argv) {
-  const { pos, opt } = parseArgs(argv);
+  const { pos, opt } = parseArgs(argv, ['agrees', 'differs']);
   edit(pos[0], (t, board) => {
     const q = T.findKeyed(t.record, 'questions', pos[1]);
     const a = T.makeEntry(pos.slice(2).join(' '));
     const wasBlocking = q.status === 'blocking';
+    const flying = ['in_progress', 'review'].includes(t.status);
+    // The worker went ahead with its recommendation: was the owner's answer that one?
+    if (wasBlocking && flying && !opt.agrees && !opt.differs) {
+      die(`${t.id} was built on the option the worker recommended for ${q.key}. Say which it is: --agrees (the owner chose that option; the ticket goes on to merge) or --differs (the owner chose otherwise; it goes back to its worker).`);
+    }
     q.status = 'answered';
     q.sub.push(`→ ${[a.text, ...a.sub].join(' ')} (${who(opt)}, ${today()})`);
-    if (wasBlocking && t.status === 'in_progress') {
-      const st = B.getState(board, t.id);
-      B.setState(board, t.id, { mode: 'answered', answers: (st.answers || 0) + 1 });
+    B.log(board, t.id, 'answer', { key: q.key, agrees: opt.agrees ? true : opt.differs ? false : undefined });
+    if (!wasBlocking || !flying) return `${t.id} ${q.key} answered.`;
+    const st = B.getState(board, t.id);
+    if (opt.differs) {
+      if (t.status === 'review') B.moveFile(board, t, 'in_progress');
+      B.setState(board, t.id, { mode: 'answered', answers: (st.answers || 0) + 1, passed: false, passedAt: null, needs: null, held: null });
+      return `${t.id} ${q.key} answered differently from what was built: it is in in_progress again. Run \`${K()} next\` to resume its worker.`;
     }
-    B.log(board, t.id, 'answer', { key: q.key });
-    return `${t.id} ${q.key} answered.${wasBlocking && t.status === 'in_progress' ? ` Run \`${K()} next\` to resume its worker.` : ''}`;
+    const left = openBlocking(t).map((x) => x.key);
+    if (st.passed && !left.length) {
+      B.setState(board, t.id, { held: null, passedAt: Date.now() });
+      return `${t.id} ${q.key} answered as built: it joins the merge queue. Run \`${K()} next\`.`;
+    }
+    if (st.passed) B.setState(board, t.id, { held: HOLD(left) });
+    return `${t.id} ${q.key} answered as built.${left.length ? ` Still open: ${left.join(', ')}.` : ''}`;
   });
+}
+
+// A ticket that passed with a question still open for the owner is held
+// before it merges; nothing that cannot be undone reaches main unanswered.
+export function holdReason(t) {
+  const keys = openBlocking(t).map((q) => q.key);
+  return keys.length ? HOLD(keys) : null;
 }
 
 export function assume(argv) {

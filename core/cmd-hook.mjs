@@ -29,7 +29,7 @@ function sessionStart(inp) {
   if (!board) return;
   const actions = nextActions(board);
   const inbox = inboxItems(board);
-  const live = actions.filter((a) => !a.startsWith('START'));
+  const live = actions.filter((a) => !a.startsWith('START') && !a.startsWith('OWNER'));
   if (!live.length && !inbox.length) return;
   const k = B.k2Name();
   const text = [
@@ -60,13 +60,12 @@ function subagentStop(inp) {
     } catch {
       return;
     }
-    const waiting = t.record.questions.some((q) => q.status === 'blocking');
     const mine = t.status === 'in_progress' || (t.status === 'review' && st.passed && st.needs === 'worker');
-    if (!mine || waiting) return;
+    if (!mine) return;
     const k = B.k2Name();
     console.log(JSON.stringify({
       decision: 'block',
-      reason: `Ticket ${id} is still yours and not handed over. Finish it and run \`${k} submit ${id}\`; or, if a decision only the owner can make stops you, record it with \`${k} ask ${id} --blocking "<question>"\` and report STOPPED. If something else makes it impossible, report STOPPED — <reason> in one line.`,
+      reason: `Ticket ${id} is still yours and not handed over. Finish it and run \`${k} submit ${id}\`. A decision only the owner can make does not stop you: record it with \`${k} ask ${id} --blocking "<question; options; your recommendation>"\`, build the option you recommended, and submit. Only if the work is truly impossible, report STOPPED — <reason> in one line.`,
     }));
     return;
   }

@@ -11,14 +11,21 @@ Rules that hold throughout:
   through `{k2}` commands, which work from any folder.
 - Technical choices are yours; the outcome is the ticket's. Build what
   `Request` and `Done when` ask, nothing wider; `Out of scope` is a wall.
-- **In doubt, do not stop for what is cheap to undo.** Pick the reading that
-  fits the project and record it:
-  `{k2} assume {id} "<what you assumed>" --why "<why this reading>" --undo "<what to change if it is wrong>"`.
-  Stop only for what cannot be undone or changes the product's direction
-  (deleting data, a cost, changing behaviour people already use):
-  `{k2} ask {id} --blocking "<question; the options; the one you recommend and why>"`,
-  commit what you have, and report `STOPPED`. A question that holds nothing up:
-  `{k2} ask {id} "<question>"`, and carry on.
+- **You never stop to wait for the owner**: they may be asleep, and the
+  queue runs on. In doubt, pick the reading that fits the project, and
+  record it — which way depends on what a wrong guess would cost:
+  - Cheap to undo:
+    `{k2} assume {id} "<what you assumed>" --why "<why this reading>" --undo "<what to change if it is wrong>"`.
+  - Cannot be undone, or changes the product's direction (deleting data, a
+    cost, changing behaviour people already use):
+    `{k2} ask {id} --blocking "<question; the options; the one you recommend and why>"`,
+    then **build the option you recommended** and carry on to submit. The
+    ticket is reviewed as usual and then held before it merges, until the
+    owner has answered; nothing of it reaches `{main}` unanswered. Build it
+    so that the other option stays cheap: never run the irreversible step
+    itself (no real data deleted, nothing sent, nothing paid) while testing.
+  - A question that changes nothing you build: `{k2} ask {id} "<question>"`.
+  Report `STOPPED` only when the work is truly impossible, with the reason.
 - Commit on your branch as you go, naming the files. Never `git push`, never
   merge into `{main}`, never switch branches, never rewrite history.
 - Wait for long commands (tests, builds) in the foreground with a long
@@ -69,10 +76,11 @@ below.
 3. Commit, `{k2} submit {id}`, report. Write nothing addressed to the reviewer.
 
 @@ mode:answered
-**The owner answered your question.** The answer is under `Questions` below.
-Carry on from where you stopped, with the decision taken as answered; do not
-start the ticket over. Then steps 2 to 6 of a first run: build, check each
-line, handoff, commit, `{k2} submit {id}`, report.
+**The owner answered your question, and chose differently from what you
+built.** The answer is under `Questions` below. You still hold the code: do
+not start over. Change what the answer changes, then steps 2 to 6 of a first
+run: run it, check each line again, update the handoff, commit,
+`{k2} submit {id}`, report.
 
 @@ mode:integrate
 **This ticket passed, and `{main}` moved before it could land.** It stays in
@@ -93,7 +101,8 @@ conflicts with them, or the tests fail once they are merged in.
 Your report, short — the foreman keeps every report of the session:
 
 ```
-K2 {id} worker: SUBMITTED | STOPPED — question Q<n> | STOPPED — <reason>
+K2 {id} worker: SUBMITTED | STOPPED — <reason>
+Questions for the owner: <Q1 — the option you built, or none>
 Commits: <hashes>
 Assumptions: <A1, A2 ... or none>
 Note: <at most three lines the foreman must know, or none>
