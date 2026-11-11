@@ -383,7 +383,7 @@ export function land(argv) {
       B.log(board, t.id, 'landed', { branch, files });
       B.dropFromQueue(board, t.id);
       const paths = [`:(glob)${B.BOARD_DIR}/*/${t.id} *`, `${B.BOARD_DIR}/log/${t.id}.jsonl`];
-      if (fs.existsSync(path.join(board.dir, 'queue.yml'))) paths.push(`${B.BOARD_DIR}/queue.yml`);
+      for (const f of ['queue.yml', 'lessons.md']) if (fs.existsSync(path.join(board.dir, f))) paths.push(`${B.BOARD_DIR}/${f}`);
       git(board.root, 'add', '-A', '--', ...paths);
       const c = gitTry(board.root, 'commit', '-q', '-m', `${t.id} ${t.title}`, '-m', `Lane ${t.fm.lane}, ${rounds} round${rounds === 1 ? '' : 's'}. Ticket: ${B.BOARD_DIR}/done/${t.id}`);
       if (c.code !== 0) die(`the merge is staged in ${board.root} but the commit failed:\n${c.err || c.out}`);
