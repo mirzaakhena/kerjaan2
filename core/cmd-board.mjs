@@ -31,10 +31,13 @@ export function init(argv) {
       `main_branch: ${branch}`,
       '',
       "# Runs the project's checks, in a ticket's worktree. Empty when there are none.",
+      '# A run passes by its exit status alone, so the command must exit non-zero whenever a',
+      "# test did not run to its end: avoid options that force the runner to exit early.",
       `test_command: ${opt.test || ''}`.trimEnd(),
       '',
       '# Run in each new worktree (install packages, copy .env), and before one is removed.',
-      '# They get K2_MAIN_TREE, K2_TICKET and K2_SLOT (a small number unique per worktree in flight).',
+      '# They, and the tests, get K2_MAIN_TREE, K2_WORKTREE, K2_TICKET and K2_SLOT (a small number',
+      '# unique per worktree in flight): name ports and test data after them.',
       'worktree_setup:',
       'worktree_teardown:',
       '',
@@ -177,13 +180,15 @@ export function show(argv) {
 }
 
 export function ls(argv) {
-  const { pos } = parseArgs(argv);
+  const { pos, opt } = parseArgs(argv);
   const board = B.openBoard();
-  const statuses = pos.length ? pos : B.STATUSES.filter((s) => !['done', 'cancel'].includes(s));
+  const statuses = pos.length ? pos : opt.session ? B.STATUSES : B.STATUSES.filter((s) => !['done', 'cancel'].includes(s));
+  // Tickets born in one session belong to one discussion: the trail knows which.
+  const bornIn = (id) => String(B.readLog(board, id).find((e) => e.event === 'created')?.session || '');
   for (const s of statuses) if (!B.STATUSES.includes(s)) die(`unknown status "${s}"`);
   let n = 0;
   for (const s of statuses) {
-    const list = B.listTickets(board, [s]);
+    const list = B.listTickets(board, [s]).filter((x) => !opt.session || bornIn(x.id).startsWith(opt.session));
     if (!list.length) continue;
     console.log(`${s} (${list.length})`);
     for (const raw of list) {

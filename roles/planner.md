@@ -30,6 +30,11 @@ others. You never talk to the owner and never touch code.
      changes that are cheap to undo; `strict` for money, login, permissions,
      data that cannot be recovered; `standard` otherwise.
      `{k2} set <id> lane=<lane>` and `{k2} decide <id> "Lane <lane>: <reason in a few words>"`.
+     **The criterion first, the lane second.** A lane cannot rescue a thin
+     checklist: when what worries you is an input nobody validated or an
+     error nobody handled, ask the owner for a `Done when` line that says so.
+     A stricter lane then proves it; without the line there is nothing to
+     prove.
    - **Dependencies.** `todo` is a waiting room: whatever sits there may
      start the moment there is room, beside anything else. So decide, per
      ticket, what it must not run beside:

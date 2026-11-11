@@ -573,6 +573,32 @@ test('a merge is held when the main tree has something else staged', () => {
   assert.match(r.k('land', id).out, /LANDED/);
 });
 
+test('a failing worktree_setup puts the ticket back in todo, and the board is free while it runs', () => {
+  const r = repo({ settings: { worktree_setup: 'echo "$K2_WORKTREE" > env.out; test -f ../../boleh' } });
+  const id = ticket(r, 'Setup gagal', { lane: 'light' });
+  const bad = r.k('start', id);
+  assert.equal(bad.code, 1);
+  assert.match(bad.out, /worktree_setup failed .* back in todo/);
+  assert.equal(statusOf(r, id), 'todo');
+  assert.equal(r.git('branch', '--list', 'k2/*').out.trim(), '');
+  assert.match(r.k('doctor').out, /healthy/);
+  fs.writeFileSync(path.join(r.dir, 'boleh'), '');
+  assert.match(r.k('start', id).out, /STARTED/);
+  assert.equal(fs.readFileSync(path.join(wtOf(r, id), 'env.out'), 'utf8').trim(), wtOf(r, id), 'the setup sees K2_WORKTREE');
+});
+
+test('tickets born in one session are listed together', () => {
+  const r = repo();
+  const env = (sid) => ({ ...process.env, CLAUDE_SESSION_ID: sid, CLAUDE_CODE_SESSION_ID: sid });
+  const mk = (title, sid) => spawnSync(K2, ['new', title], { cwd: r.dir, encoding: 'utf8', env: env(sid) }).stdout;
+  mk('Dari sesi satu A', 'aaaa1111-0000');
+  mk('Dari sesi satu B', 'aaaa1111-0000');
+  mk('Dari sesi dua', 'bbbb2222-0000');
+  const out = r.k('ls', '--session', 'aaaa1111').out;
+  assert.match(out, /backlog \(2\)/);
+  assert.ok(out.includes('Dari sesi satu A') && out.includes('Dari sesi satu B') && !out.includes('Dari sesi dua'));
+});
+
 test('doctor finds a worktree and a branch nobody owns, and --fix removes them', () => {
   const r = repo();
   const id = ticket(r, 'Ditinggal', { lane: 'light' });

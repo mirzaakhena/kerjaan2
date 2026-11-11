@@ -18,6 +18,7 @@ export function start(argv) {
   const { pos } = parseArgs(argv);
   const board = B.openBoard();
   const main = board.settings.main_branch;
+  let pending = null;
   B.withLock(board, 'board', () => {
     const t = B.load(B.findTicket(board, pos[0]));
     const inFlight = ['in_progress', 'review'].includes(t.status);
@@ -54,27 +55,39 @@ export function start(argv) {
     const used = new Set(B.listTickets(board, ['in_progress', 'review']).map((x) => B.getState(board, x.id).slot).filter(Boolean));
     let slot = 1;
     while (used.has(slot)) slot++;
-    const setup = board.settings.worktree_setup;
-    if (setup) {
-      const r = run('sh', ['-c', setup], { cwd: wt, env: wtEnv(board, t.id, slot) });
-      if (r.code !== 0) {
-        gitTry(board.root, 'worktree', 'remove', '--force', wt);
-        if (!inFlight) gitTry(board.root, 'branch', '-D', branch);
-        die(`worktree_setup failed (exit ${r.code}); the worktree was removed again:\n${tail(r.out + '\n' + r.err, 15)}`);
-      }
-    }
+    // The ticket takes its place now, so the room it uses is counted while
+    // the setup runs; the setup itself runs after the board is free again.
     if (!inFlight) {
       B.moveFile(board, t, 'in_progress');
       B.dropFromQueue(board, t.id);
       B.setState(board, t.id, { mode: 'first', round: 1, slot, started: now() });
       B.log(board, t.id, 'started', { branch, base: git(board.root, 'rev-parse', '--short', main) });
     } else B.setState(board, t.id, { slot });
-    console.log(`STARTED ${t.id} ${t.title}\nWorktree: ${wt}\nBranch: ${branch} (from ${main})`);
+    pending = { t, wt, branch, slot, inFlight };
   });
+  if (!pending) return;
+  const { t, wt, branch, slot, inFlight } = pending;
+  const setup = board.settings.worktree_setup;
+  if (setup) {
+    const r = run('sh', ['-c', setup], { cwd: wt, env: wtEnv(board, t.id, slot, wt) });
+    if (r.code !== 0) {
+      B.withLock(board, 'board', () => {
+        gitTry(board.root, 'worktree', 'remove', '--force', wt);
+        if (!inFlight) {
+          gitTry(board.root, 'branch', '-D', branch);
+          B.moveFile(board, B.findTicket(board, t.id), 'todo');
+          B.dropState(board, t.id);
+          B.log(board, t.id, 'moved', { to: 'todo', why: 'worktree_setup failed' });
+        }
+      });
+      die(`worktree_setup failed (exit ${r.code}); the worktree was removed and the ticket is ${inFlight ? 'left where it was' : 'back in todo'}:\n${tail(r.out + '\n' + r.err, 15)}`);
+    }
+  }
+  console.log(`STARTED ${t.id} ${t.title}\nWorktree: ${wt}\nBranch: ${branch} (from ${main})`);
 }
 
-function wtEnv(board, id, slot) {
-  return { ...process.env, K2_MAIN_TREE: board.root, K2_TICKET: id, K2_SLOT: String(slot || 1) };
+function wtEnv(board, id, slot, wt = B.worktreeOf(board, id)) {
+  return { ...process.env, K2_MAIN_TREE: board.root, K2_TICKET: id, K2_SLOT: String(slot || 1), K2_WORKTREE: wt || '' };
 }
 
 const tail = (text, n) => text.split('\n').filter((l) => l.trim()).slice(-n).join('\n');
@@ -379,7 +392,7 @@ export function accept(argv) {
     B.moveFile(board, t, 'review');
     B.setState(board, t.id, { passed: true, passedAt: Date.now() });
     B.log(board, t.id, 'accepted', { by: 'owner' });
-    console.log(`ACCEPTED ${t.id} on the owner's word. Land it with \`${K()} land ${t.id}\`.`);
+    console.log(`ACCEPTED ${t.id} on the owner's word. Land it with \`${K()} land ${t.id}\`.\nWhat the reviewer found is still true: create the follow-up now, \`${K()} new "<what is left>" --related ${t.id}\`, unless the owner said to drop it.`);
   });
 }
 

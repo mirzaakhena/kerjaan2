@@ -496,3 +496,29 @@ Batas jaminan ini: hanya sejauh `test_command` menguji; proyek tanpa
 meloloskan; berkas yang diabaikan git (paket terpasang, `.env`) bisa berbeda
 antara worktree dan pohon utama; dan commit yang dibuat langsung di main di
 luar `k2` tidak diuji siapa pun.
+
+### Sisa panduan kerjaan (12 November 2026)
+
+Empat panduan `kerjaan` yang belum dibaca (tinjauan, kerja paralel, pengaturan,
+perbaikan) dibandingkan juga. Keputusan pemilik: paket perbaikan kecil diambil.
+
+- Planner: "kriteria dulu, jalur kemudian".
+- `k2 start` melepas kunci papan selama `worktree_setup`; setup yang gagal
+  mengembalikan tiket ke `todo`.
+- Pengetahuan tentang `test_command`, giliran uji, dan kepemilikan data uji
+  masuk README; variabel `K2_WORKTREE` ditambahkan.
+- `k2 accept` meminta tiket susulan untuk temuan yang tersisa.
+- Tiket keputusan punya butir untuk tempat keputusan itu berakhir.
+- `k2 ls --session <id>` menggantikan kebiasaan label `sesi-<id8>`.
+- Kebiasaan "aturan baru menyebut aturan yang digantikannya".
+
+Tidak diambil sekarang, dengan konsekuensinya:
+
+- **Letak worktree yang bisa diatur.** Worktree tetap di `.worktrees/` dalam
+  repo, berlawanan dengan pelajaran `kerjaan` ("di samping repo"). Teruji aman
+  untuk `node --test` dan ripgrep; `grep -r` menelusurinya; Jest, Vitest,
+  ESLint, dan Flutter belum diuji. Proyek yang alatnya menelusuri folder itu
+  harus mengecualikannya di konfigurasi alatnya sendiri.
+- **Batas jalur untuk proyek mock.** Jalur tetap bisa naik sendiri di papan
+  mana pun.
+- **Uji pemicu skill.** Deskripsi skill belum pernah diukur.

@@ -65,6 +65,33 @@ k2 land <id>       into main, one at a time → done; removes the worktree and t
 
 `k2 help` lists every command.
 
+## Tests and test data
+
+- **`test_command` passes by its exit status alone**, so it must exit non-zero
+  whenever a test did not run to its end. Options that force a runner to exit
+  once it thinks it is done (`--test-force-exit`, `--forceExit`, `--exit`) can
+  end a process before its results are out, and a run then passes with tests
+  missing. Stop a hung test with a time limit instead.
+- **Test runs take turns** across worktrees unless `parallel_tests: true`:
+  worktrees separate files, not ports, local databases or fixed temp paths.
+  A project whose tests choose those per worktree may run them at once. Each
+  run, and `worktree_setup` / `worktree_teardown`, gets `K2_TICKET`,
+  `K2_SLOT` (a small number unique per worktree in flight), `K2_WORKTREE` and
+  `K2_MAIN_TREE` — `PORT=$((4000 + K2_SLOT))`, `app_test_$K2_SLOT`.
+- **Each ticket carries its own test data.** Data a ticket owns is named after
+  it; teardown removes only that, by its exact name, never by a pattern;
+  shared data is read, never written.
+- **Worktrees live inside the repo**, in `.worktrees/`, ignored by git.
+  `node --test` and ripgrep skip that folder; a tool that walks hidden folders
+  (plain `grep -r`, some test runners and linters) needs it excluded in its
+  own configuration.
+
+## Keeping the rules small
+
+The text an agent reads — the skill, `roles/`, `agents/` — has a budget of
+6,000 words, held by a test. A new rule names the rule it removes or
+replaces; an incident is first a reason to sharpen a rule that exists.
+
 ## Install
 
 ```

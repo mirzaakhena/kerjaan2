@@ -56,6 +56,10 @@ your recommendation first.
   (`k2 followup <id> ticketed|declined F1`), merges that are held. Offer it
   when the queue is idle and whenever the owner asks what needs them. Never
   settle an item on your own.
+- When the owner accepts a ticket its reviewer sent back twice
+  (`k2 accept <id> --why "..."`), what the reviewer found is still true:
+  create the follow-up ticket for it, `related` to this one, unless the owner
+  says to drop it.
 - `--force` on `k2 move`, `k2 retry`, `k2 accept`, `k2 go` and raising `max_parallel` are
   the owner's word only.
 
@@ -81,6 +85,15 @@ does not know the code — no file or function names in the contract:
   Start a line only a person can check (how it looks on a phone) with
   `(owner)`. More than about 8 lines is more than one ticket: split by outcome.
 - `## Out of scope` — optional: what is deliberately left alone.
+
+A ticket whose work is a **decision**, not code, still goes through a worker
+and a reviewer: give it a `Done when` line for where the decision ends up —
+the README, `CLAUDE.md`, whatever every later session reads — not only the
+ticket itself.
+
+Tickets created in one session belong to one discussion, and the board
+knows: `k2 ls --session <first characters of the session id>` lists them,
+and `k2 history <id>` names the session of every step.
 
 Show the owner `Request` and `Done when` before work starts, unless they
 asked for it in so many words. Never write below the `k2:record` line, and
