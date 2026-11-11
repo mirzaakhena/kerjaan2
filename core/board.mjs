@@ -29,6 +29,7 @@ export const DEFAULTS = {
   parallel_tests: false,
   strict_paths: [],
   light_max_files: 8,
+  stuck_after_minutes: 60,
   done_when_limit: 8,
   model_worker_light: 'sonnet',
   model_worker: 'inherit',
@@ -76,7 +77,28 @@ export function readSettings(board) {
 
 // ----- lock -----
 
-export function withLock(board, name, fn, { waitMs = 30000, staleMs = 120000 } = {}) {
+const pidAlive = (pid) => {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const readPid = (file) => {
+  try {
+    return Number(fs.readFileSync(file, 'utf8')) || 0;
+  } catch {
+    return 0;
+  }
+};
+
+// A lock is a folder. It is held while its holder lives, or while a command
+// its holder started (a test run) still lives: a k2 that was killed must not
+// free the tests' turn while its test run goes on.
+export function withLock(board, name, fn, { waitMs = 120000 } = {}) {
   fs.mkdirSync(board.state, { recursive: true });
   const dir = path.join(board.state, `${name}.lock`);
   const start = Date.now();
@@ -88,37 +110,35 @@ export function withLock(board, name, fn, { waitMs = 30000, staleMs = 120000 } =
       break;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
-      let holder = 0;
+      const holder = readPid(path.join(dir, 'pid'));
+      const child = readPid(path.join(dir, 'child'));
       let age = 0;
       try {
-        holder = Number(fs.readFileSync(path.join(dir, 'pid'), 'utf8'));
         age = Date.now() - fs.statSync(dir).mtimeMs;
       } catch {}
-      let alive = false;
-      if (holder) {
-        try {
-          process.kill(holder, 0);
-          alive = true;
-        } catch {}
-      }
+      const alive = pidAlive(holder) || pidAlive(child);
       if (!alive && (holder || age > 2000)) {
-        fs.rmSync(dir, { recursive: true, force: true });
+        // Take the dead lock away under a name of our own; if what we took
+        // turns out to be somebody's fresh lock, put it back.
+        const grave = `${dir}.dead.${process.pid}.${Date.now()}`;
+        try {
+          fs.renameSync(dir, grave);
+          const took = readPid(path.join(grave, 'pid'));
+          if (took !== holder && pidAlive(took) && !fs.existsSync(dir)) fs.renameSync(grave, dir);
+          else fs.rmSync(grave, { recursive: true, force: true });
+        } catch {}
         continue;
       }
-      if (alive && age > staleMs && name === 'board') {
-        fs.rmSync(dir, { recursive: true, force: true });
-        continue;
-      }
-      if (Date.now() - start > waitMs) die(`the ${name} lock is held by process ${holder} and did not free up`);
-      if (!told && name !== 'board') {
-        process.stderr.write(`waiting for the ${name} lock (held by process ${holder})...\n`);
+      if (Date.now() - start > waitMs) die(`the ${name} lock is held by process ${holder || child} and did not free up in ${Math.round(waitMs / 1000)}s`);
+      if (!told && (name === 'test' || name === 'land')) {
+        process.stderr.write(`waiting for the ${name} lock (held by process ${holder || child})...\n`);
         told = true;
       }
-      sleep(200);
+      sleep(name === 'state' ? 20 : 200);
     }
   }
   try {
-    return fn();
+    return fn(dir);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -219,11 +239,19 @@ export function getState(board, id) {
   }
 }
 
+// Read, change and write under a lock of its own, and replace the file in one
+// step: two commands changing one ticket's state never lose each other's part,
+// and no reader ever sees half a file.
 export function setState(board, id, patch) {
-  const s = { ...getState(board, id), ...patch };
-  fs.mkdirSync(path.dirname(stateFile(board, id)), { recursive: true });
-  fs.writeFileSync(stateFile(board, id), JSON.stringify(s, null, 1));
-  return s;
+  return withLock(board, 'state', () => {
+    const s = { ...getState(board, id), ...patch };
+    const file = stateFile(board, id);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(s, null, 1));
+    fs.renameSync(tmp, file);
+    return s;
+  }, { waitMs: 20000 });
 }
 
 export function dropState(board, id) {

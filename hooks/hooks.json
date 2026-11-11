@@ -10,7 +10,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "kerjaan2:worker|worker",
+        "matcher": "^kerjaan2:worker$",
         "hooks": [
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/k2\" hook subagent-stop", "timeout": 10 }
         ]

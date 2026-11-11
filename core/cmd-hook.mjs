@@ -44,8 +44,7 @@ function sessionStart(inp) {
 // A worker that stops with its ticket neither handed over nor waiting on a
 // recorded question looks finished to the foreman and is not.
 function subagentStop(inp) {
-  if (inp.stop_hook_active) return;
-  if (!/worker/.test(inp.agent_type || '')) return;
+  if (!/^(kerjaan2:)?worker$/.test(inp.agent_type || '')) return;
   const board = boardAt(inp.cwd);
   if (!board) return;
   const dir = path.join(board.state, 'tickets');
@@ -62,6 +61,12 @@ function subagentStop(inp) {
     }
     const mine = t.status === 'in_progress' || (t.status === 'review' && st.passed && st.needs === 'worker');
     if (!mine) return;
+    if (inp.stop_hook_active) {
+      // Told once already and it ends all the same: say so on the board, so
+      // `next` sends somebody instead of waiting for a report that is not coming.
+      B.setState(board, id, { worker: { ...st.worker, ended: true } });
+      return;
+    }
     const k = B.k2Name();
     console.log(JSON.stringify({
       decision: 'block',

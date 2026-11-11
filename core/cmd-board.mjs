@@ -328,12 +328,17 @@ export function inboxItems(board) {
     for (const f of t.record.followups) if (f.status === 'open' && t.status === 'done') add('follow-up', f.key, f.text);
     const st = B.getState(board, t.id);
     if (B.isPassed(board, t) && st.held) add('not merged', '', `held: ${st.held}`);
-    if (st.rejections >= 2 && t.status === 'in_progress' && !st.owner_ok_round) add('rejected twice', '', 'decide: another fix, or accept with a follow-up');
+    if (rejectedTwice(st) && t.status === 'in_progress') add('rejected twice', '', 'decide: another fix, or accept with a follow-up');
+    if (st.stopped) add('stopped', '', `its worker stopped: ${st.stopped}`);
+    for (const role of ['worker', 'reviewer']) {
+      const stuck = stuckFor(board, t, st, role);
+      if (stuck !== null) add('stuck', '', `${role} ${st[role].agent} has been on it for ${stuck}m without handing over`);
+    }
   }
   return items;
 }
 
-const KIND_ORDER = ['blocking question', 'rejected twice', 'not merged', 'question', 'manual check', 'assumption', 'follow-up'];
+const KIND_ORDER = ['blocking question', 'stopped', 'stuck', 'rejected twice', 'not merged', 'question', 'manual check', 'assumption', 'follow-up'];
 
 export function inbox() {
   const board = B.openBoard();
@@ -363,17 +368,48 @@ export function stepOf(t, st) {
   return `${st.mode || 'first'}:${st.round || 1}:${st.answers || 0}`;
 }
 
+// Asked of the owner again after every further rejection, not only the second.
+export const rejectedTwice = (st) => (st.rejections || 0) >= 2 && (st.owner_ok_rejections ?? -1) < st.rejections;
+
+// A ticket that only waits for the owner uses no room: nobody works on it.
+export const waitsForOwner = (st) => !!((st.passed && st.held) || st.stopped || rejectedTwice(st));
+
+export function occupying(board) {
+  return B.listTickets(board, IN_FLIGHT).map(B.load).filter((t) => !waitsForOwner(B.getState(board, t.id)));
+}
+
+// Minutes an agent has held the current step past the limit, or null.
+function stuckFor(board, t, st, role) {
+  const b = st[role];
+  if (!b?.agent || b.ended || b.step !== stepOf(t, st) || !b.at || !IN_FLIGHT.includes(t.status)) return null;
+  if (role === 'worker' && t.status === 'review' && !(st.passed && st.needs === 'worker')) return null;
+  if (role === 'reviewer' && (t.status !== 'review' || (st.passed && st.needs !== 'reviewer'))) return null;
+  const minutes = Math.floor((Date.now() - b.at) / 60000);
+  return minutes >= board.settings.stuck_after_minutes ? minutes : null;
+}
+
 function dispatchLines(board, t, role, st, why) {
   const prev = st[role];
   const step = stepOf(t, st);
-  if (prev?.agent && prev.step === step) return [`WAIT   ${t.id} ${role} ${prev.agent} is on it (${why}). Act when its report arrives.`];
+  const same = prev?.agent && prev.step === step;
+  if (same && !prev.ended) {
+    const stuck = stuckFor(board, t, st, role);
+    if (stuck !== null) {
+      return [
+        `STUCK  ${t.id} ${role} ${prev.agent} has been on it for ${stuck}m without handing over.`,
+        `       If its report has already arrived, or it does not answer a SendMessage asking where it stands, release it: ${K()} release ${t.id} ${role}`,
+      ];
+    }
+    return [`WAIT   ${t.id} ${role} ${prev.agent} is on it (${why}). Act when its report arrives; if its report arrives and this line is still here, it ended without handing over: ${K()} release ${t.id} ${role}`];
+  }
+  if (same) why = 'it ended without handing over: finish the step and hand over';
   const prompt = `Ticket ${t.id}. Repo ${board.root}. Run \`${K()} brief ${t.id} --role ${role}\` first and follow it exactly.`;
   const bind = `       then record it: ${K()} agent ${t.id} ${role} <agentId>`;
   if (prev?.agent) {
     return [
       `RESUME ${t.id} ${role} ${prev.agent} — ${why}`,
       `       SendMessage to ${prev.agent}: "${why}. Run \`${K()} brief ${t.id} --role ${role}\` again and follow it."`,
-      `       (cannot be resumed? dispatch a new ${role} with the prompt: ${prompt})`,
+      `       (cannot be resumed? dispatch a new ${role}: subagent_type=kerjaan2:${role}, prompt: ${prompt} You are new to this ticket.)`,
       bind,
     ];
   }
@@ -405,33 +441,40 @@ export function nextActions(board) {
     const st = t0.st;
     if (i > 0) return out.push(`WAIT   ${t.id} passed; number ${i + 1} in the merge queue, behind ${mq[0].id}. It lands in its turn.`);
     if (st.needs === 'worker') out.push(...dispatchLines(board, t, 'worker', st, 'main moved after it passed: bring main in (integration, not a rejection)'));
-    else if (st.needs === 'reviewer') out.push(...dispatchLines(board, t, 'reviewer', st, 'look at the conflict resolution only'));
+    else if (st.needs === 'reviewer') out.push(...dispatchLines(board, t, 'reviewer', st, 'look only at what its worker changed to bring main in'));
     else out.push(`LAND   ${t.id} is at the front of the merge queue: run \`${K()} land ${t.id}\``);
   });
   for (const t of flight) {
     const st = B.getState(board, t.id);
+    if (st.passed) continue;
     for (const q of t.record.questions.filter((x) => x.status === 'blocking')) {
       out.push(`OWNER  ${t.id} ${q.key}: ${q.text}\n       its worker builds the recommended option meanwhile; the ticket is held before it merges. Record the answer: ${K()} answer ${t.id} ${q.key} "<answer>" --agrees|--differs`);
     }
-    if (st.passed) continue;
-    if (t.status === 'review') {
+    if (st.stopped) {
+      out.push(`OWNER  ${t.id} its worker stopped: ${st.stopped}\n       Owner decides: try again (\`${K()} retry ${t.id}\`), or drop it (\`${K()} move ${t.id} cancel --force --why "<reason>"\`).`);
+    } else if (t.status === 'review') {
       out.push(...dispatchLines(board, t, 'reviewer', st, (st.round || 1) > 1 ? `the fix is in; round ${st.round}` : 'review it'));
-    } else if ((st.rejections || 0) >= 2 && !st.owner_ok_round) {
-      out.push(`OWNER  ${t.id} was sent back twice. Owner decides: another fix (\`${K()} retry ${t.id}\`), or accept as is (\`${K()} accept ${t.id} --why "<owner's words>"\`).`);
+    } else if (rejectedTwice(st)) {
+      out.push(`OWNER  ${t.id} was sent back ${st.rejections} times. Owner decides: another fix (\`${K()} retry ${t.id}\`), or accept as is (\`${K()} accept ${t.id} --why "<owner's words>"\`).`);
     } else {
-      const why = { fix: 'the reviewer sent it back; findings are in the ticket', answered: 'the owner answered its question' }[st.mode] || 'work the ticket';
+      const why = {
+        fix: 'the reviewer sent it back; findings are in the ticket',
+        answered: 'the owner answered its question',
+        resubmit: 'its branch changed after it was handed over: check it and hand it over again',
+      }[st.mode] || 'work the ticket';
       out.push(...dispatchLines(board, t, 'worker', st, why));
     }
   }
-  const room = board.settings.max_parallel - flight.length;
+  const busy = flight.filter((t) => !waitsForOwner(B.getState(board, t.id)));
+  const room = board.settings.max_parallel - busy.length;
   const q = B.readQueue(board);
   let started = 0;
   // A solo ticket (groundwork others stand on) runs with nothing beside it.
-  const soloFlying = flight.find((t) => t.fm.solo === 'true');
+  const soloFlying = busy.find((t) => t.fm.solo === 'true');
   if (soloFlying && B.listTickets(board, ['todo']).length) out.push(`WAIT   ${soloFlying.id} is solo: nothing else starts until it is in main.`);
   for (const t of soloFlying ? [] : orderedTodo(board)) {
     if (started >= room) break;
-    if (t.fm.solo === 'true' && (flight.length || started)) {
+    if (t.fm.solo === 'true' && (busy.length || started)) {
       const r0 = readiness(board, t);
       if (!r0.reasons.length && !r0.waits.length) {
         out.push(`WAIT   ${t.id} is solo: it starts once everything in flight is in main, and nothing starts in front of it.`);
@@ -460,7 +503,7 @@ export function next() {
   const actions = nextActions(board);
   if (actions.length) {
     console.log(actions.join('\n'));
-    if (actions.every((a) => a.startsWith('OWNER'))) console.log('IDLE   no agent has anything to do: everything left waits for the owner. Put the OWNER lines and the inbox to them now.');
+    if (!actions.some((a) => /^(DISPATCH|RESUME|START|LAND|WAIT|STUCK|FIX)/.test(a))) console.log('IDLE   no agent has anything to do: everything left waits for the owner. Put the OWNER lines and the inbox to them now.');
     return;
   }
   const items = inboxItems(board);
@@ -504,7 +547,7 @@ export function agent(argv) {
   B.withLock(board, 'board', () => {
     const t = B.load(B.findTicket(board, ref));
     const st = B.getState(board, t.id);
-    B.setState(board, t.id, { [role]: { agent: agentId, step: stepOf(t, st) } });
+    B.setState(board, t.id, { [role]: { agent: agentId, step: stepOf(t, st), at: Date.now() } });
     B.log(board, t.id, 'agent', { role, agent: agentId, step: stepOf(t, st) });
     console.log(`${t.id}: ${role} is agent ${agentId}`);
   });
@@ -512,18 +555,41 @@ export function agent(argv) {
 
 export function go(argv) {
   const board = B.openBoard();
-  const t = B.findTicket(board, parseArgs(argv).pos[0]);
-  B.setState(board, t.id, { go: true });
-  console.log(`${t.id}: the owner said go`);
+  B.withLock(board, 'board', () => {
+    const t = B.findTicket(board, parseArgs(argv).pos[0]);
+    B.setState(board, t.id, { go: true });
+    console.log(`${t.id}: the owner said go`);
+  });
 }
 
 export function retry(argv) {
   const board = B.openBoard();
-  const t = B.findTicket(board, parseArgs(argv).pos[0]);
-  const st = B.getState(board, t.id);
-  B.setState(board, t.id, { owner_ok_round: st.round || 1 });
-  B.log(board, t.id, 'retry', { by: 'owner' });
-  console.log(`${t.id}: another fix, on the owner's word. Run \`${K()} next\`.`);
+  B.withLock(board, 'board', () => {
+    const t = B.findTicket(board, parseArgs(argv).pos[0]);
+    const st = B.getState(board, t.id);
+    B.setState(board, t.id, { owner_ok_rejections: st.rejections || 0, stopped: null });
+    B.log(board, t.id, 'retry', { by: 'owner' });
+    console.log(`${t.id}: another try, on the owner's word. Run \`${K()} next\`.`);
+  });
+}
+
+// An agent that ended without handing over: free its step, so `next` sends
+// somebody again. With --stopped, the ticket waits for the owner instead.
+export function release(argv) {
+  const { pos, opt } = parseArgs(argv);
+  const board = B.openBoard();
+  const role = pos[1] || 'worker';
+  if (!['worker', 'reviewer'].includes(role)) die('usage: release <id> [worker|reviewer] [--stopped "<its reason>"]');
+  B.withLock(board, 'board', () => {
+    const t = B.findTicket(board, pos[0]);
+    const st = B.getState(board, t.id);
+    if (!st[role]?.agent) die(`${t.id} has no ${role} recorded`);
+    B.setState(board, t.id, { [role]: { ...st[role], ended: true }, ...(opt.stopped ? { stopped: String(opt.stopped) } : {}) });
+    B.log(board, t.id, 'released', { role, agent: st[role].agent, stopped: opt.stopped || undefined });
+    console.log(opt.stopped
+      ? `${t.id}: its ${role} stopped (${opt.stopped}). The ticket waits for the owner and uses no room meanwhile.`
+      : `${t.id}: ${role} ${st[role].agent} released. Run \`${K()} next\`: it says whom to send.`);
+  });
 }
 
 // ----- committing the board -----

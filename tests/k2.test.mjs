@@ -1,6 +1,6 @@
 // Every test builds a throwaway repository with a board and drives the real
 // CLI against it. Nothing in this checkout is changed.
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,19 +17,30 @@ function sh(cwd, cmd, args, input) {
 }
 
 // A repo whose "tests" fail when any file contains the word BROKEN.
+const made = [];
+after(() => { for (const d of made) fs.rmSync(d, { recursive: true, force: true }); });
+
 function repo({ test: testCmd = 'node check.js', settings = {} } = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'k2-')));
+  made.push(dir);
   const git = (...a) => sh(dir, 'git', a);
   git('init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'app.txt'), 'line one\nline two\nline three\n');
   fs.writeFileSync(path.join(dir, 'check.js'), "const fs=require('fs');const bad=fs.readdirSync('.').filter(f=>f.endsWith('.txt')&&fs.readFileSync(f,'utf8').includes('BROKEN'));process.exit(bad.length?1:0)\n");
   git('add', '-A');
   git('commit', '-qm', 'init');
-  const k = (...a) => sh(dir, K2, a);
+  // Tests give verdicts as the reviewer the foreman sent.
+  const k = (...a) => {
+    if (a[0] === 'verdict') sh(dir, K2, ['agent', a[1], 'reviewer', 'rv']);
+    return sh(dir, K2, a);
+  };
   assert.equal(k('init', '--language', 'Bahasa Indonesia', '--test', testCmd).code, 0);
   const file = path.join(dir, '.kerjaan2', 'settings.yml');
   let s = fs.readFileSync(file, 'utf8');
-  for (const [key, v] of Object.entries(settings)) s = s.replace(new RegExp(`^${key}:.*$`, 'm'), `${key}: ${v}`);
+  for (const [key, v] of Object.entries(settings)) {
+    const re = new RegExp(`^${key}:.*$`, 'm');
+    s = re.test(s) ? s.replace(re, `${key}: ${v}`) : `${s}\n${key}: ${v}\n`;
+  }
   fs.writeFileSync(file, s);
   return { dir, git, k, kIn: (cwd, ...a) => sh(cwd, K2, a) };
 }
@@ -133,6 +144,7 @@ test('a standard ticket is reviewed; a rejection goes back to the same worker an
   assert.match(r.k('brief', id, '--role', 'reviewer').out, /passed at .* on exactly the content under review/);
   assert.match(r.k('brief', id, '--role', 'reviewer').out, /Depth: standard/);
   assert.match(r.k('brief', id, '--role', 'worker').out, /nothing for a worker to do/);
+  assert.match(r.kIn(r.dir, 'verdict', id, 'pass', '--note', '1: ok', '--note', '2: ok').out, /no reviewer was sent for this step/, 'a worker cannot judge its own ticket');
   r.k('agent', id, 'reviewer', 'r1');
 
   assert.equal(r.k('verdict', id, 'reject').code, 1, 'a rejection must say what failed');
@@ -147,9 +159,10 @@ test('a standard ticket is reviewed; a rejection goes back to the same worker an
   sh(wt, 'git', ['commit', '-qam', 'fix']);
   r.kIn(wt, 'check', id, '1', 'baris dua terlihat');
   r.kIn(wt, 'submit', id);
-  assert.match(r.k('next').out, /RESUME .* reviewer r1/);
+  assert.match(r.k('next').out, /RESUME .* reviewer (r1|rv)/);
   assert.match(r.k('brief', id, '--role', 'reviewer').out, /This is a later round/);
-  assert.match(r.k('verdict', id, 'pass', '--note', '1: cat app.txt menampilkan baris dua').out, /PASSED .* round 2/);
+  assert.match(r.k('verdict', id, 'pass', '--note', '1: cat app.txt menampilkan baris dua').out, /Missing: 2/);
+  assert.match(r.k('verdict', id, 'pass', '--note', '1: cat app.txt menampilkan baris dua', '--note', '2: langkah di Manual checks bisa diikuti').out, /PASSED .* round 2/);
   assert.equal(statusOf(r, id), 'review');
   r.k('land', id);
   assert.equal(statusOf(r, id), 'done');
@@ -197,10 +210,13 @@ test('two tickets side by side: the first lands at once, the second is brought u
   fs.writeFileSync(path.join(wb, 'app.txt'), 'line A and B\nline two\nline three\n');
   sh(wb, 'git', ['add', 'app.txt']);
   sh(wb, 'git', ['commit', '-q', '--no-edit']);
-  assert.match(r.kIn(wb, 'submit', b).out, /INTEGRATED .*reviewer looks at the conflict resolution/s);
-  assert.match(r.k('next').out, /reviewer .*conflict resolution only/);
-  assert.match(r.k('brief', b, '--role', 'reviewer').out, /Only the conflict resolution/);
-  r.k('verdict', b, 'pass');
+  assert.match(r.kIn(wb, 'submit', b).out, /INTEGRATED .*A reviewer looks at what you changed/s);
+  assert.match(r.k('next').out, /reviewer .*look only at what its worker changed/);
+  const rb = r.k('brief', b, '--role', 'reviewer').out;
+  assert.match(rb, /Only the conflict resolution/);
+  assert.ok(!rb.includes('Depth: standard'), 'one depth, not two');
+  assert.equal(r.k('verdict', b, 'pass').code, 1, 'say what was checked');
+  r.k('verdict', b, 'pass', '--note', 'kedua maksud terjaga');
   assert.match(r.k('land', b).out, /LANDED/);
   assert.match(fs.readFileSync(path.join(r.dir, 'app.txt'), 'utf8'), /line A and B/);
   assert.match(r.k('doctor').out, /healthy/);
@@ -228,7 +244,8 @@ test('the merge queue: tickets land in the order they passed, and the front keep
   fs.writeFileSync(path.join(wts[1], 'app.txt'), 'line 0 and 1\n');
   sh(wts[1], 'git', ['add', '-A']);
   sh(wts[1], 'git', ['commit', '-q', '--no-edit']);
-  assert.match(r.kIn(wts[1], 'submit', b).out, /INTEGRATED .*It can land/s);
+  assert.match(r.kIn(wts[1], 'submit', b).out, /INTEGRATED .*A reviewer looks/s, 'a conflict resolved by hand gets a reviewer on every lane');
+  r.k('verdict', b, 'pass', '--note', 'kedua baris terjaga');
   assert.match(r.k('land', b).out, /LANDED/);
   assert.match(r.k('land', c).out, /LANDED/);
   const h = r.k('history', b).out;
@@ -503,6 +520,7 @@ test('any test command takes its turn through k2 test, in the worktree or in a c
   assert.equal(ok.code, 0);
   assert.match(ok.out, new RegExp(`halo-${id}[\\s\\S]*exit 0 .*nothing recorded`));
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'k2-copy-'));
+  made.push(copy);
   fs.writeFileSync(path.join(copy, 'app.txt'), 'BROKEN\n');
   fs.copyFileSync(path.join(wt, 'check.js'), path.join(copy, 'check.js'));
   const bad = r.k('test', id, '--dir', copy);
@@ -532,27 +550,25 @@ test('a verdict is refused when the review changed the worktree or the branch mo
   assert.match(r.k('verdict', id, 'pass', '--note', '1: ok').out, /worktree changed during the review[\s\S]*sisa-peninjau\.txt/);
   sh(wt, 'git', ['add', '-A']);
   sh(wt, 'git', ['commit', '-qm', 'menyelinap']);
-  assert.match(r.k('verdict', id, 'pass', '--note', '1: ok').out, /branch moved since it was handed over/);
-  assert.equal(statusOf(r, id), 'review');
+  assert.match(r.k('verdict', id, 'pass', '--note', '1: ok').out, /NO VERDICT .* branch moved since it was handed over/);
+  assert.equal(statusOf(r, id), 'in_progress', 'it goes back to be handed over again');
 });
 
-test('nothing enters main but content the tests passed on: an untested tip is tested at the merge, and a red one stays out', () => {
+test('an accepted ticket is tested at the merge, and a red one stays out of main', () => {
   const r = repo();
-  const id = ticket(r, 'Lolos lalu berubah', { lane: 'light' });
+  const id = ticket(r, 'Diterima pemilik');
   r.k('start', id);
-  const wt = work(r, id, 'x.txt', 'baik\n');
-  r.kIn(wt, 'submit', id);
-  fs.writeFileSync(path.join(wt, 'x.txt'), 'BROKEN\n');
-  sh(wt, 'git', ['commit', '-qam', 'sesudah lolos']);
+  const wt = work(r, id, 'x.txt', 'BROKEN\n');
   const before = r.git('rev-parse', 'main').out.trim();
+  assert.match(r.k('accept', id, '--why', 'cukup untuk sekarang').out, /ACCEPTED .*create the follow-up/s);
   const out = r.k('land', id);
   assert.equal(out.code, 3);
   assert.match(out.out, /the tests fail on what would enter main/);
   assert.equal(r.git('rev-parse', 'main').out.trim(), before, 'main did not move');
-  assert.ok(!fs.existsSync(path.join(r.dir, 'x.txt')));
-  fs.writeFileSync(path.join(wt, 'x.txt'), 'baik lagi\n');
+  fs.writeFileSync(path.join(wt, 'x.txt'), 'baik\n');
   sh(wt, 'git', ['commit', '-qam', 'pulih']);
   assert.match(r.kIn(wt, 'submit', id).out, /INTEGRATED/);
+  r.k('verdict', id, 'pass', '--note', 'perbaikan dilihat');
   assert.match(r.k('land', id).out, /LANDED/);
   assert.equal(sh(r.dir, 'node', ['check.js']).code, 0, 'main is green');
 });
@@ -632,4 +648,119 @@ test('the rules an agent reads stay under 6,000 words', () => {
   const files = ['skills/kerjaan2/SKILL.md', ...['roles', 'agents'].flatMap((d) => fs.readdirSync(path.join(root, d)).map((f) => `${d}/${f}`))];
   const words = files.reduce((n, f) => n + fs.readFileSync(path.join(root, f), 'utf8').split(/\s+/).filter(Boolean).length, 0);
   assert.ok(words <= 6000, `${words} words`);
+});
+
+// ----- found by the independent review of 0.9.0 -----
+
+const passLight = (r, title, file, content) => {
+  const id = ticket(r, title, { lane: 'light' });
+  r.k('start', id);
+  r.kIn(work(r, id, file, content), 'submit', id);
+  return id;
+};
+
+test('a commit that fails at the merge leaves the ticket where it was, and loses nothing', () => {
+  const r = repo();
+  const a = passLight(r, 'Commit gagal', 'a.txt', 'a\n');
+  const b = passLight(r, 'Tiket berikutnya', 'b.txt', 'b\n');
+  const hook = path.join(r.dir, '.git', 'hooks', 'pre-commit');
+  fs.writeFileSync(hook, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const before = r.git('rev-parse', 'main').out.trim();
+  const out = r.k('land', a);
+  assert.equal(out.code, 4);
+  assert.match(out.out, /HELD .*commit/s);
+  assert.equal(statusOf(r, a), 'review', 'not in done: it did not land');
+  assert.equal(r.git('rev-parse', 'main').out.trim(), before);
+  assert.notEqual(r.git('rev-parse', '-q', '--verify', 'MERGE_HEAD').code, 0, 'no merge is left open in the main tree');
+  assert.ok(!fs.readFileSync(path.join(r.dir, '.kerjaan2', 'log', `${a}.jsonl`), 'utf8').includes('"landed"'));
+  fs.rmSync(hook);
+  assert.match(r.k('land', b).out, /LANDED/);
+  assert.ok(fs.existsSync(r.k('show', a, '--path').out.trim()), 'the held ticket is still on the board');
+  assert.match(r.k('land', a).out, /LANDED/);
+  assert.match(r.k('doctor').out, /healthy/);
+});
+
+test('a merge the owner has open in the main tree is never aborted by land', () => {
+  const r = repo();
+  const a = passLight(r, 'Pemilik sedang merge', 'a.txt', 'a\n');
+  r.git('checkout', '-q', '-b', 'sisi');
+  fs.writeFileSync(path.join(r.dir, 'app.txt'), 'sisi\n');
+  r.git('commit', '-qam', 'sisi');
+  r.git('checkout', '-q', 'main');
+  fs.writeFileSync(path.join(r.dir, 'app.txt'), 'utama\n');
+  r.git('commit', '-qam', 'utama');
+  r.git('merge', 'sisi');
+  fs.writeFileSync(path.join(r.dir, 'app.txt'), 'diselesaikan pemilik\n');
+  r.git('add', 'app.txt');
+  const out = r.k('land', a);
+  assert.equal(out.code, 4);
+  assert.match(out.out, /HELD .*middle of a merge/s);
+  assert.equal(r.git('rev-parse', '-q', '--verify', 'MERGE_HEAD').code, 0, "the owner's merge is still open");
+  assert.equal(fs.readFileSync(path.join(r.dir, 'app.txt'), 'utf8'), 'diselesaikan pemilik\n');
+});
+
+test('only what was judged lands: a commit after the verdict sends the ticket back to be handed over again', () => {
+  const r = repo();
+  const id = ticket(r, 'Commit sesudah putusan', { lane: 'strict' });
+  r.k('start', id);
+  r.k('agent', id, 'worker', 'w1');
+  const wt = work(r, id, 'x.txt', 'x\n');
+  r.k('decide', id, 'Red-proof: batas dirusak, uji merah');
+  r.kIn(wt, 'submit', id);
+  r.k('agent', id, 'reviewer', 'r1');
+  r.k('verdict', id, 'pass', '--note', '1: ok');
+  fs.writeFileSync(path.join(wt, 'selundupan.txt'), 'tidak ditinjau\n');
+  sh(wt, 'git', ['add', '-A']);
+  sh(wt, 'git', ['commit', '-qm', 'sesudah putusan']);
+  const out = r.k('land', id);
+  assert.equal(out.code, 3);
+  assert.match(out.out, /changed after it passed/);
+  assert.equal(statusOf(r, id), 'in_progress');
+  assert.ok(!fs.existsSync(path.join(r.dir, 'selundupan.txt')));
+  assert.match(r.k('brief', id, '--role', 'worker').out, /mode: resubmit/);
+  assert.match(r.kIn(wt, 'submit', id).out, /It is in review/);
+});
+
+test('a fix made after the tests failed on the merged state is seen by a reviewer before it lands', () => {
+  const r = repo();
+  const a = passLight(r, 'Mendarat dulu', 'a.txt', 'a\n');
+  const b = ticket(r, 'Rusak bila digabung');
+  r.k('start', b);
+  r.k('agent', b, 'worker', 'wb');
+  const wb = work(r, b, 'check.js', "const fs=require('fs');process.exit(fs.existsSync('a.txt')?1:0)\n");
+  r.kIn(wb, 'submit', b);
+  r.k('agent', b, 'reviewer', 'rb');
+  r.k('verdict', b, 'pass', '--note', '1: ok');
+  r.k('land', a);
+  const out = r.k('land', b);
+  assert.equal(out.code, 3);
+  assert.match(out.out, /tests fail on what would enter main/);
+  fs.writeFileSync(path.join(wb, 'check.js'), 'process.exit(0)\n');
+  sh(wb, 'git', ['commit', '-qam', 'perbaikan']);
+  assert.match(r.kIn(wb, 'submit', b).out, /INTEGRATED .*reviewer/s);
+  assert.match(r.k('land', b).out, /waiting for its reviewer/);
+  r.k('verdict', b, 'pass', '--note', 'perbaikan uji dilihat');
+  assert.match(r.k('land', b).out, /LANDED/);
+});
+
+test('an agent that ended without handing over does not stall its ticket: release, stopped, and the stuck clock', () => {
+  const r = repo({ settings: { stuck_after_minutes: '0' } });
+  const id = ticket(r, 'Agen menghilang');
+  r.k('start', id);
+  r.k('agent', id, 'worker', 'hilang');
+  assert.match(r.k('next').out, /STUCK  .* worker hilang/);
+  assert.match(r.k('inbox').out, /stuck \(1\)/);
+  assert.match(r.k('release', id, 'worker').out, /released/);
+  assert.match(r.k('next').out, /RESUME .* worker hilang — it ended without handing over/);
+  r.k('agent', id, 'worker', 'baru');
+  // the stop hook, second time round, marks the agent as ended by itself
+  sh(r.dir, K2, ['hook', 'subagent-stop'], JSON.stringify({ cwd: r.dir, agent_id: 'baru', agent_type: 'kerjaan2:worker', stop_hook_active: true }));
+  assert.match(r.k('next').out, /RESUME .* worker baru — it ended without handing over/);
+  assert.match(r.k('release', id, 'worker', '--stopped', 'pustaka yang dibutuhkan tidak ada').out, /waits for the owner/);
+  const next = r.k('next').out;
+  assert.match(next, /OWNER  .* its worker stopped: pustaka yang dibutuhkan tidak ada/);
+  assert.match(next, /IDLE/);
+  assert.match(r.k('inbox').out, /stopped \(1\)/);
+  r.k('retry', id);
+  assert.match(r.k('next').out, /RESUME .* worker baru/);
 });

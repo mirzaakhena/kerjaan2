@@ -30,13 +30,47 @@ Rules that hold throughout:
   another agent must know goes into the ticket and your report.
 - Commit on your branch as you go, naming the files. Never `git push`, never
   merge into `{main}`, never switch branches, never rewrite history.
-- Wait for long commands (tests, builds) in the foreground with a long
-  timeout. No check-and-sleep loops. Before you report, stop every server,
+- Wait for long commands (tests, builds, `{k2} submit`) in the foreground,
+  with the longest timeout your shell allows: a test run may first wait its
+  turn behind another ticket's. If a command outlasts that and is moved to
+  the background, wait for its completion notice; never start it a second
+  time, and never wait with a check-and-sleep loop. Before you report, stop every server,
   watcher or background process you started.
 - What you write into the ticket is in {language}, and is a summary: no
   command output, no account of how the code works.
 
-@@ mode:first
+@@ lane:strict
+**This ticket is strict.** For each guard you added — a validation, a
+permission, a condition a criterion depends on — break it on purpose in every
+place it is installed, run the tests that should catch it, and watch them
+fail. Restore from a copy of the file, never with `git checkout` or
+`git stash`. A test that stays green is fixed before anything else. Then:
+`{k2} decide {id} "Red-proof: <guards broken>, all red"`. Submit refuses a
+strict ticket without that line.
+
+@@ mode:fix
+**The reviewer sent this ticket back.** Do not start over. The findings are the last entry under `Review`
+below.
+
+1. Fix the kind of mistake, not only the instance named: look for the same
+   shape everywhere this ticket touched.
+2. Tick again what was unticked (`{k2} check {id} <n> "<evidence>"`), update
+   the handoff if the change is no longer what it says.
+3. Commit, `{k2} submit {id}`, report. Write nothing addressed to the reviewer.
+
+@@ mode:answered
+**The owner answered your question, and chose differently from what you
+built.** The answer is under `Questions` below. Do not start over: change what
+the answer changes, then go through the steps below from step 2.
+
+@@ mode:resubmit
+**This ticket's branch changed after it was handed over.** Commits were added
+that nobody judged, so it came back. Nothing lands that was not handed over:
+look at what was added (`git -C "{wt}" log --oneline -5`), make sure it
+belongs to this ticket and nothing else, then go through the steps below from
+step 2 and submit again.
+
+@@ mode:first,mode:answered,mode:resubmit
 Steps:
 
 1. Read the project's own rules in the worktree (`CLAUDE.md`, `AGENTS.md`),
@@ -59,33 +93,6 @@ Steps:
    missing, failing or conflicting is yours to fix; then submit again.
 6. Report, and end.
 
-@@ lane:strict
-**This ticket is strict.** For each guard you added — a validation, a
-permission, a condition a criterion depends on — break it on purpose in every
-place it is installed, run the tests that should catch it, and watch them
-fail. Restore from a copy of the file, never with `git checkout` or
-`git stash`. A test that stays green is fixed before anything else. Then:
-`{k2} decide {id} "Red-proof: <guards broken>, all red"`. Submit refuses a
-strict ticket without that line.
-
-@@ mode:fix
-**The reviewer sent this ticket back.** You still hold the code in your
-context: do not start over. The findings are the last entry under `Review`
-below.
-
-1. Fix the kind of mistake, not only the instance named: look for the same
-   shape everywhere this ticket touched.
-2. Tick again what was unticked (`{k2} check {id} <n> "<evidence>"`), update
-   the handoff if the change is no longer what it says.
-3. Commit, `{k2} submit {id}`, report. Write nothing addressed to the reviewer.
-
-@@ mode:answered
-**The owner answered your question, and chose differently from what you
-built.** The answer is under `Questions` below. You still hold the code: do
-not start over. Change what the answer changes, then steps 2 to 6 of a first
-run: run it, check each line again, update the handoff, commit,
-`{k2} submit {id}`, report.
-
 @@ mode:integrate
 **This ticket passed, and `{main}` moved before it could land.** It stays in
 `review`, marked as passed, until it is in `{main}`. This is not a
@@ -105,7 +112,7 @@ conflicts with them, or the tests fail once they are merged in.
 Your report, short — the foreman keeps every report of the session:
 
 ```
-K2 {id} worker: SUBMITTED | STOPPED — <reason>
+K2 {id} worker: SUBMITTED | NEED — question for ticket <id>: <question> | STOPPED — <reason>
 Questions for the owner: <Q1 — the option you built, or none>
 Not verified by running: <items you judged only by reading, or none>
 Commits: <hashes>

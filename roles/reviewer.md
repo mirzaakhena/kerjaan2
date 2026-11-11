@@ -10,8 +10,10 @@ Rules that hold throughout:
   finding. For checks beyond the test command, use what the repo itself
   offers (its scripts, its CI): never invent a command. Finding none, say so
   in your verdict.
-- The work is committed on branch `{branch}`, in the worktree `{wt}`, already
-  merged with `{main}`. Review that; the command for the diff is above.
+- The work is committed on branch `{branch}`, in the worktree `{wt}`. It was
+  merged with `{main}` as `{main}` stood when it was handed over; `{main}` may
+  have moved since, and that is the merge queue's business, not a finding.
+  Review what is there; the command for the diff is above.
 - The ticket's record — ticked boxes, the handoff, the decisions, the worker's
   claim per item — is the claim under test, never evidence.
 - **Blocking** is: a `Done when` line that is not met or whose evidence is
@@ -68,11 +70,14 @@ whose code is untouched is carried — say so on its line.
 **Only the conflict resolution.** This ticket already passed; `{main}` moved,
 and its worker merged it in and resolved conflicts by hand. Read the merge:
 `git -C "{wt}" show --remerge-diff HEAD 2>/dev/null || git -C "{wt}" show HEAD`.
-Judge one thing: does the resolution keep what both sides meant? The intents
-are under "Landed since this ticket started". Everything else is carried.
+Judge one thing: does what the worker changed to bring `{main}` in keep what
+both sides meant, and nothing more? The intents are under "Landed since this
+ticket started". Everything else is carried. Your verdict takes one note:
+`{k2} verdict {id} pass --note "<what both sides meant, and that it is kept>"`.
 
 @@ always
-Record the verdict — one short line per criterion, evidence and not output:
+Record the verdict. For a review of the whole ticket: one `--note "<n>: ..."`
+per `Done when` line, every line, evidence and not output:
 
 ```
 {k2} verdict {id} pass --note "1: <what proved it>" --note "2: <...>" --note "note: <finding that did not block>"

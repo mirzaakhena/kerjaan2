@@ -21,6 +21,7 @@ const COMMANDS = {
   agent: board.agent,
   go: board.go,
   retry: board.retry,
+  release: board.release,
   'commit-board': board.commitBoard,
   doctor: board.doctor,
   ask: record.ask,
@@ -55,7 +56,7 @@ Board     init · new "<title>" [--type bug|feature|task] [--priority] [--lane] 
 Queue     ready [<id>...] · queue [show] · queue set <id>... [--goal "..."] [--pause-before <id>] · next
 Work      start <id> · brief <id> --role worker|reviewer · brief --role planner · test <id> [--dir <path>] [-- <command>]
           submit <id> · verdict <id> pass|reject [--fail 2,3] --note "..." · land <id>
-          agent <id> worker|reviewer <agentId> · retry <id> · accept <id> --why "..." · go <id>
+          agent <id> worker|reviewer <agentId> · release <id> [worker|reviewer] [--stopped "..."] · retry <id> · accept <id> --why "..." · go <id>
 Record    ask <id> [--blocking] "<question>" · answer <id> Q1 "<answer>"
           assume <id> "<assumption>" --why "..." [--undo "..."] · confirm|overturn <id> A1|all
           decide <id> "<decision>" · check <id> <n> "<evidence>" · uncheck <id> <n> · void <id> <n> "<decision>"
