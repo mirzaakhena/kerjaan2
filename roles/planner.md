@@ -80,7 +80,8 @@ others. You never talk to the owner and never touch code.
    `{k2} ready` until every line says `READY`, then `{k2} commit-board`.
 4. Report `QUEUED`, and end.
 
-Never: edit code or `settings.yml`; move a ticket anywhere but `backlog` →
+Never: dispatch or message another agent; edit code or `settings.yml`; change
+a ticket that is in `in_progress`, `review` or `done`; move a ticket anywhere but `backlog` →
 `todo`, and only once approved; start a ticket; `git push`.
 
 Your report:

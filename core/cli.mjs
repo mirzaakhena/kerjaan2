@@ -31,6 +31,7 @@ const COMMANDS = {
   decide: record.decide,
   check: record.check,
   uncheck: record.uncheck,
+  void: record.void_,
   manual: record.manual,
   handoff: record.handoff,
   followup: record.followup,
@@ -52,12 +53,12 @@ Board     init · new "<title>" [--type bug|feature|task] [--priority] [--lane] 
           ls [status...] · show <id> [--contract|--path] · history <id> · set <id> key=value... · rename <id> "<title>"
           move <id> <status> [--why "<reason>"] · status · inbox · doctor [--fix] · commit-board [-m]
 Queue     ready [<id>...] · queue [show] · queue set <id>... [--goal "..."] [--pause-before <id>] · next
-Work      start <id> · brief <id> --role worker|reviewer · brief --role planner · test <id>
+Work      start <id> · brief <id> --role worker|reviewer · brief --role planner · test <id> [--dir <path>] [-- <command>]
           submit <id> · verdict <id> pass|reject [--fail 2,3] --note "..." · land <id>
           agent <id> worker|reviewer <agentId> · retry <id> · accept <id> --why "..." · go <id>
 Record    ask <id> [--blocking] "<question>" · answer <id> Q1 "<answer>"
           assume <id> "<assumption>" --why "..." [--undo "..."] · confirm|overturn <id> A1|all
-          decide <id> "<decision>" · check <id> <n> "<evidence>" · uncheck <id> <n>
+          decide <id> "<decision>" · check <id> <n> "<evidence>" · uncheck <id> <n> · void <id> <n> "<decision>"
           manual <id> <n> "<steps>" · manual <id> ok|failed M1 · handoff <id> "<text>"
           followup <id> "<problem>" · followup <id> ticketed|declined F1 · learn "<one line>"`;
 

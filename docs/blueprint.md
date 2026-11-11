@@ -442,3 +442,30 @@ berikutnya.
 4. `done` berarti sudah masuk main; tiket yang lolos menunggu merge di `review`.
 5. Riwayat tiket cukup di jejak mesin, dibaca lewat `k2 history <id>` dan kelak linimasa viewer; tidak ada `## History` di berkas tiket.
 6. `.kerjaan2/` ikut di-commit; hanya `.state/` dan `.worktrees/` yang diabaikan git.
+
+### Perbandingan aturan agen dengan kerjaan (12 November 2026)
+
+Aturan agen `kerjaan` dibandingkan satu per satu dengan `kerjaan2`. Keputusan
+pemilik atas hasilnya:
+
+7. Peninjau menolak tiket karena: butir `Done when` tidak terpenuhi, bug nyata
+   di kode yang diubah, atau pelanggaran aturan proyek. (Di `kerjaan` hanya
+   yang pertama.) Konsekuensi yang diterima: penolakan lebih sering.
+8. Butir `(owner)` selalu ditunda; tidak ada pilihan menahan antrean.
+   Konsekuensi: kode yang belum dilihat pemilik bisa sudah di main.
+9. Antrean hanya punya tanda jeda; `chain: group | ticket` tidak dibawa.
+10. Tinjauan `standard` membuktikan setiap butir dengan menjalankan sesuatu,
+    seperti `normal` di `kerjaan`.
+11. Aturan yang sempat hilang dipulihkan: membatalkan butir (`k2 void`), jalan
+    uji agen lewat kunci uji (`k2 test <id> -- <perintah>`), agen tidak
+    memanggil agen lain, jalur menentukan titik mulai dan bukan kesimpulan,
+    penolakan ditulis lengkap, laporan pengerja memuat yang tidak dibuktikan
+    dengan menjalankan, peninjau membaca aturan proyek dan tidak mengarang
+    perintah, alur "tandai selesai", planner tidak menyunting tiket berjalan.
+12. Menyusul di Tahap 3: keterangan pada setiap perintah Bash agen, untuk viewer.
+
+Yang sengaja tidak dibawa dan konsekuensinya: sabotase oleh pengerja di setiap
+tiket (hanya `strict`; uji yang tidak bisa gagal lebih mungkin lolos di
+`standard`), peninjau untuk perubahan kecil (jalur `light` tanpa mata kedua),
+perbandingan perkiraan berkas dengan hasil nyata (planner tidak belajar dari
+perkiraan yang meleset).

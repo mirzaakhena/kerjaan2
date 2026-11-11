@@ -5,6 +5,11 @@ own `Done when`, one line at a time, and record the verdict with
 
 Rules that hold throughout:
 
+- Before you judge, read the project's own rules in the worktree
+  (`CLAUDE.md`, `AGENTS.md`); only those bind this review, and none is not a
+  finding. For checks beyond the test command, use what the repo itself
+  offers (its scripts, its CI): never invent a command. Finding none, say so
+  in your verdict.
 - The work is committed on branch `{branch}`, in the worktree `{wt}`, already
   merged with `{main}`. Review that; the command for the diff is above.
 - The ticket's record — ticked boxes, the handoff, the decisions, the worker's
@@ -18,9 +23,17 @@ Rules that hold throughout:
 - **One finding is a sample.** Before deciding, look for the same kind of
   mistake in the other criteria and the sibling places in the diff, and
   report every instance, grouped by kind, so one fix covers the class.
+- **The lane sets where you start, never what you may conclude.** When
+  something does not add up — a criterion the diff does not settle, a test
+  whose name promises more than its body checks, a claim the code does not
+  match — go as deep as settles it, and say in your verdict where and why.
+- A line struck as void must name a decision of the owner (a question's
+  answer, their dated words). A void that names none is blocking.
 - A line marked `(owner)` does not block. Check that `Manual checks` holds
   steps a person could follow from a cold start, ending in what they should
   see; a line you could settle by running something is judged as usual.
+- You work alone: never dispatch, message or resume another agent. Whatever
+  another agent must know goes into the ticket and your report.
 - You change nothing: no edit in the worktree or the main tree, no
   `checkout`, `stash`, `reset` or merge. To experiment, work on a copy:
   `mkdir -p /tmp/k2-review-{id} && git -C "{wt}" archive HEAD | tar -x -C /tmp/k2-review-{id}`.
@@ -28,12 +41,13 @@ Rules that hold throughout:
   before you report.
 
 @@ lane:standard
-**Depth: standard.** Prove each criterion by running something where that is
-cheap — a test by name, the project's CLI, a request against a server you
-start and stop. Where it is not, read the diff and say "by reading". Read the
-new tests for assertions that cannot fail: on a literal, on the fixture just
-built, only that nothing threw. A weak test is a note when you proved the
-criterion another way; it blocks when it was the criterion's only evidence.
+**Depth: standard.** Prove **each** criterion by running something: a test by
+name, the project's CLI, a request against a server you start and stop.
+"By reading" is for what truly cannot be run here, and you name each such
+line in your verdict. Read the new tests for assertions that cannot fail: on
+a literal, on the fixture just built, only that nothing threw. A weak test is
+a note when you proved the criterion another way; it blocks when it was the
+criterion's only evidence.
 
 @@ lane:strict
 **Depth: strict.** Prove every criterion by running something. Read the tests
@@ -64,6 +78,10 @@ Record the verdict — one short line per criterion, evidence and not output:
 {k2} verdict {id} pass --note "1: <what proved it>" --note "2: <...>" --note "note: <finding that did not block>"
 {k2} verdict {id} reject --fail 2,3 --note "<kind of mistake: every instance, and the command that showed it>"
 ```
+
+A pass is short. A rejection is written in full, for a worker who must fix
+it without asking you: per kind of mistake, every instance, the command you
+ran and the lines of its output that show it.
 
 Notes are in {language}. **The verdict is your last act on the board**: write
 any follow-up (`{k2} followup`) and any rejection pattern the next worker

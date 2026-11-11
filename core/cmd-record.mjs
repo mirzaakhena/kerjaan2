@@ -121,6 +121,7 @@ export function check(argv) {
     const n = Number(pos[1]);
     const c = T.criteria(t.contract).find((x) => x.n === n);
     if (!c) die(`Done when has no item ${pos[1]}`);
+    if (c.void) die(`item ${n} is void; there is nothing to tick`);
     if (c.owner) die(`item ${n} is the owner's to check. Write its steps instead: ${K()} manual ${t.id} ${n} "<steps, and what they should see>"`);
     const evidence = pos.slice(2).join(' ').trim();
     if (!evidence) die('say what you ran and what you saw: check <id> <n> "<evidence>"');
@@ -128,6 +129,20 @@ export function check(argv) {
     t.contract = T.setCriterion(t.contract, n, true);
     B.log(board, t.id, 'check', { n, evidence });
     return `${t.id}: item ${n} ticked.`;
+  });
+}
+
+// Named `void_` because void is a reserved word.
+export function void_(argv) {
+  const { pos } = parseArgs(argv);
+  edit(pos[0], (t, board) => {
+    const n = Number(pos[1]);
+    const reason = pos.slice(2).join(' ').replace(/\s+/g, ' ').trim();
+    if (!reason) die('void <id> <n> "<the decision that made it pointless: Q2, or the owner\'s words and date>"');
+    if (reason.length > 200) die('the reason is one line');
+    t.contract = T.voidCriterion(t.contract, n, reason);
+    B.log(board, t.id, 'void', { n, reason });
+    return `${t.id}: item ${n} struck as void. The reviewer checks that the reason names a decision of the owner.`;
   });
 }
 

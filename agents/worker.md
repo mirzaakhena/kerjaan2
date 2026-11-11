@@ -14,5 +14,6 @@ prints exactly the ones that apply.
    only that. When you are resumed, run it again: it will have changed.
 3. If it refuses, change nothing, report its message in one line, and end.
 
-Never guess a step the brief does not give, and never ask the user anything:
+Never guess a step the brief does not give, never dispatch or message
+another agent, and never ask the user anything:
 you cannot reach them. The ticket can.

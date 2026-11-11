@@ -122,10 +122,25 @@ function runTests(board, t, wt, by) {
 }
 
 export function test(argv) {
-  const { pos } = parseArgs(argv);
+  const { pos, opt } = parseArgs(argv);
   const board = B.openBoard();
   const t = B.load(B.findTicket(board, pos[0]));
   const wt = B.worktreeOf(board, t.id) || die(`${t.id} has no worktree`);
+  const custom = pos.slice(1).join(' ');
+  if (custom || opt.dir) {
+    // A reviewer's or worker's own run: a few tests, or a copy elsewhere. It
+    // takes its turn like any other run and records nothing.
+    const cmd = custom || board.settings.test_command || die('settings.yml has no test_command; give one after --');
+    const cwd = opt.dir ? path.resolve(opt.dir) : wt;
+    if (!fs.existsSync(cwd)) die(`${cwd} does not exist`);
+    const go = () => spawnSync('sh', ['-c', cmd], { cwd, env: wtEnv(board, t.id, B.getState(board, t.id).slot), encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+    const t0 = Date.now();
+    const r = board.settings.parallel_tests ? go() : B.withLock(board, 'test', go, { waitMs: 3 * 3600 * 1000 });
+    const out = tail((r.stdout || '') + '\n' + (r.stderr || ''), 60);
+    console.log(`${out}\n-- \`${cmd}\` in ${cwd}: exit ${r.status ?? 1} after ${fmtDuration((Date.now() - t0) / 1000)} (nothing recorded)`);
+    process.exitCode = r.status === 0 ? 0 : 1;
+    return;
+  }
   const r = runTests(board, t, wt, 'manual');
   if (r.none) return console.log('settings.yml has no test_command: nothing to run');
   if (r.exit === 0) console.log(`TESTS PASSED in ${fmtDuration(r.seconds)}${r.fingerprint ? '' : ' (on uncommitted changes: submit will run them again on what is committed)'}`);
@@ -242,6 +257,7 @@ export function submit(argv) {
     const gaps = [];
     const crit = T.criteria(fresh.contract);
     for (const c of crit) {
+      if (c.void) continue;
       if (c.owner) {
         if (!fresh.record.manual.some((m) => m.text.startsWith(`(item ${c.n})`))) gaps.push(`item ${c.n} is the owner's to check: write its steps with \`${K()} manual ${t.id} ${c.n} "<steps>"\``);
       } else if (!c.done) gaps.push(`item ${c.n} is not ticked: \`${K()} check ${t.id} ${c.n} "<what you ran and saw>"\``);
@@ -292,7 +308,8 @@ export function verdict(argv) {
   const result = pos[1];
   if (!['pass', 'reject'].includes(result)) die('usage: verdict <id> pass|reject [--fail 2,3] --note "<line>" [--note ...]');
   const notes = (all.note || []).map((n) => String(n).replace(/\s+/g, ' ').trim()).filter(Boolean);
-  for (const n of notes) if (n.length > 320) die(`a note is one line (320 characters at most); this one has ${n.length}. Evidence, not output.`);
+  const noteLimit = result === 'reject' ? 900 : 320;
+  for (const n of notes) if (n.length > noteLimit) die(`a note has ${n.length} characters; the limit for a ${result} is ${noteLimit}. Evidence, not a transcript.`);
   if (notes.length > 14) die('at most 14 notes: one per criterion, one per kind of finding');
   B.withLock(board, 'board', () => {
     const t = B.load(B.findTicket(board, pos[0]));
@@ -510,6 +527,7 @@ export function brief(argv) {
   } else {
     console.log(`Tests: ${s.test_command ? `\`${s.test_command}\` — submit runs it for you; \`${K()} test ${t.id}\` runs it alone` : 'no test_command in this project'}`);
   }
+  if (s.test_command && !s.parallel_tests) console.log(`Test runs take turns across worktrees (they may share ports or data): run every test command of yours through \`${K()} test ${t.id} -- <command>\`${role === 'reviewer' ? ` (in a copy: \`${K()} test ${t.id} --dir <copy> -- <command>\`)` : ''}, never bare.`);
   console.log('\n' + roleText(role, ['always', `lane:${t.fm.lane}`, `mode:${mode}`], vars));
 
   console.log(`\n## The ticket — ${t.id} ${t.title}\n`);

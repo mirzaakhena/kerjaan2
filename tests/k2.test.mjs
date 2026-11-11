@@ -481,6 +481,47 @@ test('the planner brief shows what main cannot: the work in flight and what land
   assert.match(out, new RegExp(`## Landed most recently[\\s\\S]*- ${a} Sudah mendarat .* — a\\.txt\\n  Menambah satu baris`));
 });
 
+test('a criterion made pointless is struck with its reason, and no longer holds the handover', () => {
+  const r = repo();
+  const id = ticket(r, 'Satu butir batal', { lane: 'light', items: ['Baris baru tampil', 'Ekspor ke CSV'] });
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n');
+  assert.match(r.kIn(wt, 'submit', id).out, /item 2 is not ticked/);
+  assert.equal(r.k('void', id, '2').code, 1, 'a void names the decision behind it');
+  r.k('void', id, '2', 'Q1: ekspor ditunda, keputusan pemilik 12 Nov');
+  assert.match(fs.readFileSync(r.k('show', id, '--path').out.trim(), 'utf8'), /- \[ \] ~~Ekspor ke CSV~~ — void: Q1: ekspor ditunda/);
+  assert.match(r.k('check', id, '2', 'x').out, /is void/);
+  assert.match(r.kIn(wt, 'submit', id).out, /SUBMITTED/);
+});
+
+test('any test command takes its turn through k2 test, in the worktree or in a copy, and records nothing', () => {
+  const r = repo();
+  const id = ticket(r, 'Uji sebagian');
+  r.k('start', id);
+  const wt = wtOf(r, id);
+  const ok = r.k('test', id, '--', 'echo', 'halo-$K2_TICKET');
+  assert.equal(ok.code, 0);
+  assert.match(ok.out, new RegExp(`halo-${id}[\\s\\S]*exit 0 .*nothing recorded`));
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'k2-copy-'));
+  fs.writeFileSync(path.join(copy, 'app.txt'), 'BROKEN\n');
+  fs.copyFileSync(path.join(wt, 'check.js'), path.join(copy, 'check.js'));
+  const bad = r.k('test', id, '--dir', copy);
+  assert.equal(bad.code, 1);
+  assert.match(bad.out, /exit 1/);
+  assert.ok(!fs.readFileSync(path.join(r.dir, '.kerjaan2', 'log', `${id}.jsonl`), 'utf8').includes('"test"'));
+  assert.match(r.k('brief', id, '--role', 'worker').out, /Test runs take turns across worktrees/);
+});
+
+test('a rejection may be written in full; a pass stays short', () => {
+  const r = repo();
+  const id = ticket(r, 'Catatan panjang');
+  r.k('start', id);
+  r.kIn(work(r, id, 'x.txt', 'x\n'), 'submit', id);
+  const long = 'Batas tidak dijaga di tiga tempat. '.repeat(20);
+  assert.match(r.k('verdict', id, 'pass', '--note', long).out, /limit for a pass is 320/);
+  assert.match(r.k('verdict', id, 'reject', '--fail', '1', '--note', long).out, /SENT BACK/);
+});
+
 test('doctor finds a worktree and a branch nobody owns, and --fix removes them', () => {
   const r = repo();
   const id = ticket(r, 'Ditinggal', { lane: 'light' });

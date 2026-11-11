@@ -153,7 +153,7 @@ export function criteria(contract) {
   const out = [];
   for (const line of body.split('\n')) {
     const m = line.match(/^- \[( |x|X)\] (.*)$/);
-    if (m) out.push({ n: out.length + 1, done: m[1] !== ' ', owner: /^\(owner\)/i.test(m[2].trim()), text: m[2].trim() });
+    if (m) out.push({ n: out.length + 1, done: m[1] !== ' ', owner: /^\(owner\)/i.test(m[2].trim()), void: m[2].trim().startsWith('~~'), text: m[2].trim() });
   }
   return out;
 }
@@ -170,6 +170,25 @@ export function setCriterion(contract, n, done) {
         hit = true;
         return line.replace(/^- \[( |x|X)\]/, done ? '- [x]' : '- [ ]');
       }
+    }
+    return line;
+  });
+  if (!hit) die(`Done when has no item ${n}`);
+  return lines.join('\n');
+}
+
+// A criterion a later decision made pointless is struck, never deleted.
+export function voidCriterion(contract, n, reason) {
+  let seen = 0;
+  let inside = false;
+  let hit = false;
+  const lines = contract.split('\n').map((line) => {
+    if (/^## /.test(line)) inside = /^## Done when\s*$/.test(line);
+    const m = inside && line.match(/^- \[( |x|X)\] (.*)$/);
+    if (m && ++seen === n) {
+      if (m[2].startsWith('~~')) die(`item ${n} is already void`);
+      hit = true;
+      return `- [ ] ~~${m[2].trim()}~~ — void: ${reason}`;
     }
     return line;
   });

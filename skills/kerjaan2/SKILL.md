@@ -102,6 +102,14 @@ the planner's judgement too: it knows the code and the work in flight, you
 do not. Only on an idle board does one ticket the owner names skip the
 planner: `k2 move <id> todo`.
 
+**"Mark it done."** `done` means passed and landed, and the way there still
+runs through the ticket's worker: start it if it is in `todo`, and add to the
+worker's prompt `The owner says this work is already done: <their words>.
+Check each Done when line against the repo, finish what is missing, submit.`
+Their word is why the ticket moves, not evidence that a line is met. Only
+when the owner says in so many words to skip the review:
+`k2 accept <id> --why "<their words>"`, which is recorded in the ticket.
+
 ## What you never do
 
 - Write or fix a ticket's code, even one line you can see is wrong: it goes

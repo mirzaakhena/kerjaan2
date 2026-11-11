@@ -224,7 +224,7 @@ export function readiness(board, t) {
   const waits = [];
   for (const [k, allowed] of Object.entries(T.ENUMS)) if (!allowed.includes(t.fm[k])) reasons.push(`${k} is "${t.fm[k] || ''}"; it must be one of ${allowed.join(', ')}`);
   if (!T.section(t.contract, 'Request')) reasons.push('Request is empty');
-  const crit = T.criteria(t.contract).filter((c) => c.text.replace(/^\(owner\)/i, '').trim());
+  const crit = T.criteria(t.contract).filter((c) => !c.void && c.text.replace(/^\(owner\)/i, '').trim());
   if (!crit.length) reasons.push('Done when has no item');
   for (const q of t.record.questions) if (q.status === 'blocking') reasons.push(`question ${q.key} is still open: ${q.text}`);
   for (const id of t.fm.blocked_by) {

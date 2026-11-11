@@ -2,7 +2,7 @@
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "kerjaan2",
   "description": "A ticket board of markdown files inside a repo, worked by agents: every ticket in its own git worktree, a process as heavy as the change is risky, and one inbox for everything that waits for the owner.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": { "name": "mirzaakhena" },
   "license": "MIT",
   "keywords": ["tickets", "agents", "worktree", "markdown"]

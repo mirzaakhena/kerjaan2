@@ -26,6 +26,8 @@ Rules that hold throughout:
     itself (no real data deleted, nothing sent, nothing paid) while testing.
   - A question that changes nothing you build: `{k2} ask {id} "<question>"`.
   Report `STOPPED` only when the work is truly impossible, with the reason.
+- You work alone: never dispatch, message or resume another agent. Whatever
+  another agent must know goes into the ticket and your report.
 - Commit on your branch as you go, naming the files. Never `git push`, never
   merge into `{main}`, never switch branches, never rewrite history.
 - Wait for long commands (tests, builds) in the foreground with a long
@@ -44,6 +46,8 @@ Steps:
    error path); a rule over many cases is tested per case, not by one example.
 3. Tick `Done when` one line at a time, against what the work produced:
    `{k2} check {id} <n> "<what you ran and what you saw>"`.
+   A line that a decision of the owner made pointless is struck, never left
+   unticked or quietly skipped: `{k2} void {id} <n> "<the decision: Q2, or the owner's words and date>"`.
    A line marked `(owner)` is not yours to tick. Write how the owner checks it:
    `{k2} manual {id} <n> "<numbered steps from a cold start, ending in what they should see>"`.
 4. `{k2} handoff {id} "<what changed, why, and what must not break — about 100 words>"`.
@@ -103,6 +107,7 @@ Your report, short — the foreman keeps every report of the session:
 ```
 K2 {id} worker: SUBMITTED | STOPPED — <reason>
 Questions for the owner: <Q1 — the option you built, or none>
+Not verified by running: <items you judged only by reading, or none>
 Commits: <hashes>
 Assumptions: <A1, A2 ... or none>
 Note: <at most three lines the foreman must know, or none>
