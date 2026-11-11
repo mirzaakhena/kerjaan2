@@ -522,6 +522,57 @@ test('a rejection may be written in full; a pass stays short', () => {
   assert.match(r.k('verdict', id, 'reject', '--fail', '1', '--note', long).out, /SENT BACK/);
 });
 
+test('a verdict is refused when the review changed the worktree or the branch moved under it', () => {
+  const r = repo();
+  const id = ticket(r, 'Ditinjau dengan rapi');
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n');
+  r.kIn(wt, 'submit', id);
+  fs.writeFileSync(path.join(wt, 'sisa-peninjau.txt'), 'coba\n');
+  assert.match(r.k('verdict', id, 'pass', '--note', '1: ok').out, /worktree changed during the review[\s\S]*sisa-peninjau\.txt/);
+  sh(wt, 'git', ['add', '-A']);
+  sh(wt, 'git', ['commit', '-qm', 'menyelinap']);
+  assert.match(r.k('verdict', id, 'pass', '--note', '1: ok').out, /branch moved since it was handed over/);
+  assert.equal(statusOf(r, id), 'review');
+});
+
+test('nothing enters main but content the tests passed on: an untested tip is tested at the merge, and a red one stays out', () => {
+  const r = repo();
+  const id = ticket(r, 'Lolos lalu berubah', { lane: 'light' });
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'baik\n');
+  r.kIn(wt, 'submit', id);
+  fs.writeFileSync(path.join(wt, 'x.txt'), 'BROKEN\n');
+  sh(wt, 'git', ['commit', '-qam', 'sesudah lolos']);
+  const before = r.git('rev-parse', 'main').out.trim();
+  const out = r.k('land', id);
+  assert.equal(out.code, 3);
+  assert.match(out.out, /the tests fail on what would enter main/);
+  assert.equal(r.git('rev-parse', 'main').out.trim(), before, 'main did not move');
+  assert.ok(!fs.existsSync(path.join(r.dir, 'x.txt')));
+  fs.writeFileSync(path.join(wt, 'x.txt'), 'baik lagi\n');
+  sh(wt, 'git', ['commit', '-qam', 'pulih']);
+  assert.match(r.kIn(wt, 'submit', id).out, /INTEGRATED/);
+  assert.match(r.k('land', id).out, /LANDED/);
+  assert.equal(sh(r.dir, 'node', ['check.js']).code, 0, 'main is green');
+});
+
+test('a merge is held when the main tree has something else staged', () => {
+  const r = repo();
+  const id = ticket(r, 'Main tree kotor', { lane: 'light' });
+  r.k('start', id);
+  r.kIn(work(r, id, 'x.txt', 'x\n'), 'submit', id);
+  fs.writeFileSync(path.join(r.dir, 'titipan.txt'), 'belum diuji\n');
+  r.git('add', 'titipan.txt');
+  const out = r.k('land', id);
+  assert.equal(out.code, 4);
+  assert.match(out.out, /HELD .*(git refused the merge|is not the content the tests passed on)/s);
+  assert.ok(!r.git('log', '--format=%s', 'main').out.includes('Main tree kotor'), 'nothing was merged');
+  r.git('reset', '-q', 'titipan.txt');
+  fs.rmSync(path.join(r.dir, 'titipan.txt'));
+  assert.match(r.k('land', id).out, /LANDED/);
+});
+
 test('doctor finds a worktree and a branch nobody owns, and --fix removes them', () => {
   const r = repo();
   const id = ticket(r, 'Ditinggal', { lane: 'light' });

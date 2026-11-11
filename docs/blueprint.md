@@ -469,3 +469,30 @@ tiket (hanya `strict`; uji yang tidak bisa gagal lebih mungkin lolos di
 `standard`), peninjau untuk perubahan kecil (jalur `light` tanpa mata kedua),
 perbandingan perkiraan berkas dengan hasil nyata (planner tidak belajar dari
 perkiraan yang meleset).
+
+### Jaminan saat merge (12 November 2026)
+
+**Yang masuk main selalu persis isi yang ujinya lulus.** `k2 land` memaksa ini,
+bukan mengandaikannya:
+
+1. Cabang tiket harus sudah memuat seluruh main; kalau main bergerak, main
+   ditarik dulu ke cabang.
+2. Ujung cabang itu harus punya jalan uji yang lulus pada sidik jari isi yang
+   sama persis. Kalau tidak ada (main baru ditarik, ada commit sesudah lolos,
+   atau tiket diterima pemilik tanpa tinjauan), uji dijalankan saat itu. Merah
+   berarti tidak ada yang digabung dan tiket kembali ke pengerjanya.
+3. Sesudah digabung tetapi sebelum di-commit, isi yang akan masuk main
+   dibandingkan dengan sidik jari yang diuji. Berbeda berarti merge dibatalkan
+   dan ditahan.
+4. Antrean merge dan kunci `land` menjamin main tidak bergerak di antara
+   langkah-langkah itu.
+
+Peninjau bekerja di worktree tiketnya dan tidak boleh meninggalkan apa pun:
+`k2 verdict` menolak bila worktree berubah selama tinjauan atau cabangnya
+bergerak sejak diserahkan.
+
+Batas jaminan ini: hanya sejauh `test_command` menguji; proyek tanpa
+`test_command` tidak punya jaminan; uji yang kadang lulus kadang gagal bisa
+meloloskan; berkas yang diabaikan git (paket terpasang, `.env`) bisa berbeda
+antara worktree dan pohon utama; dan commit yang dibuat langsung di main di
+luar `k2` tidak diuji siapa pun.

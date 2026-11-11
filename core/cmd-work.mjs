@@ -91,6 +91,14 @@ export function fingerprint(wt) {
   return r.out;
 }
 
+// The same fingerprint for any commit or tree object.
+function treePrint(cwd, treeish) {
+  const tree = git(cwd, 'ls-tree', treeish).split('\n').filter((l) => l && !l.endsWith(`\t${B.BOARD_DIR}`));
+  const r = run('git', ['mktree'], { cwd, input: tree.join('\n') + '\n' });
+  if (r.code !== 0) die(`could not fingerprint ${treeish}: ${r.err}`);
+  return r.out;
+}
+
 function passedOn(board, id, fp) {
   if (!fp) return null;
   const cmd = board.settings.test_command;
@@ -246,7 +254,7 @@ export function submit(argv) {
 
   if (integrating) {
     const needsEyes = st.conflict && t.fm.lane !== 'light';
-    B.setState(board, t.id, { needs: needsEyes ? 'reviewer' : null, conflict: false });
+    B.setState(board, t.id, { needs: needsEyes ? 'reviewer' : null, conflict: false, submitted: head });
     B.log(board, t.id, 'integrated', { commit: head });
     console.log(`INTEGRATED ${t.id} at ${head}; tests: ${ran}.\n${needsEyes ? 'A reviewer looks at the conflict resolution, then it lands.' : `It can land: the foreman runs \`${K()} land ${t.id}\`.`}`);
     return;
@@ -319,6 +327,12 @@ export function verdict(argv) {
     if (st.passed && !integration) die(`${t.id} has already passed and waits to land; there is nothing to judge`);
     const wt = B.worktreeOf(board, t.id);
     const head = wt ? git(wt, 'rev-parse', '--short', 'HEAD') : '?';
+    // The verdict is about exactly what was handed over, and review changes nothing.
+    if (wt) {
+      const litter = gitTry(wt, 'status', '--porcelain').out;
+      if (litter) die(`the worktree changed during the review. Restore it to what was handed over (remove what you created, undo what you edited), then give the verdict again:\n${tail(litter, 12)}`);
+      if (st.submitted && st.submitted !== head) die(`the branch moved since it was handed over (${st.submitted} → ${head}): somebody committed during the review. Report this instead of a verdict; the foreman sends the ticket back to its worker.`);
+    }
     const round = st.round || 1;
     const what = integration ? 'conflict resolution' : `${t.fm.lane}, round ${round}`;
     if (result === 'reject' && !notes.length) die('a rejection says what failed: --note "<kind of mistake, every instance, how you saw it>"');
@@ -415,30 +429,45 @@ export function land(argv) {
     const wt = B.worktreeOf(board, t.id);
     const behind = gitTry(board.root, 'merge-base', '--is-ancestor', main, branch).code !== 0;
     let ran = '';
+    const back = (conflict, text) => {
+      const st = B.getState(board, t.id);
+      B.setState(board, t.id, { needs: 'worker', conflict, integrations: (st.integrations || 0) + 1 });
+      B.log(board, t.id, 'integrate', { conflict });
+      console.log(text);
+      process.exitCode = 3;
+    };
     if (behind) {
       if (!wt) return hold(`${main} moved and the worktree of ${branch} is gone, so the merged state cannot be tested`);
       if (gitTry(wt, 'status', '--porcelain').out) return hold(`its worktree ${wt} holds uncommitted changes`);
       const merged = bringMainIn(board, t, wt);
-      const back = (conflict, text) => {
-        const st = B.getState(board, t.id);
-        B.setState(board, t.id, { needs: 'worker', conflict, integrations: (st.integrations || 0) + 1 });
-        B.log(board, t.id, 'integrate', { conflict });
-        console.log(text);
-        process.exitCode = 3;
-      };
       if (merged.conflicts.length) {
         gitTry(wt, 'merge', '--abort');
         return back(true, `INTEGRATE ${t.id}: ${main} moved and its branch conflicts in ${merged.conflicts.join(', ')}.\nThis is not a rejection. Run \`${K()} next\`: its worker brings ${main} in.`);
       }
-      const r = runTests(board, t, wt, 'land');
-      if (r.exit !== 0) return back(false, `INTEGRATE ${t.id}: ${main} merged cleanly, but the tests fail on the merged state (exit ${r.exit}).\nThis is not a rejection. Run \`${K()} next\`: its worker fixes it.`);
-      ran = r.none ? '' : `; tests passed on the merged state in ${fmtDuration(r.seconds)}`;
+    }
+    // Nothing enters main but content the tests passed on, exactly: the tip
+    // of the branch, which now holds all of main. No matching run: run them.
+    let tested = null;
+    if (board.settings.test_command) {
+      if (!wt) return hold(`the worktree of ${branch} is gone, so its tests cannot be run`);
+      const fp = fingerprint(wt);
+      if (!fp) return hold(`its worktree ${wt} holds uncommitted changes`);
+      if (!passedOn(board, t.id, fp)) {
+        const r = runTests(board, t, wt, 'land');
+        if (r.exit !== 0) return back(false, `INTEGRATE ${t.id}: the tests fail on what would enter ${main} (exit ${r.exit})${behind ? `, with ${main} merged in` : ''}.\nNothing was merged. Run \`${K()} next\`: its worker fixes it.`);
+        ran = `; tests passed on the merged state in ${fmtDuration(r.seconds)}`;
+      }
+      tested = fp;
     }
     const files = gitTry(board.root, 'diff', '--name-only', `${main}...${branch}`, '--', '.', NO_BOARD).out.split('\n').filter(Boolean);
     const m = gitTry(board.root, 'merge', '--no-ff', '--no-commit', branch);
     if (m.code !== 0) {
       gitTry(board.root, 'merge', '--abort');
       return hold(`git refused the merge into ${main}: ${tail(m.err || m.out, 3)}`);
+    }
+    if (tested && treePrint(board.root, git(board.root, 'write-tree')) !== tested) {
+      gitTry(board.root, 'merge', '--abort');
+      return hold(`what the merge would put into ${main} is not the content the tests passed on (something else is staged in the main tree, or ${main} moved outside k2)`);
     }
     B.withLock(board, 'board', () => {
       t = B.load(B.findTicket(board, t.id));
