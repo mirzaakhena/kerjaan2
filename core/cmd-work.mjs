@@ -273,7 +273,7 @@ export function submit(argv) {
     }
     const light = lane === 'light';
     B.moveFile(board, fresh, 'review');
-    B.setState(board, t.id, { submitted: head, conflict: false, passed: light });
+    B.setState(board, t.id, { submitted: head, conflict: false, passed: light, passedAt: light ? Date.now() : null });
     B.log(board, t.id, 'submitted', { commit: head, lane, to: 'review', passed: light || undefined, files: files.length, fingerprint: fp });
     console.log(`SUBMITTED ${t.id} at ${head}; tests: ${ran}.`);
     console.log(light ? `Lane light: the gates passed; no reviewer. The foreman lands it. Do not touch its code from here on.` : `It is in review. Do not touch its code from here on.`);
@@ -307,13 +307,13 @@ export function verdict(argv) {
     if (integration) {
       B.save(t);
       if (result === 'pass') B.setState(board, t.id, { needs: null });
-      else B.setState(board, t.id, { needs: 'worker', conflict: true, integrations: (st.integrations || 1) + 1 });
+      else B.setState(board, t.id, { needs: 'worker', conflict: true, integrations: (st.integrations || 1) + 1, passedAt: Date.now() });
       B.log(board, t.id, 'verdict', { result, integration: true, commit: head });
-      return console.log(result === 'pass' ? `PASSED ${t.id} (conflict resolution). The foreman lands it.` : `SENT BACK ${t.id} (conflict resolution).`);
+      return console.log(result === 'pass' ? `PASSED ${t.id} (conflict resolution). The foreman lands it.` : `SENT BACK ${t.id} (conflict resolution). It gave up its turn and joins the back of the merge queue.`);
     }
     if (result === 'pass') {
       B.save(t);
-      B.setState(board, t.id, { passed: true });
+      B.setState(board, t.id, { passed: true, passedAt: Date.now() });
       B.log(board, t.id, 'verdict', { result, round, commit: head });
       return console.log(`PASSED ${t.id} in round ${round}. It reaches done when it lands: the foreman runs \`${K()} land ${t.id}\`.`);
     }
@@ -341,7 +341,7 @@ export function accept(argv) {
     t.record.review.push(T.makeEntry(`${today()} accepted by the owner without passing review: ${opt.why}`));
     B.save(t);
     B.moveFile(board, t, 'review');
-    B.setState(board, t.id, { passed: true });
+    B.setState(board, t.id, { passed: true, passedAt: Date.now() });
     B.log(board, t.id, 'accepted', { by: 'owner' });
     console.log(`ACCEPTED ${t.id} on the owner's word. Land it with \`${K()} land ${t.id}\`.`);
   });
@@ -358,16 +358,20 @@ export function land(argv) {
   const st0 = B.getState(board, t.id);
   if (t.status !== 'review' || !st0.passed) die(`${t.id} is in ${t.status} and has not passed; only a ticket that passed lands`);
   const branch = B.branchOf(board, t.id) || die(`${t.id} has no branch; \`${K()} doctor\` shows what is left of it`);
-  if (st0.needs) die(`${t.id} is being brought up to date with ${main} (waiting for its ${st0.needs}); land it after that`);
 
-  // A ticket being brought up to date keeps the turn: if others landed
-  // meanwhile, it would have to be brought up to date all over again.
-  const ahead = B.listTickets(board, ['review']).find((o) => o.id !== t.id && B.getState(board, o.id).passed && B.getState(board, o.id).needs && !B.getState(board, o.id).held);
-  if (ahead) {
-    console.log(`WAITING ${t.id}: ${ahead.id} is being brought up to date with ${main} and lands first. Nothing was changed; land this one after it.`);
+  // The merge queue: only the front ticket lands, and it keeps the front
+  // until it is in main. A merge that was held rejoins at the back.
+  if (st0.held) B.setState(board, t.id, { held: null, passedAt: Date.now() });
+  const queue = B.mergeQueue(board);
+  const place = queue.findIndex((q) => q.id === t.id);
+  if (place > 0) {
+    const front = queue[0];
+    console.log(`WAITING ${t.id}: number ${place + 1} in the merge queue. ${front.id} is at the front${front.st.needs ? ' and is being brought up to date with ' + main : ''}; it lands first. Nothing was changed.`);
     process.exitCode = 5;
     return;
   }
+
+  if (st0.needs) die(`${t.id} holds the front of the merge queue and is being brought up to date with ${main} (waiting for its ${st0.needs}); land it after that`);
 
   const hold = (reason) => {
     B.setState(board, t.id, { held: reason });
@@ -377,7 +381,6 @@ export function land(argv) {
   };
 
   B.withLock(board, 'land', () => {
-    B.setState(board, t.id, { held: null });
     const current = gitTry(board.root, 'symbolic-ref', '--short', 'HEAD').out;
     if (current !== main) return hold(`the main tree is on branch "${current}", not ${main}`);
     const wt = B.worktreeOf(board, t.id);

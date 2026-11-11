@@ -386,18 +386,19 @@ export function nextActions(board) {
   const flight = tickets.filter((t) => IN_FLIGHT.includes(t.status));
   const unmerged = tickets.filter((t) => B.isPassed(board, t));
 
-  const turn = unmerged.find((t) => B.getState(board, t.id).needs && !B.getState(board, t.id).held);
   for (const t of unmerged) {
     const st = B.getState(board, t.id);
-    if (turn && turn.id !== t.id && !st.needs && !st.held) {
-      out.push(`WAIT   ${t.id} passed; it lands right after ${turn.id}, which is being brought up to date with main.`);
-      continue;
-    }
-    if (st.held) out.push(`HELD   ${t.id} cannot land: ${st.held}. Tell the owner; once cleared: ${K()} land ${t.id}`);
-    else if (st.needs === 'worker') out.push(...dispatchLines(board, t, 'worker', st, 'main moved after it passed: bring main in (integration, not a rejection)'));
-    else if (st.needs === 'reviewer') out.push(...dispatchLines(board, t, 'reviewer', st, 'look at the conflict resolution only'));
-    else out.push(`LAND   ${t.id} passed: run \`${K()} land ${t.id}\``);
+    if (st.held) out.push(`HELD   ${t.id} cannot land: ${st.held}. Tell the owner; once cleared: ${K()} land ${t.id} (it rejoins the merge queue at the back)`);
   }
+  const mq = B.mergeQueue(board);
+  mq.forEach((t0, i) => {
+    const t = tickets.find((x) => x.id === t0.id);
+    const st = t0.st;
+    if (i > 0) return out.push(`WAIT   ${t.id} passed; number ${i + 1} in the merge queue, behind ${mq[0].id}. It lands in its turn.`);
+    if (st.needs === 'worker') out.push(...dispatchLines(board, t, 'worker', st, 'main moved after it passed: bring main in (integration, not a rejection)'));
+    else if (st.needs === 'reviewer') out.push(...dispatchLines(board, t, 'reviewer', st, 'look at the conflict resolution only'));
+    else out.push(`LAND   ${t.id} is at the front of the merge queue: run \`${K()} land ${t.id}\``);
+  });
   for (const t of flight) {
     const st = B.getState(board, t.id);
     const blocking = t.record.questions.filter((q) => q.status === 'blocking');
@@ -459,6 +460,8 @@ export function status() {
     console.log(`  ${t.id} ${t.status.padEnd(11)} ${t.fm.lane.padEnd(8)} ${t.title}${badgeText(board, t)}`);
     console.log(`      worktree ${B.worktreeOf(board, t.id) || '(none)'}${agents ? ` · ${agents}` : ''}`);
   }
+  const mq = B.mergeQueue(board);
+  if (mq.length) console.log(`\nMerge queue: ${mq.map((t, i) => `${i + 1}. ${t.id}${i === 0 && t.st.needs ? ' (being brought up to date)' : ''}`).join('  ')}`);
   const todo = orderedTodo(board);
   if (todo.length) console.log(`\nQueue: ${todo.map((t) => t.id).join(' → ')}`);
   const items = inboxItems(board);

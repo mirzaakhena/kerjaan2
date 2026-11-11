@@ -206,19 +206,24 @@ test('two tickets side by side: the first lands at once, the second is brought u
   assert.match(r.k('doctor').out, /healthy/);
 });
 
-test('a ticket being brought up to date keeps the turn: nothing else lands in front of it', () => {
+test('the merge queue: tickets land in the order they passed, and the front keeps its turn while it is brought up to date', () => {
   const r = repo();
   const ids = ['A', 'B', 'C'].map((x) => ticket(r, `Baris pertama ${x}`, { lane: 'light' }));
   for (const id of ids) r.k('start', id);
   const wts = ids.map((id, i) => work(r, id, i === 2 ? 'c.txt' : 'app.txt', `line ${i}\n`));
   ids.forEach((id, i) => r.kIn(wts[i], 'submit', id));
   const [a, b, c] = ids;
+  const early = r.k('land', c);
+  assert.equal(early.code, 5, 'only the front of the merge queue lands');
+  assert.match(early.out, new RegExp(`WAITING ${c}: number 3 in the merge queue. ${a} is at the front`));
+  assert.match(r.k('status').out, new RegExp(`Merge queue: 1. ${a}  2. ${b}  3. ${c}`));
   r.k('land', a);
   assert.equal(r.k('land', b).code, 3, 'B conflicts with A');
   const waits = r.k('land', c);
   assert.equal(waits.code, 5);
-  assert.match(waits.out, new RegExp(`WAITING ${c}: ${b} is being brought up to date`));
-  assert.match(r.k('next').out, new RegExp(`WAIT   ${c} passed; it lands right after ${b}`));
+  assert.match(waits.out, new RegExp(`WAITING ${c}: number 2 in the merge queue. ${b} is at the front and is being brought up to date`));
+  assert.match(r.k('next').out, new RegExp(`WAIT   ${c} passed; number 2 in the merge queue, behind ${b}`));
+  assert.match(r.k('status').out, new RegExp(`Merge queue: 1. ${b} \\(being brought up to date\\)  2. ${c}`));
   sh(wts[1], 'git', ['merge', 'main']);
   fs.writeFileSync(path.join(wts[1], 'app.txt'), 'line 0 and 1\n');
   sh(wts[1], 'git', ['add', '-A']);
@@ -232,6 +237,28 @@ test('a ticket being brought up to date keeps the turn: nothing else lands in fr
   assert.match(h, /→ done\s+landed/);
   assert.match(h, /integrate\s+main moved before it could land \(conflict\)/);
   assert.match(h, /landed in main/);
+});
+
+test('a held merge steps out of the merge queue, and rejoins at the back once cleared', () => {
+  const r = repo();
+  const a = ticket(r, 'Berkas A tertahan', { lane: 'light' });
+  const b = ticket(r, 'Berkas B lancar', { lane: 'light' });
+  r.k('start', a);
+  r.k('start', b);
+  r.kIn(work(r, a, 'a.txt', 'A\n'), 'submit', a);
+  r.kIn(work(r, b, 'b.txt', 'B\n'), 'submit', b);
+  r.git('checkout', '-q', '-b', 'lain');
+  const held = r.k('land', a);
+  assert.equal(held.code, 4);
+  assert.match(held.out, /HELD .* the main tree is on branch "lain"/);
+  r.git('checkout', '-q', 'main');
+  assert.match(r.k('inbox').out, /not merged \(1\)/);
+  const next = r.k('next').out;
+  assert.match(next, new RegExp(`HELD   ${a}`));
+  assert.match(next, new RegExp(`LAND   ${b} is at the front`), 'the queue moves on without the held one');
+  assert.match(r.k('land', b).out, /LANDED/);
+  assert.match(r.k('land', a).out, /LANDED .*tests passed on the merged state/);
+  assert.match(r.k('doctor').out, /healthy/);
 });
 
 test('main moved without touching the same lines: land merges, tests the merged state and lands with no agent', () => {

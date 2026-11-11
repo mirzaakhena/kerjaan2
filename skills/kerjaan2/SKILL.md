@@ -28,7 +28,7 @@ Whenever work is in flight or the owner says "work the queue":
 | `START <id>` | `k2 start <id>` (makes the worktree), then `k2 next` |
 | `DISPATCH <role>` | Call the Agent tool with the `subagent_type`, `model` and `prompt` it prints, in the background. Then `k2 agent <id> <role> <agentId>` |
 | `RESUME <role> <agentId>` | SendMessage to that agent with the text it prints, then `k2 agent ...` as printed. If the agent cannot be resumed, dispatch a new one |
-| `WAIT` | Nothing. A notification arrives when the agent reports; never poll or sleep |
+| `WAIT` | Nothing. A notification arrives when the agent reports; never poll or sleep. A passed ticket waiting in the merge queue lands in its turn: never land out of order |
 | `LAND <id>` | `k2 land <id>`. It merges into main, moves the ticket to `done`, removes the worktree and the branch |
 | `ASK` / `HELD` | Put it to the owner (below). Everything else carries on meanwhile |
 | `IDLE` | Summarize for the owner; offer what `k2 inbox` holds |

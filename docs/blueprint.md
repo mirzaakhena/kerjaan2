@@ -19,7 +19,7 @@ Diukur di `nukitu-mockup` (449 tiket selesai) dan dibaca dari repo `kerjaan` 1.1
 | 3 | Pemeriksaan tangan yang ditunda tidak pernah ditagih | 66 butir di 57 tiket `done` | Kotak masuk pemilik (§6) |
 | 4 | Saran tindak lanjut terkubur di tiket `done` | ±265 saran, ±74 diputuskan | Kotak masuk pemilik (§6) |
 | 5 | Semua tiket lewat upacara yang sama | hanya ±7% pernah ditolak | Tiga jalur menurut risiko (§7) |
-| 6 | Mesin paralel paling rumit, paling jarang dipakai | ±2.500 baris, 2–6 tiket | Worktree jadi bawaan, tanpa antrean merge (§8) |
+| 6 | Mesin paralel paling rumit, paling jarang dipakai | ±2.500 baris, 2–6 tiket | Worktree jadi bawaan; antrean merge dihitung dari keadaan, tanpa berkas dan catatan tersendiri (§8) |
 | 7 | Aturan panjang dan tersalin di banyak tempat | anggaran 18.000 kata | Anggaran 6.000 kata; aturan dikirim tepat waktu oleh `k2 brief` (§9) |
 | 8 | 12 skrip bash, saling memanggil | ±5.000 baris + 13.000 baris uji | Satu CLI Node tanpa dependensi (§10) |
 | 9 | Keadaan penting hanya ada di ingatan mandor (ID agen, pelajaran antartiket), ditambal `handoff.md` dan hook penebak persen konteks | — | Keadaan selalu di disk; tidak ada yang perlu diserahterimakan (§9, §11) |
@@ -232,7 +232,19 @@ k2 land <id>     masuk main → done; hapus worktree dan cabang
 **Yang selesai duluan langsung masuk main.** Tidak menunggu tiket lain. Konflik
 jadi kecil dan muncul saat konteks pengerjanya masih hangat.
 
-**`k2 land` bergiliran lewat satu kunci**, tanpa antrean merge:
+**Antrean merge dengan kunci giliran** (keputusan pemilik, 12 November 2026).
+Tiket masuk antrean saat lolos, urut menurut waktu lolos. Hanya tiket terdepan
+yang boleh digabung; `k2 land` pada tiket lain menjawab `WAITING` dengan
+nomor antreannya dan tidak mengubah apa pun. Tiket terdepan memegang
+gilirannya sampai masuk main, juga selama konfliknya dibereskan pengerja dan
+dilihat peninjau, sehingga main tidak bergerak di bawahnya dan satu tiket
+disesuaikan paling banyak sekali. Giliran lepas pada tiga keadaan: tiket masuk
+main; merge-nya ditahan untuk pemilik (ia keluar antrean, dan masuk lagi di
+belakang setelah dibereskan); atau penyelesaian konfliknya ditolak peninjau
+(pindah ke belakang). Antrean dihitung dari keadaan di disk, jadi tidak ada
+berkas kunci yang bisa basi; `k2 status` menampilkannya.
+
+Yang terjadi saat giliran tiba:
 
 | Keadaan saat giliran tiba | Yang terjadi | Biaya agen |
 |---|---|---|
@@ -245,10 +257,8 @@ jadi kecil dan muncul saat konteks pengerjanya masih hangat.
 bertanda **lolos, belum di-merge** sampai `k2 land` berhasil, juga selama
 integrasi. Integrasi bukan penolakan dan tidak menambah putaran.
 
-**Tiket yang sedang dibawa mutakhir memegang giliran.** Tiket lain yang sudah
-lolos menunggu sampai ia masuk main, sehingga satu tiket paling banyak
-disesuaikan sekali. (Temuan uji coba: tanpa ini satu tiket dibawa mutakhir dua
-kali karena disalip.)
+(Temuan uji coba: tanpa giliran, satu tiket dibawa mutakhir dua kali karena
+disalip tiket lain.)
 
 **Siapa menyelesaikan konflik.** Pengerja tiket yang masuk belakangan,
 dilanjutkan dari konteksnya sendiri. `k2 brief --mode integrate` memberinya

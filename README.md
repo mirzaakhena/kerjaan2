@@ -48,7 +48,10 @@ k2 land <id>       into main, one at a time → done; removes the worktree and t
   decide. `standard`: a reviewer. `strict`: the tests are proven able to fail.
   `submit` raises a lane by itself when the change touches `strict_paths` or
   grows past `light_max_files`.
-- **Side by side by default.** Whatever finishes first lands first. When main
+- **A merge queue.** Tickets land in the order they passed, one at a time;
+  the front one keeps its turn until it is in main, so a ticket is brought up
+  to date at most once.
+- **Side by side by default.** Work and review run in parallel. When main
   moved, `land` merges and tests by itself; only a real conflict goes back to
   the ticket's worker, with the handoff of every ticket that landed meanwhile.
 - **Doubt does not stop the queue.** What is cheap to undo becomes a recorded

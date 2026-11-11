@@ -282,3 +282,14 @@ export const isLanded = (board, t) => t.status === 'done';
 
 // Passed (by its reviewer, or by the gates on the light lane) and waiting to land.
 export const isPassed = (board, t) => t.status === 'review' && !!getState(board, t.id).passed;
+
+// The merge queue: tickets that passed, in the order they passed. Only the
+// front one may land, and it keeps the front until it is in main, so main
+// never moves under a ticket that is being brought up to date. A held merge
+// stands outside the queue until the owner clears it.
+export function mergeQueue(board) {
+  return listTickets(board, ['review'])
+    .map((t) => ({ ...t, st: getState(board, t.id) }))
+    .filter((t) => t.st.passed && !t.st.held)
+    .sort((a, b) => (a.st.passedAt || 0) - (b.st.passedAt || 0) || a.id.localeCompare(b.id));
+}
