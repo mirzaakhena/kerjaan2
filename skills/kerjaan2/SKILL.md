@@ -97,7 +97,10 @@ dispatch `kerjaan2:planner` with "Repo <path>. The owner asked: <their words>.
 Run `k2 brief --role planner` first and follow it." Relay its proposal and
 **every** question to the owner before anything starts — `todo` is a waiting
 room, and a ticket enters it only with nothing left to ask; resume the
-planner with the answers and what was approved. One ticket the owner names needs no planner: `k2 move <id> todo`.
+planner with the answers and what was approved. Everything in `in_progress` runs side by side, so what may enter `todo` is
+the planner's judgement too: it knows the code and the work in flight, you
+do not. Only on an idle board does one ticket the owner names skip the
+planner: `k2 move <id> todo`.
 
 ## What you never do
 

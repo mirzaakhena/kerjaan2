@@ -463,6 +463,24 @@ test('a solo ticket runs with nothing beside it, and nothing starts in front of 
   assert.match(r.k('next').out, new RegExp(`START  ${c}`));
 });
 
+test('the planner brief shows what main cannot: the work in flight and what landed last', () => {
+  const r = repo();
+  const a = ticket(r, 'Sudah mendarat', { lane: 'light' });
+  const b = ticket(r, 'Sedang terbang');
+  r.k('start', a);
+  r.kIn(work(r, a, 'a.txt', 'a\n'), 'submit', a);
+  r.k('land', a);
+  r.k('start', b);
+  const wb = wtOf(r, b);
+  fs.writeFileSync(path.join(wb, 'baru.txt'), 'x\n');
+  sh(wb, 'git', ['add', '-A']);
+  sh(wb, 'git', ['commit', '-qm', 'wip']);
+  const out = r.k('brief', '--role', 'planner').out;
+  assert.match(out, /## In flight now \(1\)/);
+  assert.match(out, new RegExp(`- ${b} Sedang terbang \\[in_progress\\]\\n  Request: Baris baru ada di berkas\\.\\n  Changed so far: baru\\.txt`));
+  assert.match(out, new RegExp(`## Landed most recently[\\s\\S]*- ${a} Sudah mendarat .* — a\\.txt\\n  Menambah satu baris`));
+});
+
 test('doctor finds a worktree and a branch nobody owns, and --fix removes them', () => {
   const r = repo();
   const id = ticket(r, 'Ditinggal', { lane: 'light' });

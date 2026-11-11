@@ -476,6 +476,7 @@ export function brief(argv) {
   if (role === 'planner') {
     console.log(`# k2 brief — planner\nRepo: ${board.root} · ticket prose in ${s.language} · test_command: ${s.test_command || '(none)'}\nstrict_paths: [${s.strict_paths.join(', ')}] · max_parallel: ${s.max_parallel}\n`);
     console.log(roleText('planner', ['always'], base));
+    printSituation(board);
     printLessons(board);
     return;
   }
@@ -528,6 +529,35 @@ export function brief(argv) {
     for (const o of others) console.log(`- ${o.id} ${o.title} — files: ${(o.shared || []).slice(0, 12).join(', ') || '(none)'}\n  Handoff: ${o.record.handoff || '(none written)'}`);
   }
   if (role === 'worker') printLessons(board);
+}
+
+// What a planner cannot see by reading main: the work that is moving right
+// now (its code is on branches), and what main gained most recently.
+function printSituation(board) {
+  const main = board.settings.main_branch;
+  const flight = B.listTickets(board, ['in_progress', 'review']).map(B.load);
+  console.log(`\n## In flight now (${flight.length}) — their code is on branches, not in ${main} yet`);
+  if (!flight.length) console.log('Nothing. Whatever you queue starts on an idle board.');
+  for (const t of flight) {
+    const branch = B.branchOf(board, t.id);
+    const files = branch ? gitTry(board.root, 'diff', '--name-only', `${main}...${branch}`, '--', '.', NO_BOARD).out.split('\n').filter(Boolean) : [];
+    const st = B.getState(board, t.id);
+    console.log(`- ${t.id} ${t.title} [${st.passed ? 'passed, waiting to merge' : t.status}${t.fm.solo === 'true' ? ', solo' : ''}]`);
+    console.log(`  Request: ${(T.section(t.contract, 'Request') || '').replace(/\s+/g, ' ').slice(0, 300)}`);
+    console.log(`  Changed so far: ${files.slice(0, 15).join(', ') || '(nothing committed yet)'}${t.fm.touches.length ? ` · expected: ${t.fm.touches.join(', ')}` : ''}`);
+  }
+  const landed = [];
+  for (const raw of B.listTickets(board, ['done'])) {
+    const e = B.readLog(board, raw.id).reverse().find((x) => x.event === 'landed');
+    if (e) landed.push({ raw, e });
+  }
+  landed.sort((a, b) => (a.e.t < b.e.t ? 1 : -1));
+  if (landed.length) console.log(`\n## Landed most recently — what ${main} gained, in each worker's words`);
+  for (const { raw, e } of landed.slice(0, 8)) {
+    const t = B.load(raw);
+    console.log(`- ${t.id} ${t.title} (${e.t.slice(0, 16)}) — ${(e.files || []).slice(0, 8).join(', ')}`);
+    if (t.record.handoff) console.log(`  ${t.record.handoff.replace(/\s+/g, ' ').slice(0, 400)}`);
+  }
 }
 
 function printLessons(board) {
