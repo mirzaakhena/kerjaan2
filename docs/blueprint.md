@@ -337,7 +337,7 @@ Keluarannya teks pendek; `--json` untuk mesin.
 
 - `k2 quick "<permintaan>"` membuat tiket `light` dan langsung memulainya: pengganti mode "tanpa tiket".
 - `k2 next` adalah mesin keadaan mandor: ia menjawab langkah berikutnya (kirim pengerja untuk tiket mana, dengan model dan prompt apa; lanjutkan agen yang mana; tanyakan apa ke pemilik).
-- Yang tidak dibawa dari kerjaan: `repair.sh`, `release.sh` (urusan repo kerjaan sendiri, bukan fitur papan), `ticket-size.sh` dengan `--accept-size`, `--ack-unmerged`, `queue.sh compare`, antrean merge, uji "hanya bahasa Inggris".
+- Yang tidak dibawa dari kerjaan: `repair.sh`, `release.sh` (urusan repo kerjaan sendiri, bukan fitur papan), `ticket-size.sh` dengan `--accept-size`, `--ack-unmerged`, `queue.sh compare`, catatan antrean merge di tiket, uji "hanya bahasa Inggris".
 
 ## 11. Hooks (adaptor Claude Code)
 
