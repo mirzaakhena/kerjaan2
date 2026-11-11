@@ -63,8 +63,8 @@ k2 land <id>       into main, one at a time; removes the worktree and the branch
 ## Install
 
 ```
-/plugin marketplace add <path or repo of kerjaan2>
-/plugin install kerjaan2
+/plugin marketplace add /path/to/kerjaan2
+/plugin install kerjaan2@kerjaan2
 ```
 
 Then, in a git repo with at least one commit: ask Claude to "set up kerjaan2
