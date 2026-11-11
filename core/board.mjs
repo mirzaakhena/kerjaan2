@@ -268,8 +268,9 @@ export function log(board, id, event, data = {}) {
   const rec = { t: now(), event, ...data };
   const session = process.env.CLAUDE_SESSION_ID || process.env.CLAUDE_CODE_SESSION_ID;
   if (session) rec.session = session;
-  if (process.env.K2_ROLE) rec.role = process.env.K2_ROLE;
-  if (process.env.K2_AGENT) rec.agent ??= process.env.K2_AGENT;
+  // Who made the step, as the role guard handed it over. Its own field: an
+  // `agent` event already has a `role`, the one being recorded.
+  if (process.env.K2_ROLE) rec.by = `${process.env.K2_ROLE}:${process.env.K2_AGENT || '?'}`;
   fs.appendFileSync(path.join(dir, `${id}.jsonl`), JSON.stringify(rec) + '\n');
 }
 

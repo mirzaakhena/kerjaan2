@@ -1230,7 +1230,7 @@ test('inside a subagent k2 finds the board from any folder, and a test run does 
   const sub = spawnSync(K2, ['submit', id], { cwd: wt, encoding: 'utf8', env: { ...cleanEnv(), K2_ROLE: 'worker', K2_AGENT: 'a-9', K2_HOME: r.dir } });
   assert.match(sub.stdout, /SUBMITTED/, 'the project\'s own tests ran without a role');
   const trail = fs.readFileSync(path.join(r.dir, '.kerjaan2', 'log', `${id}.jsonl`), 'utf8');
-  assert.match(trail, /"event":"submitted".*"role":"worker","agent":"a-9"/, 'the trail says which kind of agent made each step');
+  assert.match(trail, /"event":"submitted".*"by":"worker:a-9"/, 'the trail says which kind of agent made each step');
 });
 
 test('the inbox shows every step of a manual check, not only the first', () => {

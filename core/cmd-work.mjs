@@ -806,7 +806,7 @@ export function history(argv) {
   console.log(`${t.id} ${t.title}   [${t.status}]`);
   for (const e of B.readLog(board, t.id)) {
     const st = status(e);
-    console.log(`${e.t}  ${(e.session || '-').slice(0, 8)}  ${(st ? `→ ${st}` : '').padEnd(14)} ${e.event.padEnd(12)} ${detail(e)}`.trimEnd());
+    console.log(`${e.t}  ${(e.session || '-').slice(0, 8)}  ${(st ? `→ ${st}` : '').padEnd(14)} ${e.event.padEnd(12)} ${detail(e)}${e.by ? `   [${e.by.split(':')[0]}]` : ''}`.trimEnd());
   }
   console.log('\nThe second column is the session that made the step: `claude --resume <session id>` opens it (the full id is in the log file).');
 }
