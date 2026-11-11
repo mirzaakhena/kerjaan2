@@ -1,5 +1,5 @@
 {
-  "description": "kerjaan2 \u2014 tell a starting, resumed or just-summarized session what the board has in flight; record each worker and reviewer the moment it is sent; keep a worker from ending before its ticket is handed over; and refuse, inside a subagent, the k2 commands that belong to somebody else",
+  "description": "kerjaan2 \u2014 tell a starting, resumed or just-summarized session what the board has in flight; record each worker and reviewer the moment it is sent; keep a worker from ending before its ticket is handed over; and tell k2 which kind of agent is calling it, so it can refuse what is not that agent's to run",
   "hooks": {
     "SessionStart": [
       {
@@ -42,8 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(*k2 *)",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/k2\" hook guard",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/k2-guard\"",
             "timeout": 10
           }
         ]

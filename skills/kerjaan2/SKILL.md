@@ -149,10 +149,11 @@ Their word is why the ticket moves, not evidence that a line is met. Only
 when the owner says in so many words to skip the review:
 `k2 accept <id> --why "<their words>"`, which is recorded in the ticket.
 
-A hook refuses, inside a subagent, the `k2` commands that are yours or the
-owner's (`verdict` by a worker, `answer`, `amend`, `accept`, `land`,
-`--force`). An agent that reports such a refusal has hit a wall on purpose:
-never run the command for it. Decide it yourself, or put it to the owner.
+Inside a worker, reviewer or planner, `k2` refuses the commands that are
+yours or the owner's (`verdict` by a worker, `answer`, `amend`, `accept`,
+`land`, `--force`). An agent that reports such a refusal has hit a wall on
+purpose: never run the command for it. Decide it yourself, or put it to the
+owner.
 
 ## What you never do
 

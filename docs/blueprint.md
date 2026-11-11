@@ -358,13 +358,13 @@ Keluarannya teks pendek.
 
 ## 11. Hooks (adaptor Claude Code)
 
-Empat hook. Tidak ada yang berjalan di setiap pemanggilan alat: penjaga peran hanya menyala pada perintah Bash yang memanggil `k2`.
+Empat hook. Penjaga peran berjalan di setiap pemanggilan Bash, tetapi hanya memulai Node bila pemanggilnya subagen; tiga lainnya tidak berjalan per pemanggilan alat.
 
 | Kejadian | Yang dilakukan | Menggantikan |
 |---|---|---|
 | `SessionStart` (mulai, lanjut, sesudah ringkas) | Menyuntikkan apa yang sedang berjalan dan apa yang menunggu pemilik | Aturan "awal sesi", `handoff.md`, hook penebak persen konteks |
 | `PostToolUse` pada `Agent` dan `SendMessage` | Mencatat ID agen ke tiketnya begitu agen dikirim atau dilanjutkan | Mandor yang harus ingat `k2 agent`; mencegah pengerja kedua masuk worktree yang sama |
-| `PreToolUse` pada `Bash` yang memanggil `k2` | **Penjaga peran**: di dalam subagen, menolak perintah milik pihak lain sebelum dijalankan (pengerja tidak bisa memberi putusan, menjawab untuk pemilik, mengesahkan kontrak, atau merge; peninjau tidak bisa menyentuh pekerjaan; hanya sesi utama yang berbicara atas nama pemilik) | Gerbang yang sebelumnya hanya berbasis kepercayaan |
+| `PreToolUse` pada `Bash` | **Penjaga peran**: menitipkan peran agen ke setiap perintah shell yang dijalankan subagen kerjaan2 (`export K2_ROLE=...;` di depan perintah); `k2` sendiri lalu menolak, dari argumennya yang sebenarnya, perintah yang bukan hak peran itu | Gerbang yang sebelumnya hanya berbasis kepercayaan |
 | `SubagentStop` (pengerja kerjaan2) | Menolak sekali bila pengerja belum menyerahkan; bila ia tetap berakhir, menandainya di papan sehingga `k2 next` mengirim lagi | Sebagian besar `on-ticket-review.sh` |
 
 Karena ID agen tersimpan di disk, mandor yang konteksnya baru diringkas cukup
@@ -600,3 +600,30 @@ Batasnya: hanya berlaku di Claude Code dengan plugin terpasang; hanya melihat
 perintah yang memanggil `k2` lewat alat Bash (agen yang sengaja menyunting
 berkas papan langsung, atau memanggil `node core/run.mjs`, tidak tertangkap);
 dan belum terbukti di sesi sungguhan.
+
+### Putaran ketiga dan rancang ulang penjaga peran (12 November 2026)
+
+Peninjau menemukan penjaga peran 0.12.0, yang mengurai baris perintah shell,
+dilewati bentuk shell biasa (jalur berkutip, `bash -c`, `--force=1`) dan salah
+menolak teks yang sekadar menyebut sebuah perintah. Keputusan pemilik: rancang
+ulang. Di 0.13.0 hook tidak mengurai apa pun: ia menitipkan peran ke lingkungan
+perintah, dan `k2` memutuskan dari argumennya sendiri (`core/roles.mjs`).
+
+Yang juga diperbaiki: commit merge kembali di bawah kunci papan (di 0.11.0 ia
+dipindah keluar, sehingga tiket terhitung `done` sebelum commit-nya ada dan
+tiket yang bergantung padanya bisa mulai terlalu dini); `k2 void` menolak
+menyegel suntingan tangan; pesan untuk berkas tak terlacak menyebut dua jalan
+(commit bila dibutuhkan kode atau uji, `.gitignore` bila hanya keluaran) dan
+tidak lagi saling bertentangan; segel kontrak hanya mencakup `Request`,
+`Done when`, dan `Out of scope`.
+
+Batas penjaga peran yang tersisa, dengan sadar:
+
+- Agen yang sengaja mengosongkan `K2_ROLE`, menyunting berkas papan langsung,
+  atau memanggil subagen umum untuk menjalankan `k2`, tidak tertahan.
+- Tidak ada pemeriksaan bahwa agen itu memang yang ditugaskan pada tiket itu:
+  belum terbukti bahwa ID agen di hook sama dengan ID dari alat `Agent`.
+- **Belum terbukti di sesi sungguhan**, dan ada satu risiko yang hanya terlihat
+  di sana: awalan `export ...;` bisa membuat Claude Code meminta izin untuk
+  perintah yang sebelumnya lolos otomatis. Bila itu terjadi, `role_guard: false`
+  di `settings.yml` mematikan penjaga tanpa mencabut plugin.

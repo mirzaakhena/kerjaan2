@@ -192,14 +192,19 @@ export function voidCriterion(contract, n, reason) {
   });
 }
 
-// What a ticket asks for, as it must not change under the work: the whole
-// contract, with only the ticks left out. A void mark is part of it, so one
-// typed in by hand breaks the seal; `k2 void` seals again itself.
+// What a ticket asks for, as it must not change under the work: Request,
+// Done when and Out of scope, with ticks, blank lines and spacing left out.
+// Background may still be reworded; a void mark is part of a criterion, so
+// one typed in by hand breaks the seal, and `k2 void` seals again itself.
 export function contractText(contract) {
-  return contract.split('\n').map((line) => {
-    const m = line.match(BOX);
-    return m ? `- [ ] ${m[2].trim()}` : line.trimEnd();
-  }).join('\n').trim();
+  const parts = ['Request', 'Done when', 'Out of scope'].map((title) => {
+    const body = section(contract, title) || '';
+    return body.split('\n').map((line) => {
+      const m = line.match(BOX);
+      return (m ? `- ${m[2]}` : line).replace(/\s+/g, ' ').trim();
+    }).filter(Boolean).join('\n');
+  });
+  return JSON.stringify(parts);
 }
 
 export function template(type) {

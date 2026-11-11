@@ -1,0 +1,8 @@
+#!/bin/sh
+# The PreToolUse hook for Bash. It runs before every Bash call, so it must be
+# cheap: node is started only for a call made inside a subagent.
+input=$(cat)
+case "$input" in
+  *'"agent_id"'*) printf '%s' "$input" | exec node "$(dirname "$0")/../core/run.mjs" hook guard ;;
+esac
+exit 0

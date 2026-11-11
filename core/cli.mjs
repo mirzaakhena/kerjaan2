@@ -3,6 +3,7 @@ import * as board from './cmd-board.mjs';
 import * as record from './cmd-record.mjs';
 import * as work from './cmd-work.mjs';
 import { hook } from './cmd-hook.mjs';
+import { refusal } from './roles.mjs';
 
 const COMMANDS = {
   init: board.init,
@@ -70,6 +71,12 @@ export function main(argv) {
   const fn = COMMANDS[cmd];
   try {
     if (!fn) throw new K2Error(`unknown command "${cmd}". Run \`k2 help\`.`);
+    // Inside a kerjaan2 subagent, the commands that belong to somebody else are refused.
+    const role = process.env.K2_ROLE;
+    if (role) {
+      const why = refusal(role, cmd, rest);
+      if (why) throw new K2Error(`${why}. Nothing was changed. If the ticket needs it, say so in your report: the foreman or the owner decides.`, 6);
+    }
     fn(rest);
   } catch (e) {
     if (!(e instanceof K2Error)) throw e;

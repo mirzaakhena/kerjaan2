@@ -43,6 +43,7 @@ export function answer(argv) {
     const a = T.makeEntry(pos.slice(2).join(' '));
     const wasBlocking = q.status === 'blocking';
     const flying = ['in_progress', 'review'].includes(t.status);
+    if (flying && process.env.K2_ROLE === 'planner') die(`${t.id} is in flight: an answer there decides whether work that is already built merges, and that goes through the foreman.`);
     // The worker went ahead with its recommendation: was the owner's answer that one?
     if (wasBlocking && flying && !opt.agrees && !opt.differs) {
       die(`${t.id} was built on the option the worker recommended for ${q.key}. Say which it is: --agrees (the owner chose that option; the ticket goes on to merge) or --differs (the owner chose otherwise; it goes back to its worker).`);
@@ -146,6 +147,7 @@ export function void_(argv) {
     const reason = pos.slice(2).join(' ').replace(/\s+/g, ' ').trim();
     if (!reason) die('void <id> <n> "<the decision that made it pointless: Q2, or the owner\'s words and date>"');
     if (reason.length > 200) die('the reason is one line');
+    if (B.contractMoved(board, t)) die(`${t.id}: what it asks for was edited by hand after work started. A void seals the contract again, and it will not seal somebody's edit: restore the wording first, or the owner confirms the change through the foreman (\`${K()} amend\`).`);
     const keys = reason.match(/\bQ\d+\b/g) || [];
     const answered = keys.filter((k) => t.record.questions.some((q) => q.key === k && q.status === 'answered'));
     if (!answered.length) die(`a criterion is voided only by a decision of the owner that is on record: name the answered question (Q<n>) that made it pointless. ${keys.length ? `${keys.join(', ')} is not an answered question of this ticket.` : 'No question is named.'} No such answer yet? Ask it: ${K()} ask ${t.id} --blocking "<question>"`);

@@ -31,6 +31,7 @@ export const DEFAULTS = {
   strict_paths: [],
   light_max_files: 8,
   stuck_after_minutes: 60,
+  role_guard: true,
   done_when_limit: 8,
   model_worker_light: 'sonnet',
   model_worker: 'inherit',
@@ -124,7 +125,9 @@ const readPid = (file) => {
 // A lock is a folder. It is held while its holder lives, or while a command
 // its holder started (a test run) still lives: a k2 that was killed must not
 // free the tests' turn while its test run goes on.
-export function withLock(board, name, fn, { waitMs = 120000 } = {}) {
+// The board lock may be held through a project's own commit hooks or a
+// checkout, so others wait long rather than fail: thirty minutes.
+export function withLock(board, name, fn, { waitMs = 30 * 60 * 1000 } = {}) {
   fs.mkdirSync(board.state, { recursive: true });
   const dir = path.join(board.state, `${name}.lock`);
   const start = Date.now();

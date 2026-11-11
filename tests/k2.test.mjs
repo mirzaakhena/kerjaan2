@@ -893,12 +893,12 @@ test('an untracked file is never guessed to be a test artefact: the handover wai
   fs.writeFileSync(path.join(wt, 'pembantu.txt'), 'dibutuhkan uji, belum di-commit\n');
   const out = r.kIn(wt, 'submit', id);
   assert.equal(out.code, 1);
-  assert.match(out.out, /uncommitted changes[\s\S]*pembantu\.txt/);
+  assert.match(out.out, /neither tracked nor ignored[\s\S]*a file the code or the tests need[\s\S]*pembantu\.txt/, 'both routes are named, not only .gitignore');
   sh(wt, 'git', ['add', 'pembantu.txt']);
   sh(wt, 'git', ['commit', '-qm', 'pembantu']);
   const again = r.kIn(wt, 'submit', id);
   assert.equal(again.code, 1);
-  assert.match(again.out, /test run left files that git does not ignore: laporan\.out[\s\S]*\.gitignore/);
+  assert.match(again.out, /files appeared during the run that git neither tracks nor ignores: laporan\.out[\s\S]*committed on this branch[\s\S]*\.gitignore/);
   assert.equal(statusOf(r, id), 'in_progress');
   fs.writeFileSync(path.join(wt, '.gitignore'), 'laporan.out\n');
   sh(wt, 'git', ['add', '.gitignore']);
@@ -915,7 +915,7 @@ test('a new source file that was never added still stops the handover', () => {
   r.k('start', id);
   const wt = work(r, id, 'x.txt', 'x\n');
   fs.writeFileSync(path.join(wt, 'lupa.txt'), 'belum di-add\n');
-  assert.match(r.kIn(wt, 'submit', id).out, /uncommitted changes[\s\S]*lupa\.txt/);
+  assert.match(r.kIn(wt, 'submit', id).out, /neither tracked nor ignored[\s\S]*lupa\.txt/);
 });
 
 test('a k2 that is killed does not free the tests\' turn while its test run still lives', async () => {
@@ -1114,38 +1114,82 @@ test('the agent-sent hook binds the ticket the prompt is about, not the first nu
   assert.match(next, new RegExp(`WAIT   ${b} worker pekerja-b`));
 });
 
-test('the role guard: inside a subagent, k2 commands that belong to somebody else are refused before they run', async () => {
-  const { k2Calls, refusal } = await import('../core/cmd-hook.mjs');
-  assert.deepEqual(k2Calls('cd /x && /a/b/bin/k2 verdict 123 pass --note "1: ok"; k2 learn "x"').map((c) => c.cmd), ['verdict', 'learn']);
-  assert.deepEqual(k2Calls('echo "$(k2 status)" | head').map((c) => c.cmd), ['status']);
-  assert.deepEqual(k2Calls('npm test && git commit -m "k2 land later"'), []);
-  const no = (role, line) => k2Calls(line).map((c) => refusal(role, c)).find(Boolean) || null;
-  // a worker
-  for (const line of ['k2 verdict 1 pass --note x', 'k2 land 1', 'k2 amend 1 --why x', 'k2 answer 1 Q1 ya --agrees', 'k2 agent 1 reviewer palsu', 'k2 accept 1 --why x', 'k2 set 1 lane=light', 'k2 manual 1 ok M1', 'k2 release 1 worker', 'k2 retry 1', 'k2 move 1 done --force', 'k2 start 2', 'k2 confirm 1 all']) {
-    assert.ok(no('worker', line), `a worker must not run: ${line}`);
-  }
-  for (const line of ['k2 brief 1 --role worker', 'k2 check 1 1 "bukti"', 'k2 manual 1 2 "1. langkah"', 'k2 handoff 1 "x"', 'k2 assume 1 "x" --why y', 'k2 ask 1 --blocking "x"', 'k2 void 1 2 "Q1: x"', 'k2 test 1 -- npm test', 'k2 submit 1', 'k2 learn "x"']) {
-    assert.equal(no('worker', line), null, `a worker may run: ${line}`);
-  }
-  // a reviewer
-  for (const line of ['k2 check 1 1 x', 'k2 submit 1', 'k2 handoff 1 x', 'k2 land 1', 'k2 followup 1 declined F1', 'k2 answer 1 Q1 x']) assert.ok(no('reviewer', line), line);
-  for (const line of ['k2 verdict 1 pass --note "1: ok"', 'k2 followup 1 "masalah"', 'k2 test 1 --dir /tmp/x -- npm test', 'k2 learn "x"']) assert.equal(no('reviewer', line), null, line);
-  // a planner
-  for (const line of ['k2 start 1', 'k2 land 1', 'k2 verdict 1 pass', 'k2 set 1 lane=light --force', 'k2 move 1 cancel --why x', 'k2 amend 1 --why x']) assert.ok(no('planner', line), line);
-  for (const line of ['k2 new "Judul"', 'k2 set 1 lane=strict touches=src/', 'k2 answer 1 Q1 "kata pemilik"', 'k2 move 1 todo', 'k2 queue set 1 2 --goal x', 'k2 commit-board']) assert.equal(no('planner', line), null, line);
-  // any other subagent only reads
-  assert.ok(no('other', 'k2 submit 1') && !no('other', 'k2 status'));
-
-  // end to end, through the hook
+test('the role guard: the hook hands the caller\'s role to the command, and k2 refuses what is not that role\'s', () => {
   const r = repo();
-  const guard = (payload) => sh(r.dir, K2, ['hook', 'guard'], JSON.stringify({ cwd: r.dir, hook_event_name: 'PreToolUse', tool_name: 'Bash', ...payload })).out;
-  const denied = guard({ agent_id: 'a1', agent_type: 'kerjaan2:worker', tool_input: { command: `${K2} verdict 261111111101 pass --note "1: ok"` } });
-  assert.equal(JSON.parse(denied).hookSpecificOutput.permissionDecision, 'deny');
-  assert.match(denied, /not the worker's to run/);
-  assert.equal(guard({ agent_id: 'a1', agent_type: 'kerjaan2:worker', tool_input: { command: 'k2 submit 261111111101' } }).trim(), '');
-  assert.equal(guard({ tool_input: { command: 'k2 land 261111111101' } }).trim(), '', 'the main session is never refused');
-  assert.equal(guard({ agent_id: 'a2', agent_type: 'general-purpose', tool_input: { command: 'git status' } }).trim(), '');
+  const id = ticket(r, 'Dijaga peran');
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n');
+  const guard = (payload) => sh(r.dir, path.join(path.dirname(K2), 'k2-guard'), [], JSON.stringify({ cwd: r.dir, hook_event_name: 'PreToolUse', tool_name: 'Bash', ...payload })).out;
+  const out = JSON.parse(guard({ agent_id: 'a-1', agent_type: 'kerjaan2:worker', tool_input: { command: 'cd x && k2 land 1', description: 'd', timeout: 5000 } })).hookSpecificOutput;
+  assert.equal(out.updatedInput.command, 'export K2_ROLE=worker K2_AGENT=a-1; cd x && k2 land 1');
+  assert.equal(out.updatedInput.timeout, 5000, 'the rest of the input is kept');
+  assert.equal(out.permissionDecision, undefined, 'the hook approves nothing by itself');
+  assert.equal(guard({ tool_input: { command: 'k2 land 1' } }).trim(), '', 'the main session is left alone');
+  assert.equal(guard({ agent_id: 'a-2', agent_type: 'general-purpose', tool_input: { command: 'k2 status' } }).trim(), '', 'so is an agent that is not ours');
+  assert.equal(guard({ agent_id: 'a-1', agent_type: 'kerjaan2:worker', tool_input: { command: 'export K2_ROLE=worker K2_AGENT=a-1; ls' } }).trim(), '', 'never wrapped twice');
+
+  // What the wrapped command then meets: k2 itself, deciding on its real arguments.
+  const as = (role, script) => spawnSync('sh', ['-c', `export K2_ROLE=${role} K2_AGENT=a-1; ${script}`], { cwd: r.dir, encoding: 'utf8', env: { ...process.env, K: K2, ID: id } });
+  const refused = (role, script) => {
+    const x = as(role, script);
+    return x.status === 6 && /Nothing was changed/.test(x.stderr + x.stdout);
+  };
+  // every shell form the parser-based guard let through
+  for (const script of ['"$K" land $ID', "'" + K2 + "' land $ID", 'bash -c "$K land $ID"', 'eval "$K accept $ID --why x"', 'X=$K; $X land $ID', '"$K" status >/dev/null & "$K" land $ID', '"$K" \\\n land $ID', '"$K" "land" $ID', 'node "$(dirname "$K")/../core/run.mjs" land $ID', '"$K" verdict $ID pass --note "1: ok"', '"$K" amend $ID --why x', '"$K" agent $ID reviewer palsu', '"$K" answer $ID Q1 ya --agrees', '"$K" hook agent-sent </dev/null', '"$K" manual $ID ok M1', '"$K" set $ID lane=light --force=1']) {
+    assert.ok(refused('worker', script), `a worker must not get through with: ${script}`);
+  }
+  assert.equal(statusOf(r, id), 'in_progress', 'none of them changed anything');
+  // text that merely mentions a command or a flag is nobody's business
+  assert.equal(as('worker', '"$K" decide $ID "kita membuang flag --force; lihat k2 land | nanti"').status, 0);
+  assert.equal(as('worker', '"$K" handoff $ID "Mandor menjalankan k2 land sesudahnya."').status, 0);
+  assert.equal(as('worker', 'git -C "' + wt + '" commit -q --allow-empty -m "docs: kapan k2 land menolak"').status, 0);
+  assert.equal(as('worker', '"$K" submit $ID').status, 0, 'a worker hands over');
+  assert.ok(refused('worker', '"$K" check $ID 1 x') === false);
+  // a reviewer judges and nothing else
+  r.kIn(r.dir, 'agent', id, 'reviewer', 'a-1');
+  assert.ok(refused('reviewer', '"$K" check $ID 1 x') && refused('reviewer', '"$K" submit $ID') && refused('reviewer', '"$K" followup $ID declined F1'));
+  assert.equal(as('reviewer', '"$K" followup $ID "Jalur --force belum diuji"').status, 0);
+  assert.equal(as('reviewer', '"$K" verdict $ID pass --note "1: ok; lihat k2 land"').status, 0);
+  // a planner prepares and nothing else
+  const other = ticket(r, 'Untuk planner');
+  const asP = (script) => spawnSync('sh', ['-c', `export K2_ROLE=planner; ${script}`], { cwd: r.dir, encoding: 'utf8', env: { ...process.env, K: K2, ID: other, FLY: id } });
+  for (const script of ['"$K" start $ID', '"$K" land $FLY', '"$K" set $ID lane=light --force', '"$K" move $ID cancel --why x', '"$K" move --why siap $ID done']) assert.equal(asP(script).status, 6, script);
+  assert.equal(asP('"$K" set $ID lane=strict touches=src/').status, 0);
+  assert.equal(asP('"$K" move --why "siap" $ID backlog').status, 0, 'options before the status do not confuse it');
+  r.k('ask', id, '--blocking', 'Boleh? Saran: ya');
+  assert.match(asP('"$K" answer $FLY Q1 ya --agrees').stderr, /is in flight/);
   const hooks = JSON.parse(fs.readFileSync(path.join(path.dirname(K2), '..', 'hooks', 'hooks.json'), 'utf8')).hooks;
   assert.equal(hooks.PreToolUse[0].matcher, 'Bash');
-  assert.equal(hooks.PreToolUse[0].hooks[0].if, 'Bash(*k2 *)');
+  assert.ok(!hooks.PreToolUse[0].hooks[0].if, 'it runs for every Bash call: an if rule would let quoted forms slip');
+});
+
+test('while a merge is being committed the ticket is not yet done: nothing that waits for it starts', async () => {
+  const r = repo();
+  const a = passLight(r, 'Fondasi yang sedang di-commit', 'base.txt', 'b\n');
+  const d = ticket(r, 'Menunggu fondasi', { lane: 'light', extra: ['--blocked-by', a] });
+  const hook = path.join(r.dir, '.git', 'hooks', 'pre-commit');
+  fs.writeFileSync(hook, '#!/bin/sh\nsleep 3\nexit 1\n', { mode: 0o755 });
+  const { spawn } = await import('node:child_process');
+  const landing = spawn(K2, ['land', a], { cwd: r.dir, stdio: 'ignore' });
+  await new Promise((res) => setTimeout(res, 1500));
+  const mid = r.k('start', d);
+  await new Promise((res) => landing.on('exit', res));
+  assert.ok(!/STARTED/.test(mid.out), 'it waited for the board, and the commit failed');
+  assert.match(mid.out, /waits for/);
+  assert.equal(statusOf(r, d), 'todo');
+  assert.equal(statusOf(r, a), 'review');
+});
+
+test('a void does not seal a criterion somebody deleted by hand; rewording Background trips nothing', () => {
+  const r = repo();
+  const id = ticket(r, 'Hapus lalu batalkan', { lane: 'light', items: ['Satu', 'Dua', 'Tiga'] });
+  r.k('start', id);
+  r.k('ask', id, '--blocking', 'Dua masih perlu? Saran: tidak');
+  r.k('answer', id, 'Q1', 'Tidak', '--agrees');
+  const file = r.k('show', id, '--path').out.trim();
+  const orig = fs.readFileSync(file, 'utf8');
+  fs.writeFileSync(file, orig.replace('## Background\n', '## Background\nSatu kalimat penjelas tambahan.\n\n').replace('## Request\n', '## Request\n\n'));
+  assert.equal(r.k('void', id, '2', 'Q1').code, 0, 'Background and blank lines are not the contract');
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('- [ ] Tiga\n', ''));
+  assert.match(r.k('void', id, '1', 'Q1').out, /will not seal somebody's edit/);
 });

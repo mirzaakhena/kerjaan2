@@ -16,7 +16,7 @@ const NO_BOARD = ':(exclude).kerjaan2';
 // ----- the contract does not move under the work -----
 
 const contractPrint = B.contractPrint;
-const MOVED = (id) => `its Request, Done when or another part of what it asks for was edited after work started. Only the owner changes what a ticket in flight asks for: the foreman puts it to them and runs \`${K()} amend ${id} --why "<their words>"\`; or the wording is restored`;
+const MOVED = (id) => `its Request, Done when or Out of scope was edited after work started. Only the owner changes what a ticket in flight asks for: the foreman puts it to them and runs \`${K()} amend ${id} --why "<their words>"\`; or the wording is restored`;
 const contractMoved = (board, t) => (B.contractMoved(board, t) ? MOVED(t.id) : null);
 
 // The owner changes what a ticket in flight asks for. What was built or
@@ -127,6 +127,8 @@ const tail = (text, n) => text.split('\n').filter((l) => l.trim()).slice(-n).joi
 function dirt(board, id, wt) {
   return gitTry(wt, 'status', '--porcelain').out;
 }
+
+const UNTRACKED = 'Decide for each one, and do not guess: a file the code or the tests need (you wrote it, or the tests fail without it) is committed on this branch; a file that is only output of a run goes into .gitignore, committed on this branch. Then submit again.';
 
 const untracked = (wt) => gitTry(wt, 'status', '--porcelain').out.split('\n').filter((l) => l.startsWith('?? ')).map((l) => l.slice(3).replace(/^"|"$/g, ''));
 
@@ -290,7 +292,8 @@ export function submit(argv) {
   const dirty = dirt(board, t.id, wt);
   if (dirty) {
     const unmerged = dirty.split('\n').some((l) => /^(UU|AA|DU|UD|AU|UA) /.test(l));
-    die(`${unmerged ? 'the merge is not finished' : 'the worktree holds uncommitted changes'}. Commit on the branch first:\n${tail(dirty, 15)}`);
+    const onlyNew = dirty.split('\n').every((l) => l.startsWith('?? '));
+    die(`${unmerged ? 'the merge is not finished. Commit on the branch first' : onlyNew ? `files in the worktree are neither tracked nor ignored. ${UNTRACKED}` : 'the worktree holds uncommitted changes. Commit on the branch first'}:\n${tail(dirty, 15)}`);
   }
   const merged = bringMainIn(board, t, wt);
   if (merged.conflicts.length) {
@@ -309,13 +312,13 @@ export function submit(argv) {
     else {
       const r = runTests(board, t, wt, 'submit');
       if (r.exit !== 0) {
-        console.log(`TESTS FAILED (exit ${r.exit}) after ${fmtDuration(r.seconds)}${merged.moved ? `, with ${main} merged in` : ''}. Fix, commit, submit again. Last lines:\n${tail(r.output, 40)}`);
+        console.log(`TESTS FAILED (exit ${r.exit}) after ${fmtDuration(r.seconds)}${merged.moved ? `, with ${main} merged in` : ''}. Fix, commit, submit again. Last lines:\n${tail(r.output, 40)}${r.left.length ? `\nThe run also left files git neither tracks nor ignores: ${r.left.slice(0, 8).join(', ')}. ${UNTRACKED}` : ''}`);
         process.exitCode = 1;
         return;
       }
       ran = `passed in ${fmtDuration(r.seconds)}`;
       if (r.left.length) {
-        console.log(`NOT SUBMITTED ${t.id}: the tests passed, but the test run left files that git does not ignore: ${r.left.slice(0, 8).join(', ')}.\nAs long as they show up as untracked, nobody can tell them from a source file that was never added. Add them to .gitignore, commit that on this branch, and submit again.`);
+        console.log(`NOT SUBMITTED ${t.id}: the tests passed, but files appeared during the run that git neither tracks nor ignores: ${r.left.slice(0, 8).join(', ')}.\n${UNTRACKED}`);
         process.exitCode = 1;
         return;
       }
@@ -595,7 +598,6 @@ export function land(argv) {
     // The ticket reaches done in the very commit that brings its code into
     // main. If that commit fails, every step taken for it is taken back.
     const undo = [];
-    let message = [];
     try {
       B.withLock(board, 'board', () => {
         t = B.load(B.findTicket(board, t.id));
@@ -615,12 +617,11 @@ export function land(argv) {
         const paths = [`:(glob)${B.BOARD_DIR}/*/${t.id} *`, `${B.BOARD_DIR}/log/${t.id}.jsonl`];
         for (const f of ['queue.yml', 'lessons.md']) if (fs.existsSync(path.join(board.dir, f))) paths.push(`${B.BOARD_DIR}/${f}`);
         git(board.root, 'add', '-A', '--', ...paths);
-        message = [`${t.id} ${t.title}`, `Lane ${t.fm.lane}, ${rounds} round${rounds === 1 ? '' : 's'}. Ticket: ${B.BOARD_DIR}/done/${t.id}`];
+        // Under the board lock, commit hooks and all: until this commit
+        // exists the ticket is not in main, and nobody may read it as done.
+        const c = gitTry(board.root, 'commit', '-q', '-m', `${t.id} ${t.title}`, '-m', `Lane ${t.fm.lane}, ${rounds} round${rounds === 1 ? '' : 's'}. Ticket: ${B.BOARD_DIR}/done/${t.id}`);
+        if (c.code !== 0) throw new Error(c.err || c.out || 'git commit failed');
       });
-      // Outside the board lock: the project's commit hooks may take minutes,
-      // and other agents keep writing their tickets meanwhile.
-      const c = gitTry(board.root, 'commit', '-q', '-m', message[0], '-m', message[1]);
-      if (c.code !== 0) throw new Error(c.err || c.out || 'git commit failed');
     } catch (e) {
       for (const u of undo) {
         try {
