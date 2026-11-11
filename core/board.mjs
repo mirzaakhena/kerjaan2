@@ -40,10 +40,14 @@ export const DEFAULTS = {
 };
 
 // The main worktree's root, from anywhere inside the repo or one of its worktrees.
-export function findRoot(cwd = process.cwd()) {
-  const r = run('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd });
-  if (r.code !== 0) die('not inside a git repository (k2 needs one: every ticket is worked on a branch)');
-  return path.dirname(r.out);
+export function findRoot(cwd) {
+  const r = run('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: cwd || process.cwd() });
+  if (r.code === 0) return path.dirname(r.out);
+  // Inside a kerjaan2 subagent the hook says where the board is, so k2 works
+  // from a reviewer's copy in /tmp as well as from the repo.
+  const home = process.env.K2_HOME;
+  if (home && !cwd && fs.existsSync(path.join(home, BOARD_DIR))) return home;
+  die('not inside a git repository (k2 needs one: every ticket is worked on a branch). Run it from the repo or one of its worktrees.');
 }
 
 export function openBoard({ mustExist = true, cwd } = {}) {
@@ -159,8 +163,10 @@ export function withLock(board, name, fn, { waitMs = 30 * 60 * 1000 } = {}) {
         continue;
       }
       if (Date.now() - start > waitMs) die(`the ${name} lock is held by process ${holder || child} and did not free up in ${Math.round(waitMs / 1000)}s`);
-      if (!told && (name === 'test' || name === 'land')) {
-        process.stderr.write(`waiting for the ${name} lock (held by process ${holder || child})...\n`);
+      if (!told && (name === 'test' || name === 'land' || (name === 'board' && Date.now() - start > 2500))) {
+        process.stderr.write(name === 'board'
+          ? `waiting for the board (process ${holder || child} holds it: another k2 command, perhaps a merge whose commit hooks are running). This command goes on by itself when it is free.\n`
+          : `waiting for the ${name} lock (held by process ${holder || child})...\n`);
         told = true;
       }
       sleep(name === 'state' ? 20 : 200);
@@ -262,6 +268,8 @@ export function log(board, id, event, data = {}) {
   const rec = { t: now(), event, ...data };
   const session = process.env.CLAUDE_SESSION_ID || process.env.CLAUDE_CODE_SESSION_ID;
   if (session) rec.session = session;
+  if (process.env.K2_ROLE) rec.role = process.env.K2_ROLE;
+  if (process.env.K2_AGENT) rec.agent ??= process.env.K2_AGENT;
   fs.appendFileSync(path.join(dir, `${id}.jsonl`), JSON.stringify(rec) + '\n');
 }
 

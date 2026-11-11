@@ -11,8 +11,14 @@ import * as T from '../core/ticket.mjs';
 
 const K2 = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'k2');
 
+const cleanEnv = () => {
+  const e = { ...process.env };
+  for (const k of ['K2_ROLE', 'K2_AGENT', 'K2_HOME']) delete e[k];
+  return e;
+};
+
 function sh(cwd, cmd, args, input) {
-  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', input, env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', input, env: { ...cleanEnv(), GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
   return { code: r.status, out: (r.stdout || '') + (r.stderr || '') };
 }
 
@@ -1121,15 +1127,17 @@ test('the role guard: the hook hands the caller\'s role to the command, and k2 r
   const wt = work(r, id, 'x.txt', 'x\n');
   const guard = (payload) => sh(r.dir, path.join(path.dirname(K2), 'k2-guard'), [], JSON.stringify({ cwd: r.dir, hook_event_name: 'PreToolUse', tool_name: 'Bash', ...payload })).out;
   const out = JSON.parse(guard({ agent_id: 'a-1', agent_type: 'kerjaan2:worker', tool_input: { command: 'cd x && k2 land 1', description: 'd', timeout: 5000 } })).hookSpecificOutput;
-  assert.equal(out.updatedInput.command, 'export K2_ROLE=worker K2_AGENT=a-1; cd x && k2 land 1');
+  assert.equal(out.updatedInput.command, `export K2_ROLE=worker K2_AGENT=a-1 K2_HOME='${r.dir}'; cd x && k2 land 1`);
   assert.equal(out.updatedInput.timeout, 5000, 'the rest of the input is kept');
   assert.equal(out.permissionDecision, undefined, 'the hook approves nothing by itself');
   assert.equal(guard({ tool_input: { command: 'k2 land 1' } }).trim(), '', 'the main session is left alone');
   assert.equal(guard({ agent_id: 'a-2', agent_type: 'general-purpose', tool_input: { command: 'k2 status' } }).trim(), '', 'so is an agent that is not ours');
-  assert.equal(guard({ agent_id: 'a-1', agent_type: 'kerjaan2:worker', tool_input: { command: 'export K2_ROLE=worker K2_AGENT=a-1; ls' } }).trim(), '', 'never wrapped twice');
+  assert.match(JSON.parse(guard({ agent_id: 'a-1', agent_type: 'kerjaan2:worker', tool_input: { command: 'export K2_ROLE=reviewer; ls' } })).hookSpecificOutput.updatedInput.command, /^export K2_ROLE=worker /, 'a command that names a role itself is prefixed all the same');
+  const outside = JSON.parse(sh(os.tmpdir(), path.join(path.dirname(K2), 'k2-guard'), [], JSON.stringify({ cwd: os.tmpdir(), tool_name: 'Bash', agent_id: 'a-1', agent_type: 'kerjaan2:reviewer', tool_input: { command: 'ls' } })).out).hookSpecificOutput.updatedInput.command;
+  assert.equal(outside, 'export K2_ROLE=reviewer K2_AGENT=a-1; ls', 'the role travels even when the call starts outside the repo');
 
   // What the wrapped command then meets: k2 itself, deciding on its real arguments.
-  const as = (role, script) => spawnSync('sh', ['-c', `export K2_ROLE=${role} K2_AGENT=a-1; ${script}`], { cwd: r.dir, encoding: 'utf8', env: { ...process.env, K: K2, ID: id } });
+  const as = (role, script) => spawnSync('sh', ['-c', `export K2_ROLE=${role} K2_AGENT=a-1; ${script}`], { cwd: r.dir, encoding: 'utf8', env: { ...cleanEnv(), K: K2, ID: id } });
   const refused = (role, script) => {
     const x = as(role, script);
     return x.status === 6 && /Nothing was changed/.test(x.stderr + x.stdout);
@@ -1152,7 +1160,7 @@ test('the role guard: the hook hands the caller\'s role to the command, and k2 r
   assert.equal(as('reviewer', '"$K" verdict $ID pass --note "1: ok; lihat k2 land"').status, 0);
   // a planner prepares and nothing else
   const other = ticket(r, 'Untuk planner');
-  const asP = (script) => spawnSync('sh', ['-c', `export K2_ROLE=planner; ${script}`], { cwd: r.dir, encoding: 'utf8', env: { ...process.env, K: K2, ID: other, FLY: id } });
+  const asP = (script) => spawnSync('sh', ['-c', `export K2_ROLE=planner; ${script}`], { cwd: r.dir, encoding: 'utf8', env: { ...cleanEnv(), K: K2, ID: other, FLY: id } });
   for (const script of ['"$K" start $ID', '"$K" land $FLY', '"$K" set $ID lane=light --force', '"$K" move $ID cancel --why x', '"$K" move --why siap $ID done']) assert.equal(asP(script).status, 6, script);
   assert.equal(asP('"$K" set $ID lane=strict touches=src/').status, 0);
   assert.equal(asP('"$K" move --why "siap" $ID backlog').status, 0, 'options before the status do not confuse it');
@@ -1192,4 +1200,73 @@ test('a void does not seal a criterion somebody deleted by hand; rewording Backg
   assert.equal(r.k('void', id, '2', 'Q1').code, 0, 'Background and blank lines are not the contract');
   fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('- [ ] Tiga\n', ''));
   assert.match(r.k('void', id, '1', 'Q1').out, /will not seal somebody's edit/);
+});
+
+// ----- found by the fourth round (the live session and 0.13.0) -----
+
+test('taking the box off a criterion breaks the seal: it cannot quietly become prose', () => {
+  const r = repo();
+  const id = ticket(r, 'Kotak dibuang', { lane: 'light', items: ['Satu', 'Dua', 'Hal ketiga yang sulit'] });
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n', { checks: [1, 2] });
+  const file = r.k('show', id, '--path').out.trim();
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('- [ ] Hal ketiga yang sulit', '- Hal ketiga yang sulit'));
+  assert.match(r.kIn(wt, 'submit', id).out, /edited after work started/);
+});
+
+test('inside a subagent k2 finds the board from any folder, and a test run does not inherit the agent\'s role', () => {
+  const r = repo({ test: 'test -z "$K2_ROLE" && test -z "$K2_AGENT" && node check.js' });
+  const id = ticket(r, 'Dari folder lain', { lane: 'light' });
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n');
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'k2-copy-'));
+  made.push(copy);
+  const from = (env, ...a) => spawnSync(K2, a, { cwd: copy, encoding: 'utf8', env: { ...cleanEnv(), ...env } });
+  assert.match(from({}, 'test', id, '--dir', copy, '--', 'echo', 'x').stderr, /not inside a git repository/);
+  const inAgent = { K2_ROLE: 'reviewer', K2_AGENT: 'a-1', K2_HOME: r.dir };
+  const ran = from(inAgent, 'test', id, '--dir', copy, '--', 'echo "peran=[$K2_ROLE]"');
+  assert.equal(ran.status, 0, ran.stderr);
+  assert.match(ran.stdout, /peran=\[\]/, 'the command under test does not see the role');
+  const sub = spawnSync(K2, ['submit', id], { cwd: wt, encoding: 'utf8', env: { ...cleanEnv(), K2_ROLE: 'worker', K2_AGENT: 'a-9', K2_HOME: r.dir } });
+  assert.match(sub.stdout, /SUBMITTED/, 'the project\'s own tests ran without a role');
+  const trail = fs.readFileSync(path.join(r.dir, '.kerjaan2', 'log', `${id}.jsonl`), 'utf8');
+  assert.match(trail, /"event":"submitted".*"role":"worker","agent":"a-9"/, 'the trail says which kind of agent made each step');
+});
+
+test('the inbox shows every step of a manual check, not only the first', () => {
+  const r = repo();
+  const id = ticket(r, 'Langkah lengkap', { lane: 'light', items: ['Baris baru tampil', '(owner) Enak dilihat'] });
+  r.k('start', id);
+  const wt = work(r, id, 'x.txt', 'x\n');
+  r.k('manual', id, '2', '1. Buka berkas 2. Baca isinya 3. Harus terlihat: x');
+  r.kIn(wt, 'submit', id);
+  r.k('land', id);
+  assert.match(r.k('inbox').out, /M1 \(item 2\) 1\. Buka berkas\n\s+2\. Baca isinya\n\s+3\. Harus terlihat: x/);
+});
+
+test('a worker or reviewer writes only to the ticket it was sent for', () => {
+  const r = repo();
+  const mine = ticket(r, 'Tiket saya');
+  const theirs = ticket(r, 'Tiket orang lain');
+  r.k('start', mine);
+  r.k('start', theirs);
+  r.k('agent', mine, 'worker', 'saya');
+  r.k('agent', theirs, 'worker', 'dia');
+  const as = (...a) => spawnSync(K2, a, { cwd: r.dir, encoding: 'utf8', env: { ...cleanEnv(), K2_ROLE: 'worker', K2_AGENT: 'saya', K2_HOME: r.dir } });
+  assert.equal(as('decide', mine, 'keputusan sendiri').status, 0);
+  const no = as('handoff', theirs, 'bukan tiket saya');
+  assert.equal(no.status, 6);
+  assert.match(no.stderr, /belongs to worker dia/);
+  assert.equal(as('show', theirs).status, 0, 'reading another ticket is fine');
+  assert.equal(as('learn', 'satu pelajaran').status, 0);
+});
+
+test('a command that has to wait for the board says so instead of hanging in silence', () => {
+  const r = repo();
+  const lock = path.join(r.dir, '.kerjaan2', '.state', 'board.lock');
+  fs.mkdirSync(lock, { recursive: true });
+  fs.writeFileSync(path.join(lock, 'pid'), String(process.pid));
+  const out = spawnSync(K2, ['learn', 'menunggu'], { cwd: r.dir, encoding: 'utf8', env: cleanEnv(), timeout: 6000 });
+  fs.rmSync(lock, { recursive: true, force: true });
+  assert.match(out.stderr, /waiting for the board/);
 });

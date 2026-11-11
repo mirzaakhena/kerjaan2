@@ -3,7 +3,8 @@ import * as board from './cmd-board.mjs';
 import * as record from './cmd-record.mjs';
 import * as work from './cmd-work.mjs';
 import { hook } from './cmd-hook.mjs';
-import { refusal } from './roles.mjs';
+import { refusal, MAY } from './roles.mjs';
+import * as B from './board.mjs';
 
 const COMMANDS = {
   init: board.init,
@@ -67,7 +68,7 @@ Record    ask <id> [--blocking] "<question>" · answer <id> Q1 "<answer>"
 
 export function main(argv) {
   const [cmd, ...rest] = argv;
-  if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') return console.log(HELP);
+  if (!cmd || cmd === 'help' || rest.includes('--help') || cmd === '--help' || cmd === '-h') return console.log(HELP);
   const fn = COMMANDS[cmd];
   try {
     if (!fn) throw new K2Error(`unknown command "${cmd}". Run \`k2 help\`.`);
@@ -76,6 +77,17 @@ export function main(argv) {
     if (role) {
       const why = refusal(role, cmd, rest);
       if (why) throw new K2Error(`${why}. Nothing was changed. If the ticket needs it, say so in your report: the foreman or the owner decides.`, 6);
+      // A worker or reviewer writes only to the ticket it was sent for.
+      const me = process.env.K2_AGENT;
+      const writes = !['help', 'brief', 'show', 'ls', 'status', 'history', 'inbox', 'next', 'ready', 'test', 'learn'].includes(cmd);
+      if (me && writes && ['worker', 'reviewer'].includes(role) && /^\d{4,12}$/.test(rest[0] || '')) {
+        let owner = null;
+        try {
+          const board = B.openBoard();
+          owner = B.getState(board, B.findTicket(board, rest[0]).id)[role]?.agent || null;
+        } catch {}
+        if (owner && owner !== me) throw new K2Error(`that ticket belongs to ${role} ${owner}, not to you (${me}). Nothing was changed.`, 6);
+      }
     }
     fn(rest);
   } catch (e) {

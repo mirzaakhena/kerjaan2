@@ -627,3 +627,24 @@ Batas penjaga peran yang tersisa, dengan sadar:
   di sana: awalan `export ...;` bisa membuat Claude Code meminta izin untuk
   perintah yang sebelumnya lolos otomatis. Bila itu terjadi, `role_guard: false`
   di `settings.yml` mematikan penjaga tanpa mencabut plugin.
+
+### Putaran keempat: sesi sungguhan dan 0.13.0 (12 November 2026)
+
+**Terbukti di sesi sungguhan** (tiga tiket di `k2-akunting`): hook pencatat
+agen menyala; hook penjaga peran menyala di semua 87 perintah shell subagen
+tanpa permintaan izin; ID agen di hook sama dengan ID dari alat `Agent`;
+planner bertanya di depan, menandai tiket struktur data `solo`, dan memberi
+`blocked_by`; merge mengikuti urutan lolos.
+
+**Belum terbukti:** bahwa Claude Code benar-benar menjalankan perintah yang
+sudah diubah hook (dokumentasinya menyebut perubahan tanpa keputusan izin bisa
+dibuang di mode auto); hook awal sesi; hook berhenti; jalur tolak, macet, dan
+merge tertahan; uji lambat.
+
+Diperbaiki di 0.14.0: tanda kotak masuk ke dalam segel kontrak; `k2` menemukan
+papan dari folder mana pun di dalam subagen (`K2_HOME`), sehingga peninjau
+tidak lagi menabrak galat dari salinannya; kotak masuk menampilkan semua
+langkah pemeriksaan tangan; perintah uji tidak mewarisi peran agen; perintah
+yang menunggu papan mengatakannya; pengerja dan peninjau hanya menulis ke
+tiket yang ditugaskan kepadanya; jejak tiket mencatat peran dan agen pemanggil,
+yang sekaligus menjadi bukti apakah penjaga peran berpengaruh.

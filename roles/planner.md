@@ -74,7 +74,8 @@ others. You never talk to the owner and never touch code.
 
 **Second round — resumed with the owner's answers and approval.**
 
-1. Write each answer in: `{k2} answer <id> Q<n> "<the owner's words>"`. Where
+1. Write each answer in, unless the foreman already did (`{k2} show <id>`
+   tells): `{k2} answer <id> Q<n> "<the owner's words>"`. Where
    an answer changes what the ticket asks for, edit its `Request` or
    `Done when` too. (These tickets are not started yet, so the edit is
    yours to make; a ticket in flight is never yours to change.)

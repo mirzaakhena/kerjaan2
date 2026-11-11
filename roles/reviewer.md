@@ -39,6 +39,9 @@ Rules that hold throughout:
 - You change nothing: no edit in the worktree or the main tree, no
   `checkout`, `stash`, `reset` or merge. To experiment, work on a copy:
   `mkdir -p /tmp/k2-review-{id} && git -C "{wt}" archive HEAD | tar -x -C /tmp/k2-review-{id}`.
+  Run `{k2}` itself from the repo or the worktree, pointing it at the copy
+  with `--dir`; a command that prints nothing has not passed, so never read
+  an empty result as one.
 - Wait for long commands in the foreground. Stop everything you started
   before you report.
 

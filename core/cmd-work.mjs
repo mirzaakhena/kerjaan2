@@ -114,7 +114,11 @@ export function start(argv) {
 }
 
 function wtEnv(board, id, slot, wt = B.worktreeOf(board, id)) {
-  return { ...process.env, K2_MAIN_TREE: board.root, K2_TICKET: id, K2_SLOT: String(slot || 1), K2_WORKTREE: wt || '' };
+  // The agent's role is not the project's business: a test suite that calls
+  // k2 itself must not be refused because a worker started it.
+  const env = { ...process.env, K2_MAIN_TREE: board.root, K2_TICKET: id, K2_SLOT: String(slot || 1), K2_WORKTREE: wt || '' };
+  for (const k of ['K2_ROLE', 'K2_AGENT', 'K2_HOME']) delete env[k];
+  return env;
 }
 
 const tail = (text, n) => text.split('\n').filter((l) => l.trim()).slice(-n).join('\n');

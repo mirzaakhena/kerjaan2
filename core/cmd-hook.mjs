@@ -115,7 +115,8 @@ function agentSent(inp) {
     else agentId = String(resp ?? '').match(/\bagentId: ([A-Za-z0-9_-]{6,})/)?.[1] || null;
   }
   if (!role || !agentId) return;
-  B.withLock(board, 'board', () => bind(board, t, role, agentId));
+  // A hook has ten seconds: if the board is busy that long, the foreman's own `k2 agent` records it.
+  B.withLock(board, 'board', () => bind(board, t, role, agentId), { waitMs: 6000 });
 }
 
 // ----- the role guard -----
@@ -132,14 +133,16 @@ function guard(inp) {
   if (!role) return; // only kerjaan2's own agents are touched
   const ti = inp.tool_input || {};
   if (typeof ti.command !== 'string' || !ti.command.trim()) return;
-  if (ti.command.startsWith('export K2_ROLE=')) return;
+  // The owner may switch the guard off for one board; with no board in sight
+  // the role travels all the same (the command may `cd` into the repo).
   const board = boardAt(inp.cwd);
-  if (!board || !board.settings.role_guard) return; // no board here, or the owner switched the guard off
+  if (board && !board.settings.role_guard) return;
   const agent = String(inp.agent_id).replace(/[^A-Za-z0-9_-]/g, '');
+  const home = board ? ` K2_HOME='${board.root.replace(/'/g, "'\\''")}'` : '';
   console.log(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
-      updatedInput: { ...ti, command: `export K2_ROLE=${role} K2_AGENT=${agent}; ${ti.command}` },
+      updatedInput: { ...ti, command: `export K2_ROLE=${role} K2_AGENT=${agent}${home}; ${ti.command}` },
     },
   }));
 }

@@ -201,7 +201,7 @@ export function contractText(contract) {
     const body = section(contract, title) || '';
     return body.split('\n').map((line) => {
       const m = line.match(BOX);
-      return (m ? `- ${m[2]}` : line).replace(/\s+/g, ' ').trim();
+      return (m ? `[] ${m[2]}` : line).replace(/\s+/g, ' ').trim(); // a criterion stays a criterion: without its box it is prose
     }).filter(Boolean).join('\n');
   });
   return JSON.stringify(parts);

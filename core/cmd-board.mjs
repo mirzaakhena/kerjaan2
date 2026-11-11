@@ -341,7 +341,7 @@ export function inboxItems(board) {
     const add = (kind, key, text) => items.push({ kind, id: t.id, title: t.title, status: t.status, key, text });
     for (const q of t.record.questions) if (q.status !== 'answered') add(q.status === 'blocking' ? 'blocking question' : 'question', q.key, q.text);
     for (const a of t.record.assumptions) if (a.status === 'unseen' && ['review', 'done'].includes(t.status)) add('assumption', a.key, a.text);
-    for (const m of t.record.manual) if (m.status === 'waiting' && t.status === 'done') add('manual check', m.key, m.text);
+    for (const m of t.record.manual) if (m.status === 'waiting' && t.status === 'done') add('manual check', m.key, [m.text, ...m.sub.filter((l) => !/^(Checked|Failed) by /.test(l))].join('\n         '));
     for (const f of t.record.followups) if (f.status === 'open' && t.status === 'done') add('follow-up', f.key, f.text);
     const st = B.getState(board, t.id);
     if (B.isPassed(board, t) && st.held) add('not merged', '', `held: ${st.held}`);
