@@ -201,6 +201,33 @@ test('two tickets side by side: the first lands at once, the second is brought u
   assert.match(r.k('doctor').out, /healthy/);
 });
 
+test('a ticket being brought up to date keeps the turn: nothing else lands in front of it', () => {
+  const r = repo();
+  const ids = ['A', 'B', 'C'].map((x) => ticket(r, `Baris pertama ${x}`, { lane: 'light' }));
+  for (const id of ids) r.k('start', id);
+  const wts = ids.map((id, i) => work(r, id, i === 2 ? 'c.txt' : 'app.txt', `line ${i}\n`));
+  ids.forEach((id, i) => r.kIn(wts[i], 'submit', id));
+  const [a, b, c] = ids;
+  r.k('land', a);
+  assert.equal(r.k('land', b).code, 3, 'B conflicts with A');
+  const waits = r.k('land', c);
+  assert.equal(waits.code, 5);
+  assert.match(waits.out, new RegExp(`WAITING ${c}: ${b} is being brought up to date`));
+  assert.match(r.k('next').out, new RegExp(`WAIT   ${c} passed; it lands right after ${b}`));
+  sh(wts[1], 'git', ['merge', 'main']);
+  fs.writeFileSync(path.join(wts[1], 'app.txt'), 'line 0 and 1\n');
+  sh(wts[1], 'git', ['add', '-A']);
+  sh(wts[1], 'git', ['commit', '-q', '--no-edit']);
+  assert.match(r.kIn(wts[1], 'submit', b).out, /INTEGRATED .*It can land/s);
+  assert.match(r.k('land', b).out, /LANDED/);
+  assert.match(r.k('land', c).out, /LANDED/);
+  const h = r.k('history', b).out;
+  assert.match(h, /→ in_progress\s+started/);
+  assert.match(h, /→ done\s+submitted/);
+  assert.match(h, /integrate\s+main moved before it could land \(conflict\)/);
+  assert.match(h, /landed in main/);
+});
+
 test('main moved without touching the same lines: land merges, tests the merged state and lands with no agent', () => {
   const r = repo();
   const a = ticket(r, 'Tambah berkas A', { lane: 'light' });

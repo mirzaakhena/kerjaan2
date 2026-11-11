@@ -41,13 +41,14 @@ const COMMANDS = {
   submit: work.submit,
   verdict: work.verdict,
   land: work.land,
+  history: work.history,
   hook,
 };
 
 const HELP = `k2 — the kerjaan2 board. Run from anywhere inside the repo or one of its worktrees.
 
 Board     init · new "<title>" [--type bug|feature|task] [--priority] [--lane] · quick "<title>"
-          ls [status...] · show <id> [--contract|--path] · set <id> key=value... · rename <id> "<title>"
+          ls [status...] · show <id> [--contract|--path] · history <id> · set <id> key=value... · rename <id> "<title>"
           move <id> <status> [--why "<reason>"] · status · inbox · doctor [--fix] · commit-board [-m]
 Queue     ready [<id>...] · queue [show] · queue set <id>... [--goal "..."] [--pause-before <id>] · next
 Work      start <id> · brief <id> --role worker|reviewer · brief --role planner · test <id>

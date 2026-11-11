@@ -385,8 +385,13 @@ export function nextActions(board) {
   const flight = tickets.filter((t) => IN_FLIGHT.includes(t.status));
   const unmerged = tickets.filter((t) => t.status === 'done' && B.branchOf(board, t.id));
 
+  const turn = unmerged.find((t) => B.getState(board, t.id).needs && !B.getState(board, t.id).held);
   for (const t of unmerged) {
     const st = B.getState(board, t.id);
+    if (turn && turn.id !== t.id && !st.needs && !st.held) {
+      out.push(`WAIT   ${t.id} passed; it lands right after ${turn.id}, which is being brought up to date with main.`);
+      continue;
+    }
     if (st.held) out.push(`HELD   ${t.id} cannot land: ${st.held}. Tell the owner; once cleared: ${K()} land ${t.id}`);
     else if (st.needs === 'worker') out.push(...dispatchLines(board, t, 'worker', st, 'main moved after it passed: bring main in (integration, not a rejection)'));
     else if (st.needs === 'reviewer') out.push(...dispatchLines(board, t, 'reviewer', st, 'look at the conflict resolution only'));

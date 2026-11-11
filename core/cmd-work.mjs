@@ -338,6 +338,15 @@ export function land(argv) {
   const st0 = B.getState(board, t.id);
   if (st0.needs) die(`${t.id} is being brought up to date with ${main} (waiting for its ${st0.needs}); land it after that`);
 
+  // A ticket being brought up to date keeps the turn: if others landed
+  // meanwhile, it would have to be brought up to date all over again.
+  const ahead = B.listTickets(board, ['done']).find((o) => o.id !== t.id && B.branchOf(board, o.id) && B.getState(board, o.id).needs && !B.getState(board, o.id).held);
+  if (ahead) {
+    console.log(`WAITING ${t.id}: ${ahead.id} is being brought up to date with ${main} and lands first. Nothing was changed; land this one after it.`);
+    process.exitCode = 5;
+    return;
+  }
+
   const hold = (reason) => {
     B.setState(board, t.id, { held: reason });
     B.log(board, t.id, 'held', { reason });
@@ -485,4 +494,44 @@ export function brief(argv) {
 function printLessons(board) {
   const list = lessons(board);
   if (list.length) console.log(`\n## Lessons from earlier tickets\n${list.join('\n')}`);
+}
+
+// ----- history -----
+
+// The journey of one ticket, read from its machine trail.
+export function history(argv) {
+  const { pos } = parseArgs(argv);
+  const board = B.openBoard();
+  const t = B.findTicket(board, pos[0]);
+  const status = (e) => {
+    if (e.event === 'created') return e.status;
+    if (e.event === 'moved') return e.to;
+    if (e.event === 'started') return 'in_progress';
+    if (e.event === 'submitted') return e.to;
+    if (e.event === 'verdict' && !e.integration) return e.result === 'pass' ? 'done' : 'in_progress';
+    return null;
+  };
+  const detail = (e) => {
+    switch (e.event) {
+      case 'started': return `worktree on ${e.branch}, from ${e.base}`;
+      case 'agent': return `${e.role} is agent ${e.agent}`;
+      case 'test': return `tests ${e.exit === 0 ? 'passed' : `failed (exit ${e.exit})`} in ${fmtDuration(e.seconds)} (${e.by})`;
+      case 'submitted': return `submitted at ${e.commit}, lane ${e.lane}, ${e.files} file(s)`;
+      case 'verdict': return `${e.integration ? 'conflict resolution' : `round ${e.round}`} ${e.result === 'pass' ? 'passed' : 'sent back'} at ${e.commit}`;
+      case 'conflict': return `conflict with main in ${(e.files || []).join(', ')}`;
+      case 'integrate': return `main moved before it could land${e.conflict ? ' (conflict)' : ' (tests failed on the merged state)'}`;
+      case 'integrated': return `brought up to date at ${e.commit}`;
+      case 'landed': return `landed in main (${(e.files || []).length} file(s)); worktree and branch removed`;
+      case 'held': return `held: ${e.reason}`;
+      case 'check': return `item ${e.n} ticked: ${e.evidence}`;
+      case 'question': return `question ${e.key}${e.blocking ? ' (blocking)' : ''}`;
+      default: return [e.key, e.to && `to ${e.to}`].filter(Boolean).join(' ');
+    }
+  };
+  console.log(`${t.id} ${t.title}   [${t.status}]`);
+  for (const e of B.readLog(board, t.id)) {
+    const st = status(e);
+    console.log(`${e.t}  ${(e.session || '-').slice(0, 8)}  ${(st ? `→ ${st}` : '').padEnd(14)} ${e.event.padEnd(12)} ${detail(e)}`.trimEnd());
+  }
+  console.log('\nThe second column is the session that made the step: `claude --resume <session id>` opens it (the full id is in the log file).');
 }

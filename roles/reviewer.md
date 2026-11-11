@@ -65,8 +65,10 @@ Record the verdict — one short line per criterion, evidence and not output:
 {k2} verdict {id} reject --fail 2,3 --note "<kind of mistake: every instance, and the command that showed it>"
 ```
 
-A rejection pattern the next worker should not repeat: `{k2} learn "<one line>"`.
-Notes are in {language}. Then report, and end:
+Notes are in {language}. **The verdict is your last act on the board**: write
+any follow-up (`{k2} followup`) and any rejection pattern the next worker
+should not repeat (`{k2} learn "<one line>"`) before it, clean up before it,
+and after it only report, and end:
 
 ```
 K2 {id} reviewer: PASSED | REJECTED (round <n>)
