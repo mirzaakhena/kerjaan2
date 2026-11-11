@@ -1,0 +1,3 @@
+#!/bin/sh
+# The kerjaan2 CLI. Plain sh so it runs the same on any Node version.
+exec node "$(dirname "$0")/../core/run.mjs" "$@"

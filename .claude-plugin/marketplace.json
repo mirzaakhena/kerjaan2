@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "kerjaan2",
+  "description": "Home of the kerjaan2 plugin.",
+  "owner": { "name": "mirzaakhena", "url": "https://github.com/mirzaakhena" },
+  "plugins": [
+    {
+      "name": "kerjaan2",
+      "description": "A ticket board of markdown files inside a repo, worked by agents in git worktrees.",
+      "source": "./",
+      "category": "project-management",
+      "license": "MIT"
+    }
+  ]
+}
