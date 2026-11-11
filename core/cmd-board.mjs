@@ -159,6 +159,7 @@ export function move(argv) {
     B.save(t);
     B.moveFile(board, t, to);
     if (to !== 'todo') B.dropFromQueue(board, t.id);
+    if (B.getState(board, t.id).passed) B.setState(board, t.id, { passed: false, needs: null });
     B.log(board, t.id, 'moved', { to, forced: !!opt.force || undefined });
     console.log(t.file);
   });
@@ -200,7 +201,7 @@ export function badges(board, t) {
   if (count('assumptions', ['unseen'])) b.assumptions = count('assumptions', ['unseen']);
   if (count('manual', ['waiting'])) b.manual = count('manual', ['waiting']);
   if (count('followups', ['open'])) b.followups = count('followups', ['open']);
-  if (t.status === 'done' && B.branchOf(board, t.id)) b.unmerged = true;
+  if (B.isPassed(board, t)) b.unmerged = true;
   return b;
 }
 
@@ -210,7 +211,7 @@ function badgeText(board, t) {
   if (b.questions) parts.push(`?${b.questions} question`);
   if (b.assumptions) parts.push(`≈${b.assumptions} assumption`);
   if (b.manual) parts.push(`✋${b.manual} manual`);
-  if (b.unmerged) parts.push('⚠ not merged');
+  if (b.unmerged) parts.push('⚠ passed, not merged');
   return parts.length ? `   [${parts.join(', ')}]` : '';
 }
 
@@ -320,7 +321,7 @@ export function inboxItems(board) {
     for (const m of t.record.manual) if (m.status === 'waiting' && t.status === 'done') add('manual check', m.key, m.text);
     for (const f of t.record.followups) if (f.status === 'open' && t.status === 'done') add('follow-up', f.key, f.text);
     const st = B.getState(board, t.id);
-    if (t.status === 'done' && B.branchOf(board, t.id)) add('not merged', '', st.held ? `held: ${st.held}` : 'passed, not in main yet');
+    if (B.isPassed(board, t) && st.held) add('not merged', '', `held: ${st.held}`);
     if (st.rejections >= 2 && t.status === 'in_progress') add('rejected twice', '', 'decide: another fix, or accept with a follow-up');
   }
   return items;
@@ -351,8 +352,8 @@ function modelFor(board, role, lane) {
 }
 
 export function stepOf(t, st) {
+  if (t.status === 'review' && st.passed) return `integrate:${st.integrations || 1}:${st.needs || 'worker'}`;
   if (t.status === 'review') return `review:${st.round || 1}`;
-  if (t.status === 'done') return `integrate:${st.integrations || 1}:${st.needs || 'worker'}`;
   return `${st.mode || 'first'}:${st.round || 1}:${st.answers || 0}`;
 }
 
@@ -383,7 +384,7 @@ export function nextActions(board) {
   const out = [];
   const tickets = B.listTickets(board).map(B.load);
   const flight = tickets.filter((t) => IN_FLIGHT.includes(t.status));
-  const unmerged = tickets.filter((t) => t.status === 'done' && B.branchOf(board, t.id));
+  const unmerged = tickets.filter((t) => B.isPassed(board, t));
 
   const turn = unmerged.find((t) => B.getState(board, t.id).needs && !B.getState(board, t.id).held);
   for (const t of unmerged) {
@@ -400,12 +401,13 @@ export function nextActions(board) {
   for (const t of flight) {
     const st = B.getState(board, t.id);
     const blocking = t.record.questions.filter((q) => q.status === 'blocking');
+    if (st.passed) continue;
     if (t.status === 'review') {
       out.push(...dispatchLines(board, t, 'reviewer', st, (st.round || 1) > 1 ? `the fix is in; round ${st.round}` : 'review it'));
     } else if (blocking.length) {
       for (const q of blocking) out.push(`ASK    ${t.id} ${q.key} (owner): ${q.text}\n       record the answer: ${K()} answer ${t.id} ${q.key} "<answer>"`);
     } else if ((st.rejections || 0) >= 2 && !st.owner_ok_round) {
-      out.push(`ASK    ${t.id} was sent back twice. Owner decides: another fix (\`${K()} retry ${t.id}\`), or accept as is (\`${K()} move ${t.id} done --force --why "<owner's words>"\`).`);
+      out.push(`ASK    ${t.id} was sent back twice. Owner decides: another fix (\`${K()} retry ${t.id}\`), or accept as is (\`${K()} accept ${t.id} --why "<owner's words>"\`).`);
     } else {
       const why = { fix: 'the reviewer sent it back; findings are in the ticket', answered: 'the owner answered its question' }[st.mode] || 'work the ticket';
       out.push(...dispatchLines(board, t, 'worker', st, why));
@@ -449,7 +451,7 @@ export function status() {
   const counts = B.STATUSES.map((s) => `${s} ${B.listTickets(board, [s]).length}`).join(' · ');
   console.log(`Board ${board.dir}\n${counts}`);
   const tickets = B.listTickets(board).map(B.load);
-  const live = tickets.filter((t) => IN_FLIGHT.includes(t.status) || (t.status === 'done' && B.branchOf(board, t.id)));
+  const live = tickets.filter((t) => IN_FLIGHT.includes(t.status));
   if (live.length) console.log('\nIn flight');
   for (const t of live) {
     const st = B.getState(board, t.id);
@@ -527,7 +529,7 @@ export function doctor(argv) {
       }
     } else console.log(`FOUND  ${text}${fix ? '   (--fix removes it)' : ''}`);
   };
-  const live = (t) => t && (IN_FLIGHT.includes(t.status) || t.status === 'done');
+  const live = (t) => t && IN_FLIGHT.includes(t.status);
 
   gitTry(board.root, 'worktree', 'prune');
   if (fs.existsSync(board.wtRoot)) {

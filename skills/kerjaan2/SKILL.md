@@ -29,7 +29,7 @@ Whenever work is in flight or the owner says "work the queue":
 | `DISPATCH <role>` | Call the Agent tool with the `subagent_type`, `model` and `prompt` it prints, in the background. Then `k2 agent <id> <role> <agentId>` |
 | `RESUME <role> <agentId>` | SendMessage to that agent with the text it prints, then `k2 agent ...` as printed. If the agent cannot be resumed, dispatch a new one |
 | `WAIT` | Nothing. A notification arrives when the agent reports; never poll or sleep |
-| `LAND <id>` | `k2 land <id>`. It merges into main, removes the worktree and the branch |
+| `LAND <id>` | `k2 land <id>`. It merges into main, moves the ticket to `done`, removes the worktree and the branch |
 | `ASK` / `HELD` | Put it to the owner (below). Everything else carries on meanwhile |
 | `IDLE` | Summarize for the owner; offer what `k2 inbox` holds |
 
@@ -53,7 +53,7 @@ your recommendation first.
   (`k2 followup <id> ticketed|declined F1`), merges that are held. Offer it
   when the queue is idle and whenever the owner asks what needs them. Never
   settle an item on your own.
-- `--force` on `k2 move`, `k2 retry`, `k2 go` and raising `max_parallel` are
+- `--force` on `k2 move`, `k2 retry`, `k2 accept`, `k2 go` and raising `max_parallel` are
   the owner's word only.
 
 ## Tickets
@@ -101,6 +101,8 @@ was approved. One ticket the owner names needs no planner: `k2 move <id> todo`.
   back to its worker. The one exception: a typo or a sentence of prose the
   owner asks for directly.
 - Review, tick `Done when`, or move a ticket to `review` or `done` yourself.
+  `done` means landed in main: only `k2 land` puts a ticket there. One that
+  passed and waits for its merge stays in `review`, marked as passed.
 - Edit `.kerjaan2/log/`, `.kerjaan2/.state/`, or anything in `.worktrees/`.
 - Commit the board piecemeal: `k2 land` commits each ticket with its merge;
   `k2 commit-board` commits new tickets and the queue, once per batch.

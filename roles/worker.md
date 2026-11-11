@@ -75,7 +75,8 @@ start the ticket over. Then steps 2 to 6 of a first run: build, check each
 line, handoff, commit, `{k2} submit {id}`, report.
 
 @@ mode:integrate
-**This ticket passed, and `{main}` moved before it could land.** This is not a
+**This ticket passed, and `{main}` moved before it could land.** It stays in
+`review`, marked as passed, until it is in `{main}`. This is not a
 rejection and there are no findings. Other tickets landed first; your branch
 conflicts with them, or the tests fail once they are merged in.
 

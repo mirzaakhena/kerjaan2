@@ -51,8 +51,8 @@ struktur berbahasa Inggris, prosa dalam bahasa papan.
 │   ├── backlog/            gagasan, belum siap
 │   ├── todo/               siap dikerjakan
 │   ├── in_progress/        sedang dikerjakan (punya worktree)
-│   ├── review/             menunggu peninjau
-│   ├── done/               lolos; di-merge segera sesudahnya
+│   ├── review/             menunggu peninjau, atau sudah lolos dan menunggu merge
+│   ├── done/               sudah masuk main
 │   ├── cancel/             dibatalkan, dengan alasannya
 │   ├── log/<id>.jsonl      jejak mesin per tiket; tidak pernah pindah folder
 │   ├── queue.yml           urutan antrean; ditulis CLI
@@ -188,7 +188,7 @@ dipanggil, jadi tidak bisa basi.
 | Pertanyaan terbuka | `## Questions` | dijawab |
 | Asumsi belum dilihat | `## Assumptions` | dikonfirmasi atau dibatalkan |
 | Pemeriksaan tangan | `## Manual checks` | pemilik menyatakan lulus atau gagal |
-| Belum di-merge | tiket `done` yang cabangnya masih ada | merge berhasil |
+| Merge tertahan | tiket lolos yang `k2 land`-nya ditahan | sebabnya dibereskan, lalu merge |
 | Saran tindak lanjut | `## Follow-ups` | dijadikan tiket atau ditolak |
 | Ditolak dua kali | jejak mesin | pemilik memutuskan |
 | Macet | tiket `in_progress` tanpa agen hidup, worktree yatim | dilanjutkan atau dibersihkan |
@@ -223,10 +223,10 @@ berjalan. Jadi hanya ada satu cara kerja.
 k2 start <id>    todo → in_progress; buat .worktrees/<id>-…/ dan cabang k2/<id>-… dari main;
                   jalankan worktree_setup
    pengerja bekerja dan commit di cabangnya
-k2 submit <id>   tarik main ke cabang → uji keadaan tergabung → gerbang → review (atau done, jalur light)
+k2 submit <id>   tarik main ke cabang → uji keadaan tergabung → gerbang → review (jalur light: langsung bertanda lolos)
    peninjau menilai keadaan tergabung itu
-k2 verdict pass   review → done
-k2 land <id>     masuk main, satu per satu; hapus worktree dan cabang
+k2 verdict pass   tetap di review, bertanda lolos
+k2 land <id>     masuk main → done; hapus worktree dan cabang
 ```
 
 **Yang selesai duluan langsung masuk main.** Tidak menunggu tiket lain. Konflik
@@ -241,9 +241,14 @@ jadi kecil dan muncul saat konteks pengerjanya masih hangat.
 | gabung bersih tetapi uji merah | kembali ke pengerja, mode integrasi | pengerja |
 | konflik | kembali ke pengerja, mode integrasi | pengerja + peninjau (hanya bagian konflik) |
 
-Tiket tetap di `done` selama integrasi, dengan tanda **belum di-merge** yang
-dihitung dari git (cabangnya masih ada). Ini bukan penolakan dan tidak
-menambah putaran.
+**`done` berarti sudah masuk main.** Tiket yang lolos tetap di `review`
+bertanda **lolos, belum di-merge** sampai `k2 land` berhasil, juga selama
+integrasi. Integrasi bukan penolakan dan tidak menambah putaran.
+
+**Tiket yang sedang dibawa mutakhir memegang giliran.** Tiket lain yang sudah
+lolos menunggu sampai ia masuk main, sehingga satu tiket paling banyak
+disesuaikan sekali. (Temuan uji coba: tanpa ini satu tiket dibawa mutakhir dua
+kali karena disalip.)
 
 **Siapa menyelesaikan konflik.** Pengerja tiket yang masuk belakangan,
 dilanjutkan dari konteksnya sendiri. `k2 brief --mode integrate` memberinya
@@ -354,7 +359,7 @@ Tiga tab per proyek:
    - *Sedang berjalan*: satu kartu per agen (tiket, peran, model, jalur, langkah terakhir, lama, kemajuan uji, worktree).
    - *Antrean*: urutan berikutnya dan apa yang menahan tiap tiket.
    - *Selesai hari ini*, dan kesehatan worktree (aktif, yatim).
-2. **Papan**: kanban enam kolom. Lencana di kartu: `≈` asumsi belum dilihat, `✋` cek tangan menunggu, `⚠` belum di-merge, `?` pertanyaan terbuka.
+2. **Papan**: kanban enam kolom. Lencana di kartu: `≈` asumsi belum dilihat, `✋` cek tangan menunggu, `⚠` lolos tetapi belum di-merge (di kolom review), `?` pertanyaan terbuka.
 3. **Riwayat**: tiket selesai per hari, lama pengerjaan, tingkat penolakan, sebaran jalur.
 
 Laci tiket: Kontrak, Catatan, Linimasa (dari jejak mesin).
@@ -404,3 +409,9 @@ berikutnya.
 1. Cetak biru disetujui; dibangun bertahap.
 2. ID tiket berbentuk waktu, `yymmddhhmmxx`.
 3. Tahap 1 dicoba di proyek baru, `k2-akunting`, agar tidak mengganggu proyek yang ada.
+
+### Keputusan pemilik sesudah uji coba (12 November 2026)
+
+4. `done` berarti sudah masuk main; tiket yang lolos menunggu merge di `review`.
+5. Riwayat tiket cukup di jejak mesin, dibaca lewat `k2 history <id>` dan kelak linimasa viewer; tidak ada `## History` di berkas tiket.
+6. `.kerjaan2/` ikut di-commit; hanya `.state/` dan `.worktrees/` yang diabaikan git.

@@ -190,7 +190,7 @@ export function submit(argv) {
   const main = board.settings.main_branch;
   const t = B.load(B.findTicket(board, pos[0]));
   const st = B.getState(board, t.id);
-  const integrating = t.status === 'done' && st.needs === 'worker';
+  const integrating = t.status === 'review' && st.passed && st.needs === 'worker';
   if (t.status !== 'in_progress' && !integrating) die(`${t.id} is in ${t.status}; submit hands over a ticket that is in_progress`);
   const wt = B.worktreeOf(board, t.id) || die(`${t.id} has no worktree; \`${K()} start ${t.id}\` makes it again`);
 
@@ -271,12 +271,12 @@ export function submit(argv) {
       process.exitCode = 1;
       return;
     }
-    const to = lane === 'light' ? 'done' : 'review';
-    B.moveFile(board, fresh, to);
-    B.setState(board, t.id, { submitted: head, conflict: false });
-    B.log(board, t.id, 'submitted', { commit: head, lane, to, files: files.length, fingerprint: fp });
+    const light = lane === 'light';
+    B.moveFile(board, fresh, 'review');
+    B.setState(board, t.id, { submitted: head, conflict: false, passed: light });
+    B.log(board, t.id, 'submitted', { commit: head, lane, to: 'review', passed: light || undefined, files: files.length, fingerprint: fp });
     console.log(`SUBMITTED ${t.id} at ${head}; tests: ${ran}.`);
-    console.log(to === 'done' ? `Lane light: the gates passed and it is done. The foreman lands it.` : `It is in review. Do not touch its code from here on.`);
+    console.log(light ? `Lane light: the gates passed; no reviewer. The foreman lands it. Do not touch its code from here on.` : `It is in review. Do not touch its code from here on.`);
   });
 }
 
@@ -293,8 +293,9 @@ export function verdict(argv) {
   B.withLock(board, 'board', () => {
     const t = B.load(B.findTicket(board, pos[0]));
     const st = B.getState(board, t.id);
-    const integration = t.status === 'done' && st.needs === 'reviewer';
-    if (t.status !== 'review' && !integration) die(`${t.id} is in ${t.status}; a verdict is for a ticket in review`);
+    const integration = t.status === 'review' && st.passed && st.needs === 'reviewer';
+    if (t.status !== 'review') die(`${t.id} is in ${t.status}; a verdict is for a ticket in review`);
+    if (st.passed && !integration) die(`${t.id} has already passed and waits to land; there is nothing to judge`);
     const wt = B.worktreeOf(board, t.id);
     const head = wt ? git(wt, 'rev-parse', '--short', 'HEAD') : '?';
     const round = st.round || 1;
@@ -312,9 +313,9 @@ export function verdict(argv) {
     }
     if (result === 'pass') {
       B.save(t);
-      B.moveFile(board, t, 'done');
+      B.setState(board, t.id, { passed: true });
       B.log(board, t.id, 'verdict', { result, round, commit: head });
-      return console.log(`PASSED ${t.id} in round ${round}: it is done. The foreman lands it with \`${K()} land ${t.id}\`.`);
+      return console.log(`PASSED ${t.id} in round ${round}. It reaches done when it lands: the foreman runs \`${K()} land ${t.id}\`.`);
     }
     for (const n of String(opt.fail || '').split(',').map(Number).filter(Boolean)) t.contract = T.setCriterion(t.contract, n, false);
     B.save(t);
@@ -325,6 +326,27 @@ export function verdict(argv) {
   });
 }
 
+// ----- accept -----
+
+// The owner takes a ticket as it is, after its reviewer sent it back.
+export function accept(argv) {
+  const { pos, opt } = parseArgs(argv);
+  const board = B.openBoard();
+  if (!opt.why) die('accept needs the owner\'s words: --why "<why it is accepted as it is>"');
+  B.withLock(board, 'board', () => {
+    const t = B.load(B.findTicket(board, pos[0]));
+    if (t.status !== 'in_progress') die(`${t.id} is in ${t.status}; accept is for a ticket its reviewer sent back`);
+    const wt = B.worktreeOf(board, t.id) || die(`${t.id} has no worktree`);
+    if (gitTry(wt, 'status', '--porcelain').out) die(`its worktree ${wt} holds uncommitted changes; have its worker commit or discard them first`);
+    t.record.review.push(T.makeEntry(`${today()} accepted by the owner without passing review: ${opt.why}`));
+    B.save(t);
+    B.moveFile(board, t, 'review');
+    B.setState(board, t.id, { passed: true });
+    B.log(board, t.id, 'accepted', { by: 'owner' });
+    console.log(`ACCEPTED ${t.id} on the owner's word. Land it with \`${K()} land ${t.id}\`.`);
+  });
+}
+
 // ----- land -----
 
 export function land(argv) {
@@ -332,15 +354,15 @@ export function land(argv) {
   const board = B.openBoard();
   const main = board.settings.main_branch;
   let t = B.load(B.findTicket(board, pos[0]));
-  if (t.status !== 'done') die(`${t.id} is in ${t.status}; only a ticket that is done lands`);
-  const branch = B.branchOf(board, t.id);
-  if (!branch) return console.log(`${t.id} has already landed: no branch of it is left.`);
+  if (t.status === 'done') return console.log(`${t.id} has already landed.`);
   const st0 = B.getState(board, t.id);
+  if (t.status !== 'review' || !st0.passed) die(`${t.id} is in ${t.status} and has not passed; only a ticket that passed lands`);
+  const branch = B.branchOf(board, t.id) || die(`${t.id} has no branch; \`${K()} doctor\` shows what is left of it`);
   if (st0.needs) die(`${t.id} is being brought up to date with ${main} (waiting for its ${st0.needs}); land it after that`);
 
   // A ticket being brought up to date keeps the turn: if others landed
   // meanwhile, it would have to be brought up to date all over again.
-  const ahead = B.listTickets(board, ['done']).find((o) => o.id !== t.id && B.branchOf(board, o.id) && B.getState(board, o.id).needs && !B.getState(board, o.id).held);
+  const ahead = B.listTickets(board, ['review']).find((o) => o.id !== t.id && B.getState(board, o.id).passed && B.getState(board, o.id).needs && !B.getState(board, o.id).held);
   if (ahead) {
     console.log(`WAITING ${t.id}: ${ahead.id} is being brought up to date with ${main} and lands first. Nothing was changed; land this one after it.`);
     process.exitCode = 5;
@@ -389,6 +411,7 @@ export function land(argv) {
     B.withLock(board, 'board', () => {
       t = B.load(B.findTicket(board, t.id));
       const rounds = B.getState(board, t.id).round || 1;
+      B.moveFile(board, t, 'done');
       B.log(board, t.id, 'landed', { branch, files });
       B.dropFromQueue(board, t.id);
       const paths = [`:(glob)${B.BOARD_DIR}/*/${t.id} *`, `${B.BOARD_DIR}/log/${t.id}.jsonl`];
@@ -446,13 +469,14 @@ export function brief(argv) {
   const st = B.getState(board, t.id);
   const wt = B.worktreeOf(board, t.id);
   const branch = B.branchOf(board, t.id);
-  const integrating = t.status === 'done' && !!st.needs;
+  const integrating = t.status === 'review' && !!st.passed && !!st.needs;
   let mode = 'first';
   if (integrating) mode = 'integrate';
   else if (role === 'worker') mode = st.mode || 'first';
   else if ((st.round || 1) > 1) mode = 'round2';
   const want = role === 'worker' ? ['in_progress'] : ['review'];
-  if (!want.includes(t.status) && !integrating) die(`${t.id} is in ${t.status}; there is nothing for a ${role} to do on it. Report that and end.`);
+  const theirs = integrating ? st.needs === role : want.includes(t.status) && !st.passed;
+  if (!theirs) die(`${t.id} is in ${t.status}; there is nothing for a ${role} to do on it. Report that and end.`);
   if (!wt) die(`${t.id} has no worktree. Report that and end; the foreman runs \`${K()} start ${t.id}\`.`);
 
   const vars = { ...base, id: t.id, wt, branch, test: s.test_command || '(none)' };
@@ -508,7 +532,8 @@ export function history(argv) {
     if (e.event === 'moved') return e.to;
     if (e.event === 'started') return 'in_progress';
     if (e.event === 'submitted') return e.to;
-    if (e.event === 'verdict' && !e.integration) return e.result === 'pass' ? 'done' : 'in_progress';
+    if (e.event === 'verdict' && !e.integration && e.result !== 'pass') return 'in_progress';
+    if (e.event === 'landed') return 'done';
     return null;
   };
   const detail = (e) => {

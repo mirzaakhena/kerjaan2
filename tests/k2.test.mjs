@@ -102,11 +102,14 @@ test('a light ticket goes from todo to main without a reviewer, and leaves nothi
   r.kIn(wt, 'handoff', id, 'Baris keempat ditambahkan di akhir.');
   const ok = r.kIn(wt, 'submit', id);
   assert.match(ok.out, /SUBMITTED .*carried from the run/s);
-  assert.equal(statusOf(r, id), 'done');
+  assert.equal(statusOf(r, id), 'review', 'done means landed: until then it waits in review, marked as passed');
 
   assert.match(r.k('next').out, new RegExp(`LAND   ${id}`));
-  assert.match(r.k('ls', 'done').out, /not merged/);
+  assert.match(r.k('ls', 'review').out, /passed, not merged/);
+  assert.match(r.k('brief', id, '--role', 'reviewer').out, /nothing for a reviewer to do/);
+  assert.match(r.k('verdict', id, 'pass', '--note', 'x').out, /already passed/);
   assert.match(r.k('land', id).out, /LANDED/);
+  assert.equal(statusOf(r, id), 'done');
   assert.match(fs.readFileSync(path.join(r.dir, 'app.txt'), 'utf8'), /line four/);
   assert.ok(!fs.existsSync(wt), 'the worktree is removed');
   assert.equal(r.git('branch', '--list', 'k2/*').out.trim(), '');
@@ -147,7 +150,9 @@ test('a standard ticket is reviewed; a rejection goes back to the same worker an
   assert.match(r.k('next').out, /RESUME .* reviewer r1/);
   assert.match(r.k('brief', id, '--role', 'reviewer').out, /This is a later round/);
   assert.match(r.k('verdict', id, 'pass', '--note', '1: cat app.txt menampilkan baris dua').out, /PASSED .* round 2/);
+  assert.equal(statusOf(r, id), 'review');
   r.k('land', id);
+  assert.equal(statusOf(r, id), 'done');
   const text = fs.readFileSync(r.k('show', id, '--path').out.trim(), 'utf8');
   assert.match(text, /round 1, at \w+: sent back\./);
   assert.match(text, /round 2, at \w+: passed\./);
@@ -177,7 +182,7 @@ test('two tickets side by side: the first lands at once, the second is brought u
   const held = r.k('land', b);
   assert.equal(held.code, 3);
   assert.match(held.out, /INTEGRATE .* conflicts in app\.txt/);
-  assert.equal(statusOf(r, b), 'done', 'an integration is not a rejection: the ticket stays done');
+  assert.equal(statusOf(r, b), 'review', 'an integration is not a rejection: the ticket stays in review, passed');
   assert.equal(sh(wb, 'git', ['status', '--porcelain']).out.trim(), '', 'the failed merge was backed out');
   assert.match(r.k('next').out, /RESUME .* worker wb — main moved/);
   const brief = r.k('brief', b, '--role', 'worker').out;
@@ -223,7 +228,8 @@ test('a ticket being brought up to date keeps the turn: nothing else lands in fr
   assert.match(r.k('land', c).out, /LANDED/);
   const h = r.k('history', b).out;
   assert.match(h, /→ in_progress\s+started/);
-  assert.match(h, /→ done\s+submitted/);
+  assert.match(h, /→ review\s+submitted/);
+  assert.match(h, /→ done\s+landed/);
   assert.match(h, /integrate\s+main moved before it could land \(conflict\)/);
   assert.match(h, /landed in main/);
 });

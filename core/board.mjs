@@ -277,5 +277,8 @@ export function worktreeOf(board, id) {
   return name ? path.join(board.wtRoot, name) : null;
 }
 
-// Landed means: passed, and nothing of it is left outside main.
-export const isLanded = (board, t) => t.status === 'done' && !branchOf(board, t.id);
+// done means landed: a ticket reaches done only with its merge into main.
+export const isLanded = (board, t) => t.status === 'done';
+
+// Passed (by its reviewer, or by the gates on the light lane) and waiting to land.
+export const isPassed = (board, t) => t.status === 'review' && !!getState(board, t.id).passed;

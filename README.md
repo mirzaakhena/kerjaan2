@@ -37,11 +37,13 @@ only by `k2`, in a fixed shape: `Questions`, `Assumptions`, `Decisions`,
 k2 start <id>      todo → in_progress; a worktree on branch k2/<id>-<title>
    the worker builds and commits there
 k2 submit <id>     merges main in, runs the tests on the merged state, checks the gates
-                   → review, or straight to done on the light lane
-k2 verdict <id>    the reviewer: pass → done, reject → back to the same worker
-k2 land <id>       into main, one at a time; removes the worktree and the branch
+                   → review (the light lane counts as passed right there)
+k2 verdict <id>    the reviewer: pass, or reject → back to the same worker
+k2 land <id>       into main, one at a time → done; removes the worktree and the branch
 ```
 
+- **`done` means landed in main.** A ticket that passed waits in `review`,
+  marked as passed, until its merge. `k2 history <id>` prints its journey.
 - **Three lanes.** `light`: no separate reviewer, the gates of `submit`
   decide. `standard`: a reviewer. `strict`: the tests are proven able to fail.
   `submit` raises a lane by itself when the change touches `strict_paths` or

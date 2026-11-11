@@ -61,7 +61,7 @@ function subagentStop(inp) {
       return;
     }
     const waiting = t.record.questions.some((q) => q.status === 'blocking');
-    const mine = t.status === 'in_progress' || (t.status === 'done' && st.needs === 'worker');
+    const mine = t.status === 'in_progress' || (t.status === 'review' && st.passed && st.needs === 'worker');
     if (!mine || waiting) return;
     const k = B.k2Name();
     console.log(JSON.stringify({
