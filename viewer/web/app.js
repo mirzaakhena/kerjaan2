@@ -296,6 +296,19 @@
     handoff: svg('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),
   };
   let detail = null; // the open ticket in full
+  const COPY = svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>');
+  const COPIED = svg('<path d="m5 12 5 5 9-10"/>');
+  // The clipboard API needs a secure page; over --lan the page is plain http,
+  // so the old way through a hidden textarea is the fallback.
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.append(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok ? Promise.resolve() : Promise.reject(new Error('copy refused'));
+  }
   let pinned = null; // the section last jumped to, until the reader scrolls by hand
   function paneContract(t) {
     const sec = (key, title, body) => [key, title, body && body.split(/\n{2,}/).map((p) => `<p>${rich(p).replace(/\n/g, '<br>')}</p>`).join('')];
@@ -367,7 +380,7 @@
     const lightT = byId().get(t.id);
     root.innerHTML = `<div class="scrim" data-close></div>
       <aside class="drawer" role="dialog" aria-modal="true" aria-label="Ticket ${t.id}">
-        <div class="drawer-top"><div><p>${tid(t.id)}</p><h2>${esc(t.title)}</h2></div><span class="status" data-s="${t.status}">${t.status.replace('_', ' ')}</span><button class="xbtn" data-close aria-label="Close">✕</button></div>
+        <div class="drawer-top"><div><p class="idline">${tid(t.id)}<button class="copy" data-copy="${esc(t.id)}" title="Copy ticket ID" aria-label="Copy ticket ID ${esc(t.id)}">${COPY}</button></p><h2>${esc(t.title)}</h2></div><span class="status" data-s="${t.status}">${t.status.replace('_', ' ')}</span><button class="xbtn" data-close aria-label="Close">✕</button></div>
         <div class="drawer-meta">${lane(t.fm.lane)} ${badges(lightT || t, true)}</div>
         <div class="dtabs" role="tablist">${Object.entries(PANES).map(([k, [label]]) => `<button class="dtab" role="tab" aria-selected="${ui.pane === k}" data-pane-tab="${k}">${label}${k === 'record' && open ? `<span class="n">${open} open</span>` : ''}${k === 'timeline' ? `<span class="n">${t.log.length}</span>` : ''}</button>`).join('')}</div>
         <div class="drawer-main">${PANES[ui.pane][1](t)}</div>
@@ -449,6 +462,14 @@
     if (e.target.closest('[data-close]')) { go({ ticket: null }); openDrawer(); return; }
     const pt = e.target.closest('[data-pane-tab]');
     if (pt) { pinned = null; go({ pane: pt.dataset.paneTab }, false); renderDrawer(); $('.drawer-body').scrollTop = 0; return; }
+    const cp = e.target.closest('[data-copy]');
+    if (cp) {
+      copyText(cp.dataset.copy).then(() => {
+        cp.innerHTML = COPIED; cp.classList.add('done'); cp.title = 'Copied';
+        setTimeout(() => { cp.innerHTML = COPY; cp.classList.remove('done'); cp.title = 'Copy ticket ID'; }, 1500);
+      }, () => { cp.title = 'Could not copy'; });
+      return;
+    }
     const j = e.target.closest('[data-jump]');
     if (j) { jump(j.dataset.jump); return; }
     const tab = e.target.closest('[data-tab]');
