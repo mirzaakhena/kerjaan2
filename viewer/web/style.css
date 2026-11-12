@@ -204,3 +204,4 @@ tr.day td { font-weight: 600; background: var(--sunk); font-size: 12.5px; paddin
   .scroll, .hist-left, .box.scrolls, .home { overflow: visible } .col .scroll { overflow-y: auto; max-height: 70vh } .readouts { margin-left: 0 }
   .top { position: sticky; top: 0; z-index: 5 }
 }
+.top a.tab:hover { text-decoration: none; color: var(--ink) }

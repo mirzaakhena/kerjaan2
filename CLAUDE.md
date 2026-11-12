@@ -26,7 +26,10 @@ driven by one CLI, `k2`. A from-scratch rewrite of
 - `viewer/` — `k2 view`: `server.mjs` (GET only, never writes),
   `snapshot.mjs` (what the pages show, computed with `core/`),
   `transcript.mjs` (the one module that knows Claude Code), `web/` (plain JS,
-  CSS, the fonts). `docs/mockups/` — the approved mockup and two themed ones
+  CSS, the fonts). `web/space/` — the 3D shipyard page (`/p/<project>/space`):
+  three.js and CC0 models are vendored there; `plan.js` says what the board
+  means in the yard, `director.js` moves the tickets, `?demo` shows a made-up
+  board. Its decisions and limits are the last section of the blueprint. `docs/mockups/` — the approved mockup and two themed ones
   kept for a later theme switch.
 - `tests/k2.test.mjs`, `tests/viewer.test.mjs` — every test builds a throwaway
   repo and drives the real CLI; the viewer's start its server in the test

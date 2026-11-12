@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>shipyard · k2</title>
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/space/space.css">
+<script type="importmap">{ "imports": { "three": "/assets/space/three/three.module.min.js", "three/addons/": "/assets/space/three/" } }</script>
+</head>
+<body class="space">
+<header class="top">
+  <h1 id="crumb">k2</h1>
+  <span class="readouts" id="counts"></span>
+</header>
+<main id="stage">
+  <div id="loading" role="status"><span>Opening the yard…</span><i><b></b></i></div>
+  <div class="hud tl"><p id="problem" class="note-bad" role="alert" hidden></p><p id="demo-note" class="note-demo" hidden>Demo: these tickets are made up in this page. Your board is not shown and not touched.</p></div>
+  <nav id="roster" class="roster" aria-label="The people of the yard: choose one to follow"></nav>
+  <p id="doing" class="sr" aria-live="polite"></p>
+  <div class="hud br"><span class="row"><a id="demo" class="chip" href="#">Demo</a><button id="home" class="chip">Whole yard</button></span><span class="hint mouse">drag to turn · scroll to zoom · right-drag to move · click a person to follow, a ship or a drawing for its ticket</span><span class="hint touch">drag to turn · pinch to zoom · two fingers to move · tap a person, a ship or a drawing</span></div>
+  <aside id="card" hidden></aside>
+</main>
+<script type="module" src="/assets/space/main.js"></script>
+</body>
+</html>

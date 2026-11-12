@@ -1,0 +1,60 @@
+/* The yard page: the scene fills what the top bar leaves; the display floats over it. */
+.space #stage { flex: 1; position: relative; min-height: 0; background: #191b2c; overflow: hidden }
+.space #stage canvas { display: block; width: 100%; height: 100%; touch-action: none }
+.space .top h1 a { color: var(--muted) }
+.space .readouts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-left: auto; font-size: 13px; color: var(--muted) }
+.space .ro { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap }
+.space .ro i { width: 8px; height: 8px; border-radius: 50% }
+.space .ro b { color: var(--ink); font-weight: 600 }
+.space .ro.warn { color: var(--bad) }
+#loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #c9d1e6; font-size: 16px; padding: 24px; text-align: center }
+#loading i { width: 220px; height: 4px; border-radius: 2px; background: #2c3150; overflow: hidden }
+#loading b { display: block; height: 100%; width: 0; background: #5fb2ff; transition: width .2s }
+.hud { position: absolute; display: flex; gap: 8px; align-items: center; padding: 12px; pointer-events: none; max-width: 100% }
+.hud > *, .hud .chip { pointer-events: auto }
+.hud.bl { left: 0; bottom: 0; flex-direction: column; align-items: flex-start }
+.hud.br { right: 0; top: 0; flex-direction: column; align-items: flex-end }
+.chip { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 4px 12px; font-size: 13px; box-shadow: var(--shadow) }
+.chip:hover { border-color: var(--accent) }
+/* the people, down the left side: face, name, what they are doing */
+.roster { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 4px; width: 248px; max-height: calc(100% - 24px); overflow-y: auto; scrollbar-width: none }
+.who { display: flex; align-items: center; gap: 10px; border: 1px solid transparent; border-radius: 12px; padding: 4px 10px 4px 4px; background: rgba(20, 24, 44, .55); color: #e3e9f5; text-align: left; backdrop-filter: blur(6px); flex: none }
+.who:hover { background: rgba(38, 44, 74, .8) }
+.who img, .who .noface { flex: none; width: 40px; height: 40px; border-radius: 50%; background: #2c3150; border: 2px solid #3d4468 }
+.who .txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.2 }
+.who b { font-weight: 600; font-size: 14px }
+.who small { font-size: 12px; color: #aab3cc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.who[aria-pressed="true"] { background: var(--accent); border-color: #fff3; color: #fff }
+.who[aria-pressed="true"] img { border-color: #fff }
+.who[aria-pressed="true"] small { color: #eaf3ff; white-space: normal }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%) }
+.hint { font-size: 12px; color: #aab3cc; background: rgba(20, 24, 44, .6); border-radius: 6px; padding: 3px 8px }
+@media (max-width: 700px) { .hud { padding: 8px } }
+/* The other pages scroll below 1100px; the yard always fills the window. */
+body.space { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column }
+}
+.hud.tl { left: 270px; top: 0; flex-direction: column; align-items: flex-start; max-width: min(520px, 100% - 430px) }
+.hud .row { display: flex; gap: 6px }
+a.chip { text-decoration: none } a.chip:hover { text-decoration: none }
+.note-bad, .note-demo { margin: 0; border-radius: 8px; padding: 6px 10px; font-size: 13px; box-shadow: var(--shadow) }
+.note-bad { background: var(--bad-bg); color: var(--bad) }
+.note-demo { background: var(--warn-bg); color: var(--warn-ink); border: 1px solid var(--warn-line) }
+.hint.touch { display: none }
+@media (hover: none) { .hint.mouse { display: none } .hint.touch { display: inline } .chip { padding: 8px 14px } }
+@media (max-height: 480px) { .hint { display: none !important } .space .top { padding: 4px 12px } }
+#card { position: absolute; right: 12px; bottom: 12px; width: min(340px, 100% - 24px); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow); font-size: 14px; display: flex; flex-direction: column; gap: 6px }
+#card[hidden] { display: none }
+#card h2 { font-size: 17px; font-weight: 600; line-height: 1.25 }
+#card p { color: var(--muted) } #card .dim { font-style: italic }
+.card-head { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted) }
+.card-head .ro { display: inline-flex; align-items: center; gap: 6px } .card-head .ro i { width: 8px; height: 8px; border-radius: 50% }
+#card-close { margin-left: auto; padding: 0 9px; box-shadow: none }
+@media (max-width: 700px) { #card { bottom: 56px } }
+/* little room: faces only, in a row along the bottom */
+@media (max-width: 700px), (max-height: 520px) {
+  .roster { top: auto; bottom: 8px; left: 8px; right: 8px; transform: none; flex-direction: row; width: auto; overflow-x: auto; overflow-y: hidden }
+  .who { padding: 3px; border-radius: 999px } .who .txt { display: none }
+  .who[aria-pressed="true"] .txt { display: flex; padding-right: 10px; max-width: 60vw } .who[aria-pressed="true"] small { white-space: nowrap }
+  .hud.tl { left: 0; max-width: calc(100% - 130px) }
+  #card { bottom: 64px }
+}

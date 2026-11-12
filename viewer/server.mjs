@@ -10,7 +10,7 @@ import { die, parseArgs, run } from '../core/util.mjs';
 import { scanProjects, openProject, boardSignature, boardState, liveState, ticketDetail, projectCard } from './snapshot.mjs';
 
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), 'web');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.svg': 'image/svg+xml' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.glb': 'model/gltf-binary' };
 const DEFAULT_PORT = 4322;
 
 const hash = (s) => createHash('sha1').update(s).digest('hex');
@@ -110,7 +110,9 @@ export function startServer({ root, port = DEFAULT_PORT, lan = false } = {}) {
   function asset(res, rel) {
     const file = path.normalize(path.join(WEB, rel));
     if (!file.startsWith(WEB + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return send(res, 404, 'not found', 'text/plain; charset=utf-8');
-    send(res, 200, fs.readFileSync(file), TYPES[path.extname(file)] || 'application/octet-stream');
+    // The models and the 3D library are large and change only with a release: a browser may keep them for a day.
+    const keep = /^space\/(kits|three)\//.test(path.relative(WEB, file).split(path.sep).join('/'));
+    send(res, 200, fs.readFileSync(file), TYPES[path.extname(file)] || 'application/octet-stream', keep ? { 'cache-control': 'public, max-age=86400' } : {});
   }
 
   const server = http.createServer((req, res) => {
@@ -141,6 +143,8 @@ export function startServer({ root, port = DEFAULT_PORT, lan = false } = {}) {
       }
       // Every page is the same file; the script reads the address.
       if (parts.length === 0 || (parts[0] === 'p' && parts.length === 2)) return send(res, 200, fs.readFileSync(path.join(WEB, 'index.html')), TYPES['.html']);
+      // The yard: the same board as a place with people in it.
+      if (parts[0] === 'p' && parts.length === 3 && parts[2] === 'space' && project(parts[1])) return send(res, 200, fs.readFileSync(path.join(WEB, 'space', 'space.html')), TYPES['.html']);
       send(res, 404, 'not found', 'text/plain; charset=utf-8');
     } catch (e) {
       // A board that cannot be read is said, not hidden: the page shows it.

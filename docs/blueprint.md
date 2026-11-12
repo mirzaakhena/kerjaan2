@@ -784,3 +784,142 @@ activity bar VS Code; satu klik membawa isi ke section-nya. Keputusan pemilik:
   pendek tetap bisa ditandai.
 
 Ikon berupa SVG garis buatan sendiri di `app.js`, tanpa pustaka.
+
+## Galangan: ruang kerja 3D (fondasi, 13 November 2026)
+
+Diminta pemilik 12 November 2026: papan yang sama ditampilkan sebagai ruang
+kerja 3D dengan karakter yang bekerja, berpikir, berjalan, bingung, dan
+menerima pesanan; kamera gaya isometrik yang bisa di-zoom, diputar, dan
+mengikuti satu karakter. Gerakannya tidak harus persis mengikuti kejadian
+sebenarnya dan boleh tertunda; semua dianggap dikerjakan dengan tangan supaya
+terlihat sibuk. Pemerannya boleh lebih dari tiga peran agen.
+
+Keputusan pemilik:
+
+19. **Tema: galangan kapal di pelabuhan kecil.** Yang ditolak: dapur restoran,
+    pabrik, pertanian. Rupanya low-poly bergaya, bukan fotorealistis.
+20. **Bentuk 3D dari paket aset CC0**, ikut disimpan di repo seperti font.
+21. **Cara kerja: fondasinya dikerjakan langsung, sisanya lewat tiket** di papan
+    kerjaan2 milik repo ini sendiri, pada sesi baru, setelah rupa fondasi
+    disetujui pemilik. (Papan itu belum dibuat.)
+
+22. **Keputusan no. 21 diubah pemilik pada malam yang sama.** Setelah melihat
+    fondasinya ("sudah OK banget"), pemilik meminta sisanya diselesaikan malam
+    itu tanpa ditunggui. Jalur tiket butuh pemilik (memasang plugin di repo ini
+    dan membuka sesi baru), jadi sisanya dikerjakan langsung di sesi yang sama.
+    Tafsiran ini milik agen, bukan kata-kata pemilik: bila pemilik tetap ingin
+    papan kerjaan2 untuk repo ini, itu belum dibuat.
+23. Diminta pemilik saat melihat fondasi: derek tidak boleh bersinggungan
+    dengan mercusuar; daftar pemeran bukan deretan tombol bulat yang
+    ter-wrap, melainkan (diputuskan agen atas izin pemilik) daftar tegak di
+    sisi kiri dengan wajah, nama, dan kegiatan tiap karakter.
+
+Padanan papan ke galangan, seperti yang dibangun:
+
+| Di kerjaan2 | Di galangan |
+|---|---|
+| tiket pertama kali terlihat selagi halaman terbuka | perahu pos merapat, kurir membawa pesanan ke rak |
+| backlog | gulungan di rak ORDERS (12 tempat) |
+| backlog → todo | juru gambar mengambil gulungan, menggambar, memasangnya di papan |
+| todo | gulungan di papan QUEUE, menurut urutan antrean (8 tempat) |
+| todo → in_progress | mandor membawa gulungan ke dok kosong; lunas diletakkan |
+| in_progress, review | kapal di satu dari empat dok; ukuran kapal dari jumlah kriteria |
+| agen worker sedang bekerja | tukang dok itu memalu; keterangannya langkah terakhir agen dari transkrip |
+| kriteria terpenuhi | lambung makin tinggi (juga merayap naik selama agen bekerja) |
+| uji berjalan | lampu di tiang dok: hijau, kuning setelah semenit tanpa keluaran, merah setelah lima |
+| agen macet | tukang atau inspektur menggeleng, balon "?" |
+| pertanyaan menunggu pemilik | tukang duduk menunggu dengan balon "?" |
+| agen reviewer sedang bekerja | inspektur berkeliling lambung itu |
+| ditolak | inspektur memberi "✗"; lambung turun lagi |
+| lulus | inspektur memberi "✓"; layar dan bendera dipasang |
+| giliran pertama di antrean merge | operator derek bersiap meluncurkan kapal itu |
+| landed (done) | kapal meluncur ke air dan berlabuh; empat kapal terbaru tinggal, yang tertua berlayar pergi |
+| cancel | lambung dibongkar tukangnya, atau gulungannya dibawa kurir ke tumpukan kayu |
+| kotak masuk pemilik berisi | bendera di dekat mercusuar (satu per butir, paling banyak lima); penjaga memberi isyarat |
+
+Aturan yang dipegang: galangan boleh tertinggal dari papan, tidak pernah
+mendahuluinya. Tiap tiket dibawa selangkah demi selangkah ke tempat yang
+disebut papan; bila seorang pemeran sudah ditunggu tiga pekerjaan, tokennya
+langsung diletakkan tanpa cerita. Tiket yang mundur (misalnya dari todo ke
+backlog) juga langsung diletakkan. Di luar itu para pemeran mengerjakan
+pekerjaan kecil yang tidak menyebut tiket apa pun, supaya galangan tetap hidup
+ketika papan sepi.
+
+Yang dibangun (0.16.0):
+
+- Halaman `/p/<proyek>/space`, dengan tautan "Shipyard" di bilah atas. Hanya
+  GET. Model dan three.js boleh disimpan browser sehari; yang lain tetap
+  `no-store`.
+- `viewer/web/space/`: `plan.js` (arti papan di galangan; murni, diuji di
+  Node), `director.js` (token tiap tiket, dok, jangkar, dan koreografi tiap
+  langkah), `cast.js` (sepuluh pemeran: pekerjaan dari sutradara, lalu tugas
+  menurut papan, lalu pekerjaan kecil), `actor.js` (satu karakter), `world.js`
+  (pelabuhan, kapal yang tumbuh dari lunas, rute jalan), `main.js` (kamera,
+  daftar pemeran, kartu tiket, sambungan ke papan), `faces.js` (wajah tiap
+  pemeran, digambar sekali), `demo.js` (papan karangan).
+- Klik seorang pemeran atau barisnya di daftar kiri untuk mengikutinya; klik
+  kapal atau gulungan untuk kartu tiketnya, dengan tautan ke laci tiket.
+- `?demo`: papan karangan di dalam halaman, untuk menonton galangan ketika
+  papan asli sepi. Halaman menyebut dengan jelas bahwa itu demo.
+- three.js 0.170.0 (MIT) di `viewer/web/space/three/`; model dari tiga paket
+  Kenney (CC0: Mini Characters, Pirate Kit, Watercraft Kit) di
+  `viewer/web/space/kits/` beserta lisensinya, hanya berkas yang dimuat
+  (dijaga uji). Seluruh folder sekitar 4,8 MB. CLI tetap tanpa dependensi.
+
+Batas, dengan sadar:
+
+- Empat dok. Tiket kelima yang sedang berjalan menunggu sebagai gulungan di
+  papan antrean sampai ada dok kosong.
+- Rak memuat 12 gulungan dan papan antrean 8; sisanya tidak digambar (jumlah
+  di bilah atas tetap benar).
+- Kapal tidak mengingat doknya antar-muat-ulang: saat halaman dibuka, tiap
+  tiket langsung diletakkan di tempatnya tanpa cerita.
+- Planner tidak terlihat bekerja sebelum tiket pindah ke todo: papan tidak
+  mencatat kapan planner sedang berjalan.
+- Karakter berjalan menurut lajur dan satu jalan; mereka bisa saling menembus.
+- Lambung yang "merayap naik" selama agen bekerja adalah hiasan, bukan ukuran
+  kemajuan; yang terukur hanya kriteria yang terpenuhi.
+
+Yang dilihat berjalan, semuanya di Chrome tanpa kepala (1512×860; lebar 430
+hanya untuk fondasi):
+
+- mode demo: seluruh siklus, termasuk peluncuran, kartu tiket, bendera;
+- papan sungguhan (papan sementara yang digerakkan `k2`): tiket baru datang
+  lewat perahu pos, `start` membawa tiket ke dok dan tukangnya bekerja begitu
+  `k2 agent` mencatat worker, `land` meluncurkan kapalnya.
+
+Belum dilihat: browser sungguhan dengan tetikus, HP sungguhan, Safari, mesin
+tanpa GPU, sesi kerjaan2 sungguhan (langkah agen dari transkrip asli, uji
+berjalan, penolakan, agen macet, pertanyaan), dan papan besar.
+
+### Dua tinjauan independen atas galangan (13 November 2026)
+
+Tinjauan pertama (fondasi): tidak ada yang menghalangi, delapan yang sebaiknya
+diperbaiki. Diperbaiki: uji daftar model kini mencakup semua model dan menolak
+berkas yang tidak dimuat; barang yang dibawa berbagi satu geometri; sambungan
+yang putus dibaca ulang dan dikatakan di halaman; fokus papan ketik tidak
+hilang saat memilih pemeran; lengan tidak lagi terulur tanpa barang; pos kerja
+dan barang digeser dari lajur jalan; empat belas model tak terpakai dibuang;
+model dan three.js boleh disimpan browser. Juga label kanvas, `aria-live`,
+petunjuk sentuh, dan bingkai kamera yang dihitung ulang saat layar diputar.
+
+Tinjauan kedua (papan menggerakkan galangan): satu yang menghalangi, empat yang
+sebaiknya diperbaiki; semuanya diperbaiki dan diberi uji, dan lima mutasi atas
+perbaikannya tertangkap:
+
+- **Dua tiket yang mulai bersamaan bisa mendapat dok nomor −1** dan kapalnya
+  tak terlihat. Dok kini diambil saat itu juga.
+- Tiket yang hilang dari satu pembacaan papan tidak lagi dilupakan lalu datang
+  ulang sebagai pesanan baru; ia dilupakan setelah empat detik tidak ada.
+- Tiket yang selesai tanpa pernah mendapat dok langsung berlabuh, tidak
+  merebut dok dari yang sedang dikerjakan.
+- Inspektur menggilir semua kapal yang punya reviewer.
+- `director.js` tidak lagi mengimpor adegan, sehingga diuji di Node dengan
+  galangan dan pemeran tiruan.
+
+Yang dibiarkan, dengan sadar: rak dan papan antrean yang penuh tidak memberi
+tanda ada lebihnya; kapal yang sudah berlayar pergi tidak kembali bila tiket
+selesai terbaru dibuka lagi; vonis yang jatuh selagi tokennya sedang dibawa
+tidak ditampilkan; peta bayangan digambar ulang tiap bingkai. Lambung yang
+merayap naik selama agen bekerja melebihi yang dikatakan papan; peninjau
+menyerahkannya kepada pemilik untuk diputuskan.

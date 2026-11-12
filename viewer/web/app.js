@@ -91,7 +91,7 @@
     const trees = D.tickets.filter((t) => t.worktree).length;
     const test = D.live.locks.find((l) => l.name === 'test');
     top.innerHTML = `<h1><a href="/">k2</a><span class="sl">/</span>${esc(D.project)}</h1>
-      <nav class="tabs" role="tablist">${[['control', 'Control room'], ['board', 'Board'], ['history', 'History']].map(([k, label]) => `<button class="tab" role="tab" aria-selected="${ui.tab === k}" data-tab="${k}">${label}</button>`).join('')}</nav>
+      <nav class="tabs" role="tablist">${[['control', 'Control room'], ['board', 'Board'], ['history', 'History']].map(([k, label]) => `<button class="tab" role="tab" aria-selected="${ui.tab === k}" data-tab="${k}">${label}</button>`).join('')}</nav><a class="tab" href="/p/${encodeURIComponent(D.project)}/space">Shipyard</a>
       <div class="readouts">
         <span class="ro"><span>landed today</span><b>${landed}</b></span>
         <span class="ro"><span>worktrees</span><b>${trees}${D.orphans.length ? `<small class="warn"> · ${D.orphans.length} orphan</small>` : ''}</b></span>

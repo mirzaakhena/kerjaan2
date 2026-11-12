@@ -47,6 +47,12 @@ berkas ini hanya memuat keadaan sekarang dan yang masih terbuka.
   penolakan oleh peninjau, pertanyaan di tengah jalan, agen macet, merge
   tertahan, penolakan oleh penjaga peran, uji yang lambat, ringkasan konteks.
 
+## Galangan (0.16.0)
+
+Sesudah berkas ini ditulis, viewer mendapat halaman 3D `/p/<proyek>/space`.
+Keputusan, padanan papan ke galangan, batas, dan apa yang sudah dan belum
+dilihat ada di bagian "Galangan" pada akhir `docs/blueprint.md`.
+
 ## Peta viewer
 
 | Berkas | Isi |
