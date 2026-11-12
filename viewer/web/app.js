@@ -78,22 +78,7 @@
   }
   const running = () => D.tickets.filter((t) => t.run);
 
-  // What each line of a ticket's trail means.
-  const EVENTS = {
-    created: (e) => ['Created', `in ${e.status || 'backlog'}`], moved: (e) => ['Moved', `to ${e.to}${e.forced ? ' (forced)' : ''}${e.why ? `: ${e.why}` : ''}`],
-    started: (e) => ['Work started', `branch ${e.branch} from ${e.base}`], agent: (e) => [`${e.role} sent`, `agent ${e.agent} · step ${e.step}`],
-    test: (e) => [e.exit === 0 ? 'Tests passed' : 'Tests failed', `${e.command} · ${e.seconds}s${e.fingerprint ? ` · content ${String(e.fingerprint).slice(0, 8)}` : ''}`, e.exit === 0 ? 'good' : 'bad'],
-    check: (e) => [`Item ${e.n} proven`, e.evidence || ''], uncheck: (e) => [`Item ${e.n} unchecked`, ''], void: (e) => [`Item ${e.n} voided`, e.reason || ''],
-    manual: (e) => [`Manual check ${e.key} written`, e.n ? `for item ${e.n}` : '', 'warn'], 'manual-ok': (e) => [`Manual check ${e.key} passed`, '', 'good'], 'manual-failed': (e) => [`Manual check ${e.key} failed`, '', 'bad'],
-    question: (e) => [`Question ${e.key}${e.blocking ? ' (blocking)' : ''}`, '', 'warn'], answer: (e) => [`Question ${e.key} answered`, ''],
-    assumption: (e) => [`Assumption ${e.key} recorded`, '', 'warn'], 'assumption-confirmed': (e) => [`Assumption ${e.key} confirmed`, '', 'good'], 'assumption-overturned': (e) => [`Assumption ${e.key} overturned`, '', 'bad'],
-    conflict: (e) => ['Conflict with main', (e.files || []).join(', '), 'warn'], submitted: (e) => ['Handed over', `${e.commit} · ${e.files} files · lane ${e.lane}`],
-    verdict: (e) => [e.result === 'pass' ? `Passed review, round ${e.round}` : `Rejected, round ${e.round}`, e.commit ? `at ${e.commit}` : '', e.result === 'pass' ? 'good' : 'bad'],
-    integrate: (e) => ['Main moved: bringing it in', e.needs ? `needs the ${e.needs}` : ''], integrated: () => ['Main brought in', ''],
-    held: (e) => ['Merge held', e.why || '', 'warn'], landed: (e) => ['Landed on main', `${(e.files || []).length} files`, 'good'],
-    accepted: () => ['Accepted by the owner', ''], amended: () => ['Contract amended', ''], released: (e) => [`${e.role || 'agent'} released`, e.stopped || ''], retry: () => ['Retried', ''],
-  };
-  const eventText = (e) => (EVENTS[e.event] || (() => [e.event, '']))(e);
+  const eventText = window.K2Trail.eventText;
 
   // ----- top bar -----
   let projects = [];
@@ -111,7 +96,8 @@
         <span class="ro"><span>landed today</span><b>${landed}</b></span>
         <span class="ro"><span>worktrees</span><b>${trees}${D.orphans.length ? `<small class="warn"> · ${D.orphans.length} orphan</small>` : ''}</b></span>
         <span class="ro"><span>test turn</span><b>${test ? (test.ticket ? test.ticket.slice(8) : 'held') : 'free'}</b></span>
-        <span class="ro run"><span>running</span><b>${running().length}<small>/${D.settings.max_parallel}</small></b></span>
+        <span class="ro run" title="agents at work now"><span>running</span><b>${running().length}</b></span>
+        <span class="ro" title="tickets in flight that take a place, of max_parallel"><span>places</span><b>${D.places.used}<small>/${D.places.max}</small></b></span>
         <span class="ro need"><span>need you</span><b>${D.inbox.length}</b></span>
         ${projects.length > 1 ? `<select class="field" id="project" aria-label="Project">${projects.map((p) => `<option ${p.name === D.project ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : ''}
         <span class="live"><span class="dot ${connected ? 'blink' : 'off'}"></span><span id="clock"></span></span>
@@ -151,14 +137,14 @@
       return `<article class="agent ${frac >= 1 ? 'stuck' : bringing ? 'warn' : ''}">
         <div class="head"><button class="title" data-open="${t.id}">${esc(t.title)}</button>${r.since ? `<span class="el" title="on this step; the foreman calls an agent stuck at ${limit} min"><span data-clock="${r.since}"></span><small> / ${limit}:00</small></span>` : ''}</div>
         <div class="meter"><i data-meter="${r.since || ''}" style="width:${Math.min(100, frac * 100).toFixed(1)}%"></i></div>
-        <div class="row"><span class="role"><span class="dot blink ${frac >= 1 ? 'red' : bringing ? 'amber' : ''}"></span>${esc(r.role)}</span>${tid(t.id)} ${lane(t.fm.lane)} <span class="tag">${esc(r.model || 'session model')}</span> ${t.state.round > 1 ? `<span class="tag">round ${t.state.round}</span>` : ''} ${badges(t)}</div>
+        <div class="row"><span class="role"><span class="dot blink ${frac >= 1 ? 'red' : bringing ? 'amber' : ''}"></span>${esc(r.role)}</span>${tid(t.id)} ${lane(t.fm.lane)} <span class="tag">${esc(r.model || 'session model')}</span> ${t.state.round > 1 ? `<span class="tag">round ${Number(t.state.round)}</span>` : ''} ${badges(t)}</div>
         <div class="act">
           ${bringing ? `<p class="notice">bringing main in${t.state.conflict ? ': conflict with main' : ''}</p>` : ''}
           ${act ? `<p>${esc(act.step)}${act.at ? ` <span class="dim">· <span data-since="${act.at}"></span> ago</span>` : ''}</p>${act.command && act.command !== act.step ? `<p class="cmd">$ ${esc(act.command)}</p>` : ''}`
             : `<p class="dim">${what ? `last on the trail: ${esc(what)}${t.last.at ? ` · <span data-since="${t.last.at}"></span> ago` : ''}` : 'no step seen yet'}</p>`}
           ${test ? `<details data-keep="test-${t.id}"><summary><span class="dim">tests</span> running <span data-since="${test.since}"></span> <span class="dim">·</span> <span class="q" data-quiet="${test.lastOutput}">last output <span></span> ago</span> <span class="dim">▸ output</span></summary><pre>${esc(test.tail.join('\n'))}</pre></details>` : ''}
         </div>
-        <p class="wt">${esc(t.worktree || 'no worktree')}${t.state.slot ? ` · slot ${t.state.slot}` : ''}</p>
+        <p class="wt">${esc(t.worktree || 'no worktree')}${t.state.slot ? ` · slot ${Number(t.state.slot)}` : ''}</p>
       </article>`;
     }).join('');
 
@@ -183,14 +169,14 @@
         <p class="panel-foot">Read-only. Settle these in your Claude session, for example “${D.inbox[0] ? `${D.inbox[0].kind} ${D.inbox[0].id.slice(8)}` : 'manual check 0412'}: …”.</p>
       </section>
       <section class="panel" style="--c:var(--done)">
-        <div class="panel-head"><h2>Running now</h2><span class="count">${running().length} of ${D.settings.max_parallel} places</span></div>
+        <div class="panel-head"><h2>Running now</h2><span class="count">${running().length} at work · ${D.places.used} of ${D.places.max} places taken</span></div>
         <div class="scroll agents" data-keep="s-agents">${agents || '<p class="empty">No agent is working.</p>'}</div>
       </section>
       <div class="side">
         <section class="panel" style="--c:var(--review)">
           <div class="panel-head"><h2>Merge queue</h2><span class="count">${mq.length} passed</span></div>
           <ol class="chain scroll" data-keep="s-mq">
-            ${mq.map((t, i) => link(t, i === 0 ? 'go' : '', i + 1, i === 0 ? (t.state.needs ? `holds the turn · its ${t.state.needs} is bringing main in` : 'holds the turn · ready to land') : `lands after ${mq[0].id.slice(8)}`, false)).join('')}
+            ${mq.map((t, i) => link(t, i === 0 ? 'go' : '', i + 1, i === 0 ? (t.state.needs ? (t.run ? `holds the turn · its ${t.run.role} is bringing main in` : `holds the turn · main moved: waits for its ${t.state.needs}`) : 'holds the turn · ready to land') : `lands after ${mq[0].id.slice(8)}`, false)).join('')}
             ${held.map((t) => link(t, 'off', '–', `out of the queue · ${t.state.held ? `held: ${t.state.held}` : `stopped: ${t.state.stopped}`}`, true)).join('')}
             ${mq.length || held.length ? '' : '<li class="empty" style="display:block;border:0;background:none">Nothing waits to land.</li>'}
           </ol>
@@ -392,16 +378,23 @@
     return api('/api/projects').then((r) => { projects = r.projects; }).catch((e) => { if (!PROJECT) problem = e.message; });
   }
   let loading = null;
+  let again = false;
   function loadState() {
-    if (loading) return loading;
+    if (loading) { again = true; return loading; }
     loading = api(`/api/p/${encodeURIComponent(PROJECT)}/state`).then((s) => { D = s; skew = s.now - Date.now(); problem = ''; })
-      .catch((e) => { problem = e.message; }).finally(() => { loading = null; render(); });
+      .catch((e) => { problem = e.message; })
+      .finally(() => { loading = null; render(); if (again) { again = false; return loadState(); } });
     return loading;
   }
   function follow() {
     const es = new EventSource(`/api/p/${encodeURIComponent(PROJECT)}/events`);
     es.onopen = () => { connected = true; loadState(); };
-    es.onerror = () => { connected = false; renderTop(); tick(); };
+    es.onerror = () => {
+      connected = false;
+      renderTop();
+      tick();
+      if (es.readyState === EventSource.CLOSED) { es.close(); setTimeout(follow, 3000); loadState(); }
+    };
     es.addEventListener('board', () => { loadState().then(() => { if (ui.ticket) openDrawer(false); }); });
     es.addEventListener('live', (e) => { if (!D) return; D.live = JSON.parse(e.data); skew = D.live.now - Date.now(); if (ui.tab === 'control') render(); else { renderTop(); tick(); } });
   }

@@ -117,7 +117,9 @@ page can be bookmarked or sent.
 The viewer never changes a board: everything is settled in a Claude session.
 Without `--lan` it answers on `127.0.0.1` only. `--lan` opens it to your
 network **without a password**: anyone there can read every ticket, every
-agent command and the output of test runs, which may contain secrets.
+agent command and the output of test runs, which may contain secrets. With
+`--lan` it answers under this machine's own addresses and name only, so open
+it by an address it prints.
 
 An agent's current step is read from its transcript, whose place the plugin's
 hook records when the agent is sent; outside Claude Code the viewer shows the

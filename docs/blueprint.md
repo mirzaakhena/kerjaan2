@@ -685,8 +685,10 @@ Yang dibangun di 0.15.0:
   dan menolak permintaan dengan nama host lain. `--lan` mencetak alamat
   jaringan dan peringatan bahwa tidak ada kata sandi.
 - Yang ditampilkan dihitung dengan modul `core/` yang sama dengan `k2`
-  (`inboxItems`, `badges`, `mergeQueue`, `orderedTodo`, `readiness`), jadi
-  viewer dan CLI tidak bisa berbeda pendapat. Logika worktree yatim dipindah
+  (`inboxItems`, `badges`, `mergeQueue`, `orderedTodo`, `readiness`,
+  `occupying`, `stuckFor`). Yang dihitung di halaman sendiri (teks alasan
+  antrean, arti baris jejak) tetap bisa menyimpang; tinjauan 0.15.0 menemukan
+  tiga tempat seperti itu. Logika worktree yatim dipindah
   dari `doctor` ke `strayWorktrees`, dipakai keduanya.
 - Halaman mengikuti papan lewat satu sambungan `text/event-stream`: server
   membandingkan sidik berkas papan tiap detik dan memberi tahu halaman.
@@ -712,3 +714,56 @@ Batas yang diketahui:
   terbaca oleh siapa pun di jaringan.
 - Dengan `parallel_tests: true` tidak ada kunci uji, jadi "test turn" selalu
   `free` walau uji berjalan.
+
+### Tinjauan independen atas 0.15.0 (12 November 2026)
+
+Satu agen peninjau independen memeriksa viewer 0.15.0: tidak ada temuan yang
+menghalangi, sembilan yang sebaiknya diperbaiki, dua belas catatan. Keputusan
+pemilik: kesembilan temuan dan catatan yang murah diperbaiki di 0.15.1; dengan
+`--lan`, viewer hanya menjawab di bawah alamat dan nama mesin ini.
+
+Yang diperbaiki di 0.15.1:
+
+- **Agen macet sampai ke halaman.** Jam ikut dalam sidik papan (`stuckFor`),
+  jadi halaman diberi tahu walau tidak ada berkas yang berubah.
+- **Viewer tidak lagi menyentuh indeks git.** Pemeriksaan worktree yatim
+  memakai `git --no-optional-locks status`.
+- **`k2 doctor` kembali melaporkan tautan putus di `.worktrees/`**, tidak
+  berhenti dengan galat (regresi 0.15.0).
+- **Halaman pulih sendiri** ketika papan yang tadinya tidak terbaca menjadi
+  terbaca lagi, dan diberi tahu ketika folder proyek hilang.
+- **Arti baris jejak** dipindah ke `viewer/web/trail.js` dan diuji terhadap
+  bentuk yang ditulis `core/`: putusan atas integrasi tidak lagi tampil
+  "round undefined", alasan merge ditahan dan sebab integrasi tampil.
+- **Jeda yang sudah dilepas `k2 go`** tidak lagi ditampilkan sebagai jeda.
+- **Satu pengawas per papan**, dipakai bersama oleh semua halaman yang
+  mengikutinya, dan git tidak lagi dipanggil tiap detik.
+- **`--lan`** menolak nama host yang bukan alamat atau nama mesin ini.
+- Catatan: "running" (agen yang bekerja) dan "places" (tiket yang memakai
+  tempat, seperti hitungan `k2 next`) kini dua angka; antrean merge hanya
+  menyebut agen sedang membawa main masuk bila memang ada agennya; transkrip
+  berbentuk tak terduga tidak lagi membuat halaman galat; `--port ""` dan
+  argumen tak dikenal ditolak; `HEAD` pada aliran peristiwa selesai; perubahan
+  yang tiba selagi halaman memuat tidak hilang; agen yang dicatat ulang dengan
+  tangan tetap menyimpan letak transkripnya; `nextActions` tidak lagi dihitung
+  untuk halaman yang tidak memakainya.
+
+Uji: setiap temuan ditulis ujinya lebih dulu dan terlihat gagal. Sembilan
+mutasi peninjau yang tadinya lolos, ditambah tiga mutasi atas perbaikan baru,
+dijalankan pada salinan repo: kedua belasnya kini tertangkap. Satu dari
+sembilan mutasi peninjau (pemeriksaan bentuk ID tiket dihapus) tidak diuji:
+tiket dicari dengan kecocokan persis, jadi mutasi itu tidak mengubah perilaku.
+
+Batas yang tetap, dengan sadar:
+
+- Panggilan alat yang barisnya lebih dari 256 KB di transkrip tidak terbaca;
+  kartu agen jatuh ke jejak tiket sampai panggilan berikutnya.
+- Folder proyek yang berupa symlink tidak didaftar.
+- Riwayat dan "landed today" memakai zona waktu browser, linimasa memakai
+  teks waktu server; keduanya berbeda hanya bila zonanya berbeda.
+- Penanda uji berjalan (`.pid`) yang basi dan nomornya kebetulan dipakai
+  proses lain akan tampil sebagai uji berjalan; `k2 doctor` belum
+  membersihkan folder `progress/`.
+- Belum diperiksa siapa pun: halaman di browser sungguhan sesudah perbaikan
+  ini, Node 18, hook di sesi Claude Code nyata (termasuk `transcript_path`
+  pada `SendMessage`), dan `--lan` dari perangkat kedua.

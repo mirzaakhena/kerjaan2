@@ -50,8 +50,9 @@ export function findRoot(cwd) {
   die('not inside a git repository (k2 needs one: every ticket is worked on a branch). Run it from the repo or one of its worktrees.');
 }
 
-export function openBoard({ mustExist = true, cwd } = {}) {
-  const root = findRoot(cwd);
+// `root` is given by a caller that already knows it (the viewer asks every
+// second and must not start git each time).
+export function openBoard({ mustExist = true, cwd, root = findRoot(cwd) } = {}) {
   const dir = path.join(root, BOARD_DIR);
   if (mustExist && !fs.existsSync(path.join(dir, 'settings.yml'))) {
     die(`no board here: ${dir} is missing. Start one with \`${k2Name()} init\`.`);

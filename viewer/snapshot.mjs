@@ -28,8 +28,12 @@ export function scanProjects(root) {
   return out.filter((p, i) => out.findIndex((q) => q.name === p.name) === i);
 }
 
+// Where a project's repository is does not change while the viewer runs:
+// git is asked once per project, not on every look.
+const roots = new Map();
 export function openProject(project) {
-  return B.openBoard({ cwd: project.dir });
+  if (!roots.has(project.dir)) roots.set(project.dir, B.findRoot(project.dir));
+  return B.openBoard({ root: roots.get(project.dir) });
 }
 
 // ----- change detection -----
@@ -68,6 +72,11 @@ export function boardSignature(board) {
         return '-';
       }
     })(),
+    // The clock moves the board too: an agent turns stuck with no file written.
+    B.listTickets(board, IN_FLIGHT).map((t) => {
+      const st = B.getState(board, t.id);
+      return ['worker', 'reviewer'].map((role) => C.stuckFor(board, t, st, role)).join('/');
+    }).join(','),
   ].join('\n');
 }
 
@@ -150,10 +159,12 @@ export function boardState(project) {
       test_command: board.settings.test_command,
       stuck_after_minutes: board.settings.stuck_after_minutes,
     },
-    queue: { goal: q.goal, order: todo.map((t) => t.id), pause: q.pause },
+    // A pause the owner lifted (`k2 go`) is no pause any more, as for `k2 next`.
+    queue: { goal: q.goal, order: todo.map((t) => t.id), pause: q.pause.filter((id) => !B.getState(board, id).go) },
+    // Tickets in flight that take a place, as `k2 next` counts them.
+    places: { used: C.occupying(board).length, max: board.settings.max_parallel },
     mergeQueue: mq.map((t) => t.id),
     inbox: C.inboxItems(board),
-    next: C.nextActions(board),
     orphans: C.strayWorktrees(board).map((s) => ({ path: rel(board, s.path), id: s.id, status: s.status, dirty: s.dirty })),
     broken: broken.map((x) => ({ file: rel(board, x.file), error: x.error })),
     tickets: light,

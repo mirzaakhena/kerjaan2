@@ -12,9 +12,11 @@ const short = (s, n) => {
   return one.length > n ? `${one.slice(0, n - 1)}…` : one;
 };
 
-function describe(name, input = {}) {
+function describe(name, input) {
+  name = typeof name === 'string' && name ? name : 'a tool';
+  if (!input || typeof input !== 'object') return name;
   if (typeof input.description === 'string' && input.description.trim()) return short(input.description, 160);
-  if (name === 'Bash') return short(input.command, 120);
+  if (name === 'Bash') return short(input.command, 120) || name;
   if (input.file_path) return `${name} ${path.basename(String(input.file_path))}`;
   if (input.pattern) return `${name} "${short(input.pattern, 60)}"`;
   return name;
@@ -49,7 +51,7 @@ export function lastStep(file, since = 0) {
     if (!use) continue;
     const at = rec.timestamp ? new Date(rec.timestamp).getTime() : null;
     if (since && at && at < since - 1000) return null; // a step of an earlier dispatch is not this one's
-    return { step: describe(use.name, use.input), command: use.name === 'Bash' ? short(use.input?.command, 300) : null, at };
+    return { step: describe(use.name, use.input), command: use.name === 'Bash' && typeof use.input?.command === 'string' ? short(use.input.command, 300) : null, at };
   }
   return null;
 }

@@ -42,35 +42,69 @@ export function startServer({ root, port = DEFAULT_PORT, lan = false } = {}) {
     return body;
   }
 
-  // One line to the page whenever the board or what is live on it changed.
+  // One watch per board, however many pages follow it: once a second it
+  // looks, and says a line to every page when the board, or what is live on
+  // it, changed. A board that cannot be read (bad settings, folder gone) is a
+  // state like any other: pages hear when it is entered and when it is left.
+  const watches = new Map(); // project name -> { pages, timer, board, live, beat }
+  function look(name, w) {
+    let sig = 'unreadable';
+    let live = null;
+    try {
+      const p = project(name);
+      if (p) {
+        const board = openProject(p);
+        sig = hash(boardSignature(board));
+        live = liveState(p, board);
+      }
+    } catch {
+      // said below, as a change of the board
+    }
+    const say = (text) => { for (const res of w.pages) res.write(text); };
+    if (sig !== w.board) {
+      if (w.board !== undefined) say('event: board\ndata: {}\n\n');
+      w.board = sig;
+    }
+    if (live) {
+      const liveSig = hash(JSON.stringify({ ...live, now: 0 }));
+      if (liveSig !== w.live) {
+        if (w.live !== undefined) say(`event: live\ndata: ${JSON.stringify(live)}\n\n`);
+        w.live = liveSig;
+      }
+    }
+    if (++w.beat % 20 === 0) say(': still here\n\n');
+  }
   function events(req, res, p) {
     res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+    if (req.method === 'HEAD') return res.end();
     res.write('retry: 2000\n\n');
-    let lastBoard = null;
-    let lastLive = null;
-    let beat = 0;
-    const tick = () => {
-      try {
-        const board = openProject(p);
-        const sig = hash(boardSignature(board));
-        if (sig !== lastBoard) {
-          if (lastBoard !== null) res.write('event: board\ndata: {}\n\n');
-          lastBoard = sig;
-        }
-        const live = liveState(p, board);
-        const liveSig = hash(JSON.stringify({ ...live, now: 0 }));
-        if (liveSig !== lastLive) {
-          if (lastLive !== null) res.write(`event: live\ndata: ${JSON.stringify(live)}\n\n`);
-          lastLive = liveSig;
-        }
-      } catch {
-        // a board in the middle of being written reads again in a second
-      }
-      if (++beat % 20 === 0) res.write(': still here\n\n');
-    };
-    tick();
-    const timer = setInterval(tick, 1000);
-    req.on('close', () => clearInterval(timer));
+    let w = watches.get(p.name);
+    if (!w) {
+      w = { pages: new Set(), board: undefined, live: undefined, beat: 0 };
+      look(p.name, w); // where things stand now; only what changes after is said
+      w.timer = setInterval(() => look(p.name, w), 1000);
+      watches.set(p.name, w);
+    }
+    w.pages.add(res);
+    res.on('close', () => {
+      w.pages.delete(res);
+      if (w.pages.size) return;
+      clearInterval(w.timer);
+      if (watches.get(p.name) === w) watches.delete(p.name);
+    });
+  }
+
+  // The names this machine is reached by. A page of another site that made a
+  // name of its own point here (DNS rebinding) arrives under that name and
+  // is refused, with --lan as without.
+  function knownHost(header) {
+    const name = String(header || '').toLowerCase().replace(/:\d+$/, '');
+    if (['127.0.0.1', 'localhost', '[::1]'].includes(name)) return true;
+    if (!lan || !name) return false;
+    const mine = os.hostname().toLowerCase();
+    const names = new Set([mine, mine.replace(/\.local$/, ''), `${mine.replace(/\.local$/, '')}.local`]);
+    for (const list of Object.values(os.networkInterfaces())) for (const a of list || []) names.add(a.family === 'IPv6' ? `[${a.address.toLowerCase()}]` : a.address);
+    return names.has(name);
   }
 
   function asset(res, rel) {
@@ -82,9 +116,7 @@ export function startServer({ root, port = DEFAULT_PORT, lan = false } = {}) {
   const server = http.createServer((req, res) => {
     try {
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'the viewer only reads', 'text/plain; charset=utf-8', { allow: 'GET, HEAD' });
-      // On this machine only, a page of another site must not reach the
-      // viewer through a name it made point here.
-      if (!lan && !/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(String(req.headers.host || ''))) return send(res, 403, 'this viewer answers on 127.0.0.1 only; start it with --lan to reach it from another device', 'text/plain; charset=utf-8');
+      if (!knownHost(req.headers.host)) return send(res, 403, lan ? 'this viewer answers under this machine\'s own addresses and name only: open it by the address it printed when it started' : 'this viewer answers on 127.0.0.1 only; start it with --lan to reach it from another device', 'text/plain; charset=utf-8');
       const url = new URL(req.url, 'http://x');
       let parts;
       try {
@@ -120,7 +152,7 @@ export function startServer({ root, port = DEFAULT_PORT, lan = false } = {}) {
     server.once('error', reject);
     server.listen(port, host, () => {
       const at = server.address().port;
-      resolve({ server, port: at, root, url: `http://127.0.0.1:${at}/`, close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(() => r()); }) });
+      resolve({ server, port: at, root, url: `http://127.0.0.1:${at}/`, watches: () => watches.size, close: () => new Promise((r) => { for (const w of watches.values()) clearInterval(w.timer); watches.clear(); server.closeAllConnections?.(); server.close(() => r()); }) });
     });
   });
 }
@@ -132,9 +164,11 @@ function lanAddresses() {
 }
 
 export async function view(argv) {
-  const { opt } = parseArgs(argv);
+  const { pos, opt } = parseArgs(argv);
+  if (pos.length) die(`view takes no argument ("${pos[0]}"): view [--port ${DEFAULT_PORT}] [--root <folder of projects>] [--lan]`);
+  if (opt.port !== undefined && !/^\d{1,5}$/.test(String(opt.port))) die(`--port must be a number from 0 to 65535, not "${opt.port}"`);
   const port = opt.port === undefined ? DEFAULT_PORT : Number(opt.port);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) die(`--port must be a number from 0 to 65535, not "${opt.port}"`);
+  if (port > 65535) die(`--port must be a number from 0 to 65535, not "${opt.port}"`);
   // With no folder named: the folder this repo sits in, so its neighbours show too.
   let root = opt.root;
   if (!root) {
@@ -154,7 +188,7 @@ export async function view(argv) {
   console.log(`boards under ${s.root}: ${found.length ? found.map((p) => p.name).join(', ') : 'none yet (a board appears here as soon as `k2 init` makes one)'}`);
   if (opt.lan) {
     for (const a of lanAddresses()) console.log(`on your network: http://${a}:${s.port}/`);
-    console.log('WARNING: --lan has no password. Anyone on this network can read every ticket, every agent command and the output of test runs, which may contain secrets.');
+    console.log('WARNING: --lan has no password. Anyone on this network can read every ticket, every agent command and the output of test runs, which may contain secrets. It answers under the addresses above and this machine\'s name only.');
   }
   console.log('Read-only. Ctrl-C stops it.');
 }

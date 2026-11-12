@@ -6,11 +6,13 @@ berkas ini hanya memuat keadaan sekarang dan yang masih terbuka.
 
 ## Keadaan sekarang
 
-- Versi **0.15.0**, tidak pernah di-push. Tahap 1 (inti), Tahap 2 (paralel,
+- Versi **0.15.1**, tidak pernah di-push. Tahap 1 (inti), Tahap 2 (paralel,
   antrean merge), dan Tahap 3 (viewer) sudah dibangun.
 - `k2 view` berjalan; keputusan dan batasnya ada di bagian "Tahap 3: viewer"
   pada akhir `docs/blueprint.md`.
 - Uji: `tests/k2.test.mjs` (CLI) dan `tests/viewer.test.mjs` (viewer).
+- Satu putaran tinjauan independen atas 0.15.0 sudah dijalankan; temuan dan
+  yang diperbaiki di 0.15.1 ada di bagian akhir cetak biru.
 
 ## Yang sudah dilihat berjalan, dan yang belum
 
@@ -53,6 +55,7 @@ berkas ini hanya memuat keadaan sekarang dan yang masih terbuka.
 | `viewer/snapshot.mjs` | daftar proyek, keadaan papan, keadaan hidup, satu tiket penuh |
 | `viewer/transcript.mjs` | langkah terakhir agen dari transkrip Claude Code |
 | `viewer/web/app.js` | semua halaman; tab, saringan, dan tiket terbuka ada di alamat |
+| `viewer/web/trail.js` | arti tiap baris jejak, dipakai halaman dan diuji |
 | `viewer/web/style.css` | gaya; warna sebagai token, terang dan gelap |
 | `viewer/web/fonts/` | IBM Plex (lisensi OFL, `LICENSE.txt` ikut) |
 

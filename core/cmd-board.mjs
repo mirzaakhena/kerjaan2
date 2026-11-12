@@ -402,7 +402,7 @@ export function occupying(board) {
 }
 
 // Minutes an agent has held the current step past the limit, or null.
-function stuckFor(board, t, st, role) {
+export function stuckFor(board, t, st, role) {
   const b = st[role];
   if (!b?.agent || b.ended || b.step !== stepOf(t, st) || !b.at || !IN_FLIGHT.includes(t.status)) return null;
   if (role === 'worker' && t.status === 'review' && !(st.passed && st.needs === 'worker')) return null;
@@ -577,7 +577,8 @@ export function bind(board, t, role, agentId, transcript) {
     if (transcript && st[role].transcript !== transcript) B.setState(board, t.id, { [role]: { ...st[role], transcript } });
     return false;
   }
-  B.setState(board, t.id, { [role]: { agent: agentId, step, at: Date.now(), ...(transcript ? { transcript } : {}) } });
+  const where = transcript || (st[role]?.agent === agentId ? st[role].transcript : undefined);
+  B.setState(board, t.id, { [role]: { agent: agentId, step, at: Date.now(), ...(where ? { transcript: where } : {}) } });
   B.log(board, t.id, 'agent', { role, agent: agentId, step });
   return true;
 }
@@ -661,8 +662,8 @@ export function strayWorktrees(board) {
     const t = byId.get(id);
     if (t && (IN_FLIGHT.includes(t.status) || unlanded(t))) continue;
     const wt = path.join(board.wtRoot, name);
-    if (!fs.statSync(wt).isDirectory()) continue;
-    out.push({ path: wt, id: id || null, status: t ? t.status : null, dirty: !!gitTry(wt, 'status', '--porcelain').out });
+    // --no-optional-locks: a look must not rewrite the index under a merge.
+    out.push({ path: wt, id: id || null, status: t ? t.status : null, dirty: !!gitTry(wt, '--no-optional-locks', 'status', '--porcelain').out });
   }
   return out;
 }
