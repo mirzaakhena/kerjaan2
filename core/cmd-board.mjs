@@ -374,7 +374,7 @@ export function inbox() {
 
 const IN_FLIGHT = ['in_progress', 'review'];
 
-function modelFor(board, role, lane) {
+export function modelFor(board, role, lane) {
   const s = board.settings;
   const m = role === 'worker' ? (lane === 'light' ? s.model_worker_light : s.model_worker) : s[`model_${role}`];
   return m && m !== 'inherit' ? m : null;
@@ -568,11 +568,16 @@ export function status() {
   }
 }
 
-export function bind(board, t, role, agentId) {
+// `transcript` is where the agent's own record of its work is kept, when the
+// adapter that sent it knows: the viewer reads the agent's current step there.
+export function bind(board, t, role, agentId, transcript) {
   const st = B.getState(board, t.id);
   const step = stepOf(t, st);
-  if (st[role]?.agent === agentId && st[role].step === step && !st[role].ended) return false;
-  B.setState(board, t.id, { [role]: { agent: agentId, step, at: Date.now() } });
+  if (st[role]?.agent === agentId && st[role].step === step && !st[role].ended) {
+    if (transcript && st[role].transcript !== transcript) B.setState(board, t.id, { [role]: { ...st[role], transcript } });
+    return false;
+  }
+  B.setState(board, t.id, { [role]: { agent: agentId, step, at: Date.now(), ...(transcript ? { transcript } : {}) } });
   B.log(board, t.id, 'agent', { role, agent: agentId, step });
   return true;
 }
@@ -641,6 +646,27 @@ export function commitBoard(argv) {
 
 // ----- doctor -----
 
+// Worktrees that belong to no ticket in flight. Reads only: the viewer shows
+// them, `doctor` removes the clean ones.
+export function strayWorktrees(board) {
+  if (!fs.existsSync(board.wtRoot)) return [];
+  const byId = new Map(B.listTickets(board).map((t) => [t.id, t]));
+  const unlanded = (t) => {
+    const br = t && t.status === 'done' && B.branchOf(board, t.id);
+    return !!br && gitTry(board.root, 'merge-base', '--is-ancestor', br, board.settings.main_branch).code !== 0;
+  };
+  const out = [];
+  for (const name of fs.readdirSync(board.wtRoot)) {
+    const id = name.match(/^(\d{12})-/)?.[1];
+    const t = byId.get(id);
+    if (t && (IN_FLIGHT.includes(t.status) || unlanded(t))) continue;
+    const wt = path.join(board.wtRoot, name);
+    if (!fs.statSync(wt).isDirectory()) continue;
+    out.push({ path: wt, id: id || null, status: t ? t.status : null, dirty: !!gitTry(wt, 'status', '--porcelain').out });
+  }
+  return out;
+}
+
 export function doctor(argv) {
   const { opt } = parseArgs(argv, ['fix']);
   const board = B.openBoard();
@@ -665,16 +691,8 @@ export function doctor(argv) {
   const live = (t) => t && (IN_FLIGHT.includes(t.status) || unlanded(t));
 
   gitTry(board.root, 'worktree', 'prune');
-  if (fs.existsSync(board.wtRoot)) {
-    for (const name of fs.readdirSync(board.wtRoot)) {
-      const id = name.match(/^(\d{12})-/)?.[1];
-      const t = byId.get(id);
-      const wt = path.join(board.wtRoot, name);
-      if (!live(t)) {
-        const dirty = gitTry(wt, 'status', '--porcelain').out;
-        say(`worktree ${wt} belongs to no ticket in flight${t ? ` (${id} is in ${t.status})` : ''}${dirty ? '; it holds uncommitted changes' : ''}`, dirty ? null : () => git(board.root, 'worktree', 'remove', '--force', wt));
-      }
-    }
+  for (const s of strayWorktrees(board)) {
+    say(`worktree ${s.path} belongs to no ticket in flight${s.status ? ` (${s.id} is in ${s.status})` : ''}${s.dirty ? '; it holds uncommitted changes' : ''}`, s.dirty ? null : () => git(board.root, 'worktree', 'remove', '--force', s.path));
   }
   for (const branch of gitTry(board.root, 'for-each-ref', '--format=%(refname:short)', `refs/heads/${B.BRANCH_PREFIX}`).out.split('\n').filter(Boolean)) {
     const id = branch.slice(B.BRANCH_PREFIX.length).match(/^(\d{12})-/)?.[1];

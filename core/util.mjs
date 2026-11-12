@@ -47,8 +47,8 @@ export function sleep(ms) {
 
 // Every option k2 knows. An unknown one is refused rather than left to
 // swallow the next word; text that begins with -- goes after a lone `--`.
-const VALUE_OPTS = ['type', 'priority', 'lane', 'status', 'labels', 'blocked-by', 'related', 'why', 'role', 'goal', 'pause-before', 'note', 'fail', 'by', 'undo', 'as', 'session', 'dir', 'language', 'test', 'main', 'm', 'stopped'];
-const BOOL_OPTS = ['blocking', 'force', 'contract', 'path', 'fix', 'agrees', 'differs'];
+const VALUE_OPTS = ['type', 'priority', 'lane', 'status', 'labels', 'blocked-by', 'related', 'why', 'role', 'goal', 'pause-before', 'note', 'fail', 'by', 'undo', 'as', 'session', 'dir', 'language', 'test', 'main', 'm', 'stopped', 'port', 'root'];
+const BOOL_OPTS = ['blocking', 'force', 'contract', 'path', 'fix', 'agrees', 'differs', 'lan'];
 
 // --flag value, --flag=value, --bool. Repeated flags are kept in order.
 export function parseArgs(argv) {

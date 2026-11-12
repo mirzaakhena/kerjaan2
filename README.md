@@ -8,8 +8,9 @@ It is a rewrite of [kerjaan](https://github.com/mirzaakhena/kerjaan) from what
 that board taught over some 900 tickets. The design and its reasons are in
 [`docs/blueprint.md`](docs/blueprint.md) (Indonesian).
 
-Status: **stage 1 of 3** — the core (board, `k2`, skill, three agents, four
-hooks) works and is being tried on real tickets. The viewer is stage 3.
+Status: **stage 3 of 3** — the core (board, `k2`, skill, three agents, four
+hooks), parallel work with a merge queue, and the viewer are built and being
+tried on real tickets.
 
 ## The board
 
@@ -91,6 +92,37 @@ k2 land <id>       into main, one at a time → done; removes the worktree and t
 The text an agent reads — the skill, `roles/`, `agents/` — has a budget of
 6,000 words, held by a test. A new rule names the rule it removes or
 replaces; an incident is first a reason to sharpen a rule that exists.
+
+## The viewer
+
+```
+k2 view [--port 4322] [--root <folder of projects>] [--lan]
+```
+
+Read-only pages for every board in the folder this repo sits in (or under
+`--root`): a new board shows without a restart, and the pages follow the
+board as it changes. Per project:
+
+- **Control room**: what waits for you (questions, held merges, manual
+  checks, new assumptions, anything stuck), every agent at work with its
+  current step and test run, the merge queue, and what starts next.
+- **Board**: the six columns, with a badge for each thing that waits for you.
+- **History**: what landed per day, how long it took, how often it was
+  rejected or had to bring main in.
+
+A ticket opens as a drawer: its contract, its record, and its trail as a
+timeline. The tab, the filters and the open ticket are in the address, so a
+page can be bookmarked or sent.
+
+The viewer never changes a board: everything is settled in a Claude session.
+Without `--lan` it answers on `127.0.0.1` only. `--lan` opens it to your
+network **without a password**: anyone there can read every ticket, every
+agent command and the output of test runs, which may contain secrets.
+
+An agent's current step is read from its transcript, whose place the plugin's
+hook records when the agent is sent; outside Claude Code the viewer shows the
+last line of the ticket's trail instead. Two themed mockups kept for a later
+theme switch are in [`docs/mockups/`](docs/mockups/).
 
 ## Install
 

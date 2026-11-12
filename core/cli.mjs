@@ -49,6 +49,8 @@ const COMMANDS = {
   amend: work.amend,
   history: work.history,
   hook,
+  // The viewer is a server: it is loaded only when asked for, and it stays up.
+  view: (a) => import('../viewer/server.mjs').then((m) => m.view(a)),
 };
 
 const HELP = `k2 — the kerjaan2 board. Run from anywhere inside the repo or one of its worktrees.
@@ -64,7 +66,8 @@ Record    ask <id> [--blocking] "<question>" · answer <id> Q1 "<answer>"
           assume <id> "<assumption>" --why "..." [--undo "..."] · confirm|overturn <id> A1|all
           decide <id> "<decision>" · check <id> <n> "<evidence>" · uncheck <id> <n> · void <id> <n> "<decision>"
           manual <id> <n> "<steps>" · manual <id> ok|failed M1 · handoff <id> "<text>"
-          followup <id> "<problem>" · followup <id> ticketed|declined F1 · learn "<one line>"`;
+          followup <id> "<problem>" · followup <id> ticketed|declined F1 · learn "<one line>"
+Viewer    view [--port 4322] [--root <folder of projects>] [--lan]   (read-only pages for every board under the folder)`;
 
 export function main(argv) {
   const [cmd, ...rest] = argv;
@@ -89,10 +92,15 @@ export function main(argv) {
         if (owner && owner !== me) throw new K2Error(`that ticket belongs to ${role} ${owner}, not to you (${me}). Nothing was changed.`, 6);
       }
     }
-    fn(rest);
+    const done = fn(rest);
+    if (done && typeof done.catch === 'function') done.catch(fail);
   } catch (e) {
-    if (!(e instanceof K2Error)) throw e;
-    console.error(`k2: ${e.message}`);
-    process.exitCode = e.code;
+    fail(e);
   }
+}
+
+function fail(e) {
+  if (!(e instanceof K2Error)) throw e;
+  console.error(`k2: ${e.message}`);
+  process.exitCode = e.code;
 }

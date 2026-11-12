@@ -648,3 +648,67 @@ langkah pemeriksaan tangan; perintah uji tidak mewarisi peran agen; perintah
 yang menunggu papan mengatakannya; pengerja dan peninjau hanya menulis ke
 tiket yang ditugaskan kepadanya; jejak tiket mencatat peran dan agen pemanggil,
 yang sekaligus menjadi bukti apakah penjaga peran berpengaruh.
+
+### Tahap 3: viewer (12 November 2026)
+
+Keputusan pemilik sebelum dan selama mockup:
+
+13. Antarmuka viewer berbahasa Inggris, sesuai §13. Prosa tiket tetap tampil
+    dalam bahasa papan.
+14. Kegiatan agen dibaca dari transkrip, dengan cadangan jejak tiket bila
+    transkrip tidak ada. Karena itu aturan yang ditunda di keputusan no. 12
+    kini masuk `roles/worker.md` dan `roles/reviewer.md`: setiap perintah Bash
+    diberi `description` dalam bahasa papan. Aturan ini tidak menggantikan
+    aturan lain; ia aturan baru yang sudah dijanjikan.
+15. Laporan uji satu per satu (protokol `KERJAAN_TEST_REPORT` di `kerjaan`)
+    tidak dibawa. Viewer menampilkan lama uji berjalan, lama sejak keluaran
+    terakhir (hijau, kuning setelah semenit, merah setelah lima menit), dan
+    ekor keluaran mentahnya.
+16. Rupa: gaya sederhana viewer `kerjaan` lama (panel navy, huruf IBM Plex
+    Sans Condensed, satu warna per status, terang dan gelap mengikuti sistem),
+    dengan tambahan. Lima mockup diperlihatkan; dua yang bertema (barak
+    militer hiperrealistis dan HUD futuristik) disukai pemilik dan disimpan di
+    `docs/mockups/` untuk kelak menjadi pilihan tema. Tema belum dibangun.
+17. Halaman memenuhi layar dan tidak digulir; hanya isi panel yang menggulir.
+    Di bawah lebar 1100 piksel halaman kembali menggulir biasa, satu kolom.
+18. "Today" dari sketsa awal (selesai hari ini, worktree, giliran uji) pindah
+    ke bilah atas sebagai angka kecil, supaya kolom kanan Ruang kendali cukup
+    untuk antrean merge dan antrean berikutnya.
+
+Yang dibangun di 0.15.0:
+
+- `k2 view [--port 4322] [--root <folder>] [--lan]`. Tanpa `--root`, yang
+  dipindai adalah folder tempat repo ini berada, sehingga proyek tetangganya
+  ikut tampil. Papan baru muncul tanpa restart.
+- `viewer/server.mjs` hanya melayani GET, tidak pernah mengambil kunci papan,
+  dan tidak menulis apa pun. Tanpa `--lan` ia hanya menjawab di `127.0.0.1`
+  dan menolak permintaan dengan nama host lain. `--lan` mencetak alamat
+  jaringan dan peringatan bahwa tidak ada kata sandi.
+- Yang ditampilkan dihitung dengan modul `core/` yang sama dengan `k2`
+  (`inboxItems`, `badges`, `mergeQueue`, `orderedTodo`, `readiness`), jadi
+  viewer dan CLI tidak bisa berbeda pendapat. Logika worktree yatim dipindah
+  dari `doctor` ke `strayWorktrees`, dipakai keduanya.
+- Halaman mengikuti papan lewat satu sambungan `text/event-stream`: server
+  membandingkan sidik berkas papan tiap detik dan memberi tahu halaman.
+- **Letak transkrip dicatat hook yang sudah ada**, bukan hook `SubagentStart`
+  baru seperti rencana di §12 dan di serah-terima. Hook pencatat agen
+  (`PostToolUse` pada `Agent` dan `SendMessage`) menerima `transcript_path`
+  sesi; transkrip subagen ada di sampingnya, di
+  `<sesi>/subagents/agent-<id>.jsonl`. Letak itu disimpan di keadaan tiket
+  (`worker.transcript`, `reviewer.transcript`). Tata letak ini dilihat pada
+  sesi sungguhan `k2-akunting`, tetapi **belum terbukti dari ujung ke ujung**:
+  belum ada sesi sungguhan yang berjalan dengan hook 0.15.0.
+- Jalan uji meninggalkan `.state/progress/<id>.pid` selama berjalan, supaya
+  viewer bisa membedakan uji yang sedang jalan dari keluaran uji yang gagal.
+
+Batas yang diketahui:
+
+- Viewer membaca seluruh papan setiap kali papan berubah. Itu cepat pada 16
+  tiket (`k2-akunting`); pada ratusan tiket belum diukur.
+- Kolom `done` menampilkan 60 tiket terbaru, sisanya lewat tombol.
+- `k2 test <id> -- <perintah>` (jalan uji agen sendiri) tidak meninggalkan
+  penanda, jadi tidak tampil sebagai uji berjalan.
+- Keluaran uji dan perintah agen bisa memuat rahasia; dengan `--lan` itu
+  terbaca oleh siapa pun di jaringan.
+- Dengan `parallel_tests: true` tidak ada kunci uji, jadi "test turn" selalu
+  `free` walau uji berjalan.

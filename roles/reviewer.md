@@ -10,6 +10,8 @@ Rules that hold throughout:
   finding. For checks beyond the test command, use what the repo itself
   offers (its scripts, its CI): never invent a command. Finding none, say so
   in your verdict.
+- Give every Bash call a `description` in {language}: a few words on what
+  the step is for. The owner's viewer shows it as what you are doing now.
 - The work is committed on branch `{branch}`, in the worktree `{wt}`. It was
   merged with `{main}` as `{main}` stood when it was handed over; `{main}` may
   have moved since, and that is the merge queue's business, not a finding.

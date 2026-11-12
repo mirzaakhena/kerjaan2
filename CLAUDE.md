@@ -10,8 +10,8 @@ driven by one CLI, `k2`. A from-scratch rewrite of
 - `docs/blueprint.md` — the design and every decision the owner made, in
   Indonesian, in the order they were made. A later section overrides an
   earlier one. Never undo a decision recorded there without asking the owner.
-- `docs/handoff-viewer.md` — where the work stands and what is next (stage 3,
-  the viewer).
+- `docs/handoff-viewer.md` — where the work stands after stage 3 (the viewer)
+  and what is still open.
 
 ## Layout
 
@@ -23,8 +23,14 @@ driven by one CLI, `k2`. A from-scratch rewrite of
 - `skills/kerjaan2/SKILL.md` — the foreman (main session). `agents/*.md` —
   thin wrappers. `hooks/hooks.json` + `core/cmd-hook.mjs` + `bin/k2-guard` —
   four hooks.
-- `tests/k2.test.mjs` — every test builds a throwaway repo and drives the
-  real CLI.
+- `viewer/` — `k2 view`: `server.mjs` (GET only, never writes),
+  `snapshot.mjs` (what the pages show, computed with `core/`),
+  `transcript.mjs` (the one module that knows Claude Code), `web/` (plain JS,
+  CSS, the fonts). `docs/mockups/` — the approved mockup and two themed ones
+  kept for a later theme switch.
+- `tests/k2.test.mjs`, `tests/viewer.test.mjs` — every test builds a throwaway
+  repo and drives the real CLI; the viewer's start its server in the test
+  process.
 
 ## Working rules here
 

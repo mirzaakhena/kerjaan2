@@ -36,6 +36,8 @@ Rules that hold throughout:
   the background, wait for its completion notice; never start it a second
   time, and never wait with a check-and-sleep loop. Before you report, stop every server,
   watcher or background process you started.
+- Give every Bash call a `description` in {language}: a few words on what
+  the step is for. The owner's viewer shows it as what you are doing now.
 - What you write into the ticket is in {language}, and is a summary: no
   command output, no account of how the code works.
 

@@ -115,8 +115,12 @@ function agentSent(inp) {
     else agentId = String(resp ?? '').match(/\bagentId: ([A-Za-z0-9_-]{6,})/)?.[1] || null;
   }
   if (!role || !agentId) return;
+  // Claude Code keeps a subagent's transcript beside the session's own, under
+  // the session's ID. Recorded here, so the viewer never has to guess where.
+  const session = String(inp.transcript_path || '');
+  const transcript = /\.jsonl$/.test(session) && /^[A-Za-z0-9_-]+$/.test(agentId) ? path.join(session.replace(/\.jsonl$/, ''), 'subagents', `agent-${agentId}.jsonl`) : undefined;
   // A hook has ten seconds: if the board is busy that long, the foreman's own `k2 agent` records it.
-  B.withLock(board, 'board', () => bind(board, t, role, agentId), { waitMs: 6000 });
+  B.withLock(board, 'board', () => bind(board, t, role, agentId, transcript), { waitMs: 6000 });
 }
 
 // ----- the role guard -----

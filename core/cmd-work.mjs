@@ -169,12 +169,20 @@ function runTests(board, t, wt, by) {
   fs.mkdirSync(dir, { recursive: true });
   const outFile = path.join(dir, `${t.id}.log`);
   const st = B.getState(board, t.id);
+  // While the run goes on, a file beside its output names the k2 that runs
+  // it: that is how the viewer tells a run in progress from one that failed.
+  const pidFile = path.join(dir, `${t.id}.pid`);
   const go = (lockDir) => {
     const fd = fs.openSync(outFile, 'w');
+    fs.writeFileSync(pidFile, String(process.pid));
     const t0 = Date.now();
-    const r = spawnSync('sh', ['-c', lockDir ? 'echo $$ > "$K2_CHILD"; exec sh -c "$K2_CMD"' : cmd], { cwd: wt, env: { ...wtEnv(board, t.id, st.slot), K2_CMD: cmd, K2_CHILD: lockDir ? path.join(lockDir, 'child') : '' }, stdio: ['ignore', fd, fd] });
-    fs.closeSync(fd);
-    return { exit: r.status ?? 1, seconds: (Date.now() - t0) / 1000 };
+    try {
+      const r = spawnSync('sh', ['-c', lockDir ? 'echo $$ > "$K2_CHILD"; exec sh -c "$K2_CMD"' : cmd], { cwd: wt, env: { ...wtEnv(board, t.id, st.slot), K2_CMD: cmd, K2_CHILD: lockDir ? path.join(lockDir, 'child') : '' }, stdio: ['ignore', fd, fd] });
+      return { exit: r.status ?? 1, seconds: (Date.now() - t0) / 1000 };
+    } finally {
+      fs.closeSync(fd);
+      fs.rmSync(pidFile, { force: true });
+    }
   };
   const res = board.settings.parallel_tests ? go(null) : B.withLock(board, 'test', go, { waitMs: 3 * 3600 * 1000 });
   // What the run left behind that was not there before: reported, never hidden.

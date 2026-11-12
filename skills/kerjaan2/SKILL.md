@@ -172,5 +172,6 @@ owner.
 `k2 init --language "<language>" --test "<test command>"` in a git repo with
 at least one commit. Propose the values from the repo (the language the owner
 writes in, `package.json` / `Makefile` / CI for the tests), confirm them with
-the owner, then `k2 commit-board`. `k2 doctor` reports stray worktrees and
+the owner, then `k2 commit-board`. `k2 view` (run it in the background) serves
+read-only pages of every board beside this repo. `k2 doctor` reports stray worktrees and
 branches; `--fix` removes the safe ones.
