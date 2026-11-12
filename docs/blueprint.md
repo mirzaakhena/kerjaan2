@@ -767,3 +767,20 @@ Batas yang tetap, dengan sadar:
 - Belum diperiksa siapa pun: halaman di browser sungguhan sesudah perbaikan
   ini, Node 18, hook di sesi Claude Code nyata (termasuk `transcript_path`
   pada `SendMessage`), dan `--lan` dari perangkat kedua.
+
+## Rel ikon di laci tiket (0.15.2)
+
+Diminta pemilik 12 November 2026: di laci tiket, deretan ikon di kiri seperti
+activity bar VS Code; satu klik membawa isi ke section-nya. Keputusan pemilik:
+
+- Rel ada di tab **Record** dan **Contract** (Timeline tidak).
+- Section yang kosong tidak mendapat ikon, sama seperti section-nya yang tidak
+  dirender.
+- Angka biru di pojok ikon menghitung entri yang masih terbuka (unseen, open,
+  blocking, waiting), sama dengan hitungan "N open" di tab Record. Contract
+  tidak punya angka.
+- Ikon yang menyala mengikuti posisi gulir; section yang baru diklik tetap
+  menyala sampai pembaca menggulir sendiri, supaya section terakhir yang
+  pendek tetap bisa ditandai.
+
+Ikon berupa SVG garis buatan sendiri di `app.js`, tanpa pustaka.

@@ -276,42 +276,84 @@
 
   // ----- the ticket drawer -----
   const OPEN = ['unseen', 'open', 'blocking', 'waiting'];
+  // Each section of the contract and the record is [key, title, html, open count];
+  // the rail on the drawer's left jumps to them, the way VS Code's activity bar does.
   const SECS = [['assumptions', 'Assumptions'], ['questions', 'Questions'], ['manual', 'Manual checks'], ['followups', 'Follow-ups'], ['decisions', 'Decisions'], ['review', 'Review']];
+  const svg = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+  const ICONS = {
+    background: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="7.8" r=".6" class="fill"/>'),
+    repro: svg('<path d="M9 7a3 3 0 0 1 6 0"/><rect x="7" y="8" width="10" height="12" rx="5"/><path d="M3 13h4M17 13h4M4 8l3 2M20 8l-3 2M4 19l3-2M20 19l-3-2M12 11v8"/>'),
+    request: svg('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>'),
+    criteria: svg('<path d="m3 7 2 2 4-4M3 17l2 2 4-4M13 6h8M13 12h8M13 18h8"/>'),
+    scope: svg('<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>'),
+    details: svg('<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r=".6" class="fill"/><circle cx="3.5" cy="12" r=".6" class="fill"/><circle cx="3.5" cy="18" r=".6" class="fill"/>'),
+    assumptions: svg('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z"/>'),
+    questions: svg('<circle cx="12" cy="12" r="9"/><path d="M9.2 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4"/><circle cx="12" cy="17.2" r=".6" class="fill"/>'),
+    manual: svg('<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>'),
+    followups: svg('<path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>'),
+    decisions: svg('<circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7M12 12v5"/>'),
+    review: svg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+    handoff: svg('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),
+  };
   let detail = null; // the open ticket in full
+  let pinned = null; // the section last jumped to, until the reader scrolls by hand
   function paneContract(t) {
-    const sec = (title, body) => (body ? `<div><h3>${title}</h3>${body.split(/\n{2,}/).map((p) => `<p>${rich(p).replace(/\n/g, '<br>')}</p>`).join('')}</div>` : '');
-    const crit = t.criteria.length ? `<div><h3>Done when · ${t.criteria.filter((c) => c.done).length} of ${t.criteria.filter((c) => !c.void).length}</h3><ul class="crit">${t.criteria.map((c) => `<li><span class="tick ${c.done ? 'done' : ''}"></span><span class="${c.void ? 'void' : ''}">${c.owner ? '<span class="owner">owner</span>' : ''}${rich(c.text.replace(/^\(owner\)\s*/i, ''))}</span></li>`).join('')}</ul></div>` : '';
+    const sec = (key, title, body) => [key, title, body && body.split(/\n{2,}/).map((p) => `<p>${rich(p).replace(/\n/g, '<br>')}</p>`).join('')];
+    const crit = t.criteria.length && ['criteria', `Done when · ${t.criteria.filter((c) => c.done).length} of ${t.criteria.filter((c) => !c.void).length}`, `<ul class="crit">${t.criteria.map((c) => `<li><span class="tick ${c.done ? 'done' : ''}"></span><span class="${c.void ? 'void' : ''}">${c.owner ? '<span class="owner">owner</span>' : ''}${rich(c.text.replace(/^\(owner\)\s*/i, ''))}</span></li>`).join('')}</ul>`];
     const list = (a) => (a && a.length ? a.map(rich).join(', ') : '–');
-    return `${sec('Background', t.sections.background)}${sec('How to reproduce', t.sections.repro)}${sec('Request', t.sections.request)}${crit}${sec('Out of scope', t.sections.scope)}
-      <div><h3>Details</h3><dl class="facts">
+    return [sec('background', 'Background', t.sections.background), sec('repro', 'How to reproduce', t.sections.repro), sec('request', 'Request', t.sections.request), crit, sec('scope', 'Out of scope', t.sections.scope),
+      ['details', 'Details', `<dl class="facts">
         <dt>Type</dt><dd>${esc(t.fm.type)} · ${esc(t.fm.priority)} priority${t.fm.solo === 'true' ? ' · solo' : ''}</dd>
         <dt>Created</dt><dd>${esc(t.fm.created)}</dd><dt>Labels</dt><dd>${list(t.fm.labels)}</dd><dt>Blocked by</dt><dd>${list(t.fm.blocked_by)}</dd><dt>Related</dt><dd>${list(t.fm.related)}</dd>
         <dt>Touches</dt><dd>${t.fm.touches?.length ? esc(t.fm.touches.join(', ')) : '–'}</dd>${t.worktree ? `<dt>Worktree</dt><dd>${esc(t.worktree)}</dd>` : ''}
-      </dl></div>`;
+      </dl>`]].filter((x) => x && x[2]);
   }
   function paneRecord(t) {
     const tone = (s) => (['confirmed', 'answered', 'ok', 'ticketed'].includes(s) ? 'good' : OPEN.includes(s) ? '' : ['failed', 'overturned'].includes(s) ? 'bad' : 'plain');
     const out = SECS.map(([key, title]) => {
       const list = t.record[key] || [];
-      if (!list.length) return '';
-      return `<div><h3>${title}</h3>${list.map((e) => `<div class="entry ${OPEN.includes(e.status) ? 'open' : ''}">
+      return [key, title, list.map((e) => `<div class="entry ${OPEN.includes(e.status) ? 'open' : ''}">
         ${e.key ? `<div class="eh"><span class="key">${esc(e.key)}</span><span class="badge ${tone(e.status)}">${esc(e.status)}</span></div>` : ''}
-        <p>${rich(e.text)}</p>${(e.sub || []).map((s) => `<p class="sub">${rich(s)}</p>`).join('')}</div>`).join('')}</div>`;
-    }).join('');
-    const hand = t.record.handoff ? `<div><h3>Handoff</h3><p>${rich(t.record.handoff)}</p></div>` : '';
-    return out + hand || '<p class="empty">Nothing recorded yet.</p>';
+        <p>${rich(e.text)}</p>${(e.sub || []).map((s) => `<p class="sub">${rich(s)}</p>`).join('')}</div>`).join(''), list.filter((e) => OPEN.includes(e.status)).length];
+    });
+    if (t.record.handoff) out.push(['handoff', 'Handoff', `<p>${rich(t.record.handoff)}</p>`]);
+    return out.filter((x) => x[2]);
+  }
+  function sectioned(secs, empty) {
+    if (!secs.length) return `<div class="drawer-body"><p class="empty">${empty}</p></div>`;
+    const rail = `<nav class="rail" aria-label="Sections">${secs.map(([key, title, , n]) => `<button data-jump="${key}" title="${esc(title.replace(/ ·.*/, ''))}" aria-label="${esc(title.replace(/ ·.*/, ''))}${n ? `, ${n} open` : ''}">${ICONS[key] || ''}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</nav>`;
+    return `${rail}<div class="drawer-body">${secs.map(([key, title, html]) => `<div data-sec="${key}"><h3>${title}</h3>${html}</div>`).join('')}</div>`;
+  }
+  // Which icon is lit: the section jumped to, else the last whose top has
+  // reached the top of the pane, else (scrolled to the end) the last one.
+  function spy() {
+    const body = $('.drawer-body'), rail = $('.rail');
+    if (!body || !rail) return;
+    const secs = [...body.querySelectorAll('[data-sec]')];
+    let cur = secs[0]?.dataset.sec;
+    if (pinned && secs.some((s) => s.dataset.sec === pinned)) cur = pinned;
+    else if (body.scrollTop > 0 && body.scrollTop + body.clientHeight >= body.scrollHeight - 2) cur = secs.at(-1).dataset.sec;
+    else for (const s of secs) if (s.offsetTop - body.scrollTop <= 24) cur = s.dataset.sec;
+    for (const b of rail.querySelectorAll('[data-jump]')) b.dataset.jump === cur ? b.setAttribute('aria-current', 'true') : b.removeAttribute('aria-current');
+  }
+  function jump(key) {
+    const body = $('.drawer-body'), sec = body && $(`[data-sec="${key}"]`, body);
+    if (!sec) return;
+    pinned = key;
+    body.scrollTo({ top: sec.offsetTop - 16, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    spy();
   }
   function paneTimeline(t) {
     let day = '';
-    if (!t.log.length) return '<p class="empty">No trail yet.</p>';
-    return `<ol class="timeline">${t.log.map((e) => {
+    if (!t.log.length) return '<div class="drawer-body"><p class="empty">No trail yet.</p></div>';
+    return `<div class="drawer-body"><ol class="timeline">${t.log.map((e) => {
       const [what, det, tone] = eventText(e);
       const d = String(e.t).slice(0, 10), head = d !== day ? `<li class="dayhead">${esc(d)}</li>` : '';
       day = d;
       return `${head}<li><time>${esc(String(e.t).slice(11))}</time><span class="mark ${tone || ''}"></span><div><b>${esc(what)}</b>${det ? `<div class="det">${esc(det)}</div>` : ''}${e.by ? `<div class="det">by ${esc(e.by)}</div>` : ''}</div></li>`;
-    }).join('')}</ol>`;
+    }).join('')}</ol></div>`;
   }
-  const PANES = { contract: ['Contract', paneContract], record: ['Record', paneRecord], timeline: ['Timeline', paneTimeline] };
+  const PANES = { contract: ['Contract', (t) => sectioned(paneContract(t), 'Nothing written yet.')], record: ['Record', (t) => sectioned(paneRecord(t), 'Nothing recorded yet.')], timeline: ['Timeline', paneTimeline] };
   function renderDrawer(focus) {
     const root = $('#drawer-root');
     if (!ui.ticket) { root.innerHTML = ''; return; }
@@ -328,11 +370,13 @@
         <div class="drawer-top"><div><p>${tid(t.id)}</p><h2>${esc(t.title)}</h2></div><span class="status" data-s="${t.status}">${t.status.replace('_', ' ')}</span><button class="xbtn" data-close aria-label="Close">✕</button></div>
         <div class="drawer-meta">${lane(t.fm.lane)} ${badges(lightT || t, true)}</div>
         <div class="dtabs" role="tablist">${Object.entries(PANES).map(([k, [label]]) => `<button class="dtab" role="tab" aria-selected="${ui.pane === k}" data-pane-tab="${k}">${label}${k === 'record' && open ? `<span class="n">${open} open</span>` : ''}${k === 'timeline' ? `<span class="n">${t.log.length}</span>` : ''}</button>`).join('')}</div>
-        <div class="drawer-body">${PANES[ui.pane][1](t)}</div>
+        <div class="drawer-main">${PANES[ui.pane][1](t)}</div>
       </aside>`;
     if (focus) $('.xbtn', root).focus(); else $('.drawer-body', root).scrollTop = keep;
+    spy();
   }
   function openDrawer(focus = true) {
+    if (detail?.id !== ui.ticket) pinned = null;
     if (!ui.ticket) { detail = null; return renderDrawer(); }
     const id = ui.ticket;
     renderDrawer(focus);
@@ -404,7 +448,9 @@
     if (open) { e.preventDefault(); go({ ticket: open.dataset.open, pane: open.dataset.pane || 'contract' }); openDrawer(); return; }
     if (e.target.closest('[data-close]')) { go({ ticket: null }); openDrawer(); return; }
     const pt = e.target.closest('[data-pane-tab]');
-    if (pt) { go({ pane: pt.dataset.paneTab }, false); renderDrawer(); $('.drawer-body').scrollTop = 0; return; }
+    if (pt) { pinned = null; go({ pane: pt.dataset.paneTab }, false); renderDrawer(); $('.drawer-body').scrollTop = 0; return; }
+    const j = e.target.closest('[data-jump]');
+    if (j) { jump(j.dataset.jump); return; }
     const tab = e.target.closest('[data-tab]');
     if (tab) { go({ tab: tab.dataset.tab }); render(); return; }
     const col = e.target.closest('[data-col]');
@@ -412,6 +458,11 @@
     if (e.target.closest('[data-done-all]')) { doneAll = true; render(); }
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ui.ticket) { go({ ticket: null }); openDrawer(); } });
+  // A jump keeps its icon lit until the reader scrolls the pane by hand.
+  document.addEventListener('scroll', (e) => { if (e.target.classList?.contains('drawer-body')) spy(); }, true);
+  for (const ev of ['wheel', 'touchmove', 'keydown', 'pointerdown']) document.addEventListener(ev, (e) => {
+    if (pinned && e.target.closest?.('.drawer-body') && !(ev === 'keydown' && e.key === 'Escape')) { pinned = null; spy(); }
+  }, { passive: true });
   document.addEventListener('input', (e) => {
     if (e.target.id === 'f-q') { go({ q: e.target.value }, false); render(); }
     if (e.target.id === 'f-lane') { go({ lane: e.target.value }, false); render(); }
