@@ -1,0 +1,11 @@
+goal: Galangan tahap 2: galangan 3D memutar linimasa tiap tiket adegan demi adegan (keputusan 24-33), alurnya saja
+order:
+  - 261113190701   # Linimasa tiket bisa dibaca viewer sejak suatu titik
+  - 261113190707   # Sepuluh macam kapal
+  - 261113191201   # Papan mencatat kapan planner bekerja
+  - 261113190702   # Galangan memutar linimasa tiket dengan jamnya sendiri
+  - 261113190703 pause   # Tiket baru datang dengan perahu rombongan
+  - 261113190704   # Perencana terlihat bekerja dan meja todo
+  - 261113190705   # Tukang menjemput tiketnya dan dok mengikuti max_parallel
+  - 261113190706   # Drama review, lulus tanpa meluncur, jangkar saat ditahan
+  - 261113191202   # Tiket yang dibatalkan menghilang pelan
