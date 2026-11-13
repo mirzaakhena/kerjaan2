@@ -387,7 +387,7 @@ async function stagedYard() {
   const world = {
     slips: [0, 1, 2, 3].map((k) => ({ x: k * 10, spots: Array.from({ length: 8 }, () => spot), lamp() {}, label() {} })),
     anchors: [0, 1, 2, 3].map((k) => ({ x: k * 10, z: 20, ry: 0 })),
-    shelfSlots: Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })), queueSlots: Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })),
+    shelfSlots: Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })), queueSlots: Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })), waitSlots: Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })),
     stations: new Proxy({}, { get: () => spot }), crane: {}, sea: 0,
     make: { scroll: thing, plank: thing, ship: (size, livery) => ({ o: thing(), size, livery, built: null, rigged: null, setBuild(b) { this.built = b; }, setRigged(v) { this.rigged = v; }, dispose() {} }) },
     move: async () => {}, floatOn() {}, floatOff() {}, setFlags() {}, mailIn() {}, mailOut() {},
@@ -428,7 +428,14 @@ async function stagedYard() {
   // an event of the trail, and a read of it, in the shape the server gives
   const E = (ticket, event, more = {}) => ({ ticket, event, at: clock.t, ...more });
   const trailOf = (events, more = {}) => ({ now: clock.t, events, reread: false, ...more });
-  return { dir, settle, T, board, where, errors, journal, E, trailOf, clock, asked, people };
+  // where a ticket lies on the todo table: 'front 0', 'back 2', or null when it is not drawn there
+  const row = (id) => {
+    const tok = dir.tokens.get(id);
+    if (!tok || tok.place !== 'queue' || !tok.slot) return null;
+    const f = world.queueSlots.indexOf(tok.slot), b = world.waitSlots.indexOf(tok.slot);
+    return f >= 0 ? `front ${f}` : `back ${b}`;
+  };
+  return { dir, settle, T, board, where, errors, journal, E, trailOf, clock, asked, people, cast, row, world };
 }
 
 test('the yard plays the trail of a ticket: every event a scene, in the order written, none skipped and none run over', async () => {
@@ -754,6 +761,229 @@ test('the yard moves tickets as the board does: four slips, each held by one shi
   assert.equal(where()[gone], 'scrap');
   assert.equal(dir.slipOf[2], null);
   assert.equal(dir.tokens.get(gone).ship, null);
+  assert.deepEqual(errors, []);
+});
+
+test('the architect reads the order board while the planner works, shows a "?" while a question of the planner waits, and not otherwise', async () => {
+  const { picture } = await import('../viewer/web/space/plan.js');
+  const { plannerDuty } = await import('../viewer/web/space/director.js');
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const session = path.join(root, 'claude', 'sess-1.jsonl');
+  const agentFile = path.join(root, 'claude', 'sess-1', 'subagents', 'agent-perencana1.jsonl');
+  fs.mkdirSync(path.dirname(agentFile), { recursive: true });
+  fs.writeFileSync(session, '');
+  const hook = (name, payload) => assert.equal(sh(r.dir, K2, ['hook', name], JSON.stringify({ cwd: r.dir, transcript_path: session, ...payload })).code, 0);
+  const asPlanner = (...a) => sh(r.dir, K2, a, undefined, { K2_ROLE: 'planner', K2_AGENT: 'perencana1' });
+  const order = ticket(r, 'Pesanan baru', { status: 'backlog' });
+  const other = ticket(r, 'Pesanan lain', { status: 'backlog' });
+  const s = await serve(root);
+  const { dir, cast, world } = await stagedYard();
+  world.stations = { reading: { x: -20, z: -17 }, shelf: { x: -21, z: -17 }, drafting: { x: -13, z: -16 }, queue: { x: -3, z: -17 } };
+  // the architect, with what was done written down
+  const did = [];
+  const a = { ...cast.planner, say: (g) => did.push(`say ${g}`), goTo: async (to) => { did.push(`go ${to === world.stations.reading ? 'order board' : 'elsewhere'}`); }, act: async (name) => { did.push(name); } };
+  // one look at the real board, then one turn of the architect's duty
+  const turn = async () => {
+    const D = (await get(s, '/api/p/toko/state')).body;
+    dir.update(D);
+    did.length = 0;
+    a.doing = '';
+    const on = await plannerDuty(a, world, dir);
+    return { on, planner: picture(D).planner, did: [...did], doing: a.doing };
+  };
+
+  // nobody plans: no duty, the architect is left to the chores of the desk, and goes nowhere
+  let t = await turn();
+  assert.deepEqual([t.on, t.planner, t.did], [false, { reading: false, step: null, asks: 0 }, []]);
+  // a question of somebody else (the owner's session, a worker) is not the planner's
+  assert.equal(r.k('ask', other, 'Ini dari sesi utama?').code, 0);
+  t = await turn();
+  assert.deepEqual([t.on, t.planner.asks, t.did], [false, 0, []]);
+
+  // the planner is sent: at the order board, reading, with no "?"
+  hook('agent-sent', { tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:planner', prompt: 'Plan the backlog.' }, tool_response: { status: 'async_launched', agentId: 'perencana1' } });
+  t = await turn();
+  assert.deepEqual([t.on, t.planner.reading, t.planner.asks], [true, true, 0]);
+  assert.deepEqual(t.did, ['go order board', 'interact-right']);
+  assert.equal(t.doing, 'reading the orders');
+  // its last step is what the architect is said to be doing
+  const line = (ts, content) => JSON.stringify({ type: 'assistant', timestamp: new Date(ts).toISOString(), message: { role: 'assistant', content } }) + '\n';
+  fs.writeFileSync(agentFile, line(Date.now() + 1000, [{ type: 'tool_use', name: 'Bash', input: { command: 'k2 list backlog', description: 'Membaca backlog' } }]));
+  t = await turn();
+  assert.equal(t.doing, 'reading the orders: Membaca backlog');
+
+  // it asks the owner two things, still at work: reading, with a "?"
+  assert.equal(asPlanner('ask', order, '--blocking', 'Satu pesanan atau dua?').code, 0);
+  assert.equal(asPlanner('ask', order, 'Warna apa?').code, 0);
+  t = await turn();
+  assert.deepEqual([t.planner.reading, t.planner.asks], [true, 2]);
+  assert.deepEqual(t.did, ['go order board', 'say ?', 'interact-right']);
+  // it stops and waits for the answers: the architect stays at the order board, still, with the "?"
+  hook('subagent-stop', { agent_id: 'perencana1', agent_type: 'kerjaan2:planner' });
+  t = await turn();
+  assert.deepEqual([t.on, t.planner.reading, t.planner.asks], [true, false, 2]);
+  assert.deepEqual(t.did, ['go order board', 'say ?', 'idle']);
+  assert.match(t.doing, /waiting for the owner's answer to 2 questions/);
+  // one answered: one is left, the "?" stays
+  assert.equal(r.k('answer', order, 'Q1', 'Dua.').code, 0);
+  t = await turn();
+  assert.deepEqual([t.on, t.planner.asks, t.did.includes('say ?')], [true, 1, true]);
+  assert.match(t.doing, /to a question/);
+  // the last answered and no planner at work: no "?", no duty, away from the order board
+  assert.equal(r.k('answer', order, 'Q2', 'Biru.').code, 0);
+  t = await turn();
+  assert.deepEqual([t.on, t.planner, t.did], [false, { reading: false, step: null, asks: 0 }, []]);
+  // resumed with the answers: reading again, the "?" gone
+  hook('agent-sent', { tool_name: 'SendMessage', tool_input: { to: 'perencana1', message: 'Jawaban pemilik ada di tiket.' }, tool_response: { success: true } });
+  t = await turn();
+  assert.deepEqual([t.planner.reading, t.did], [true, ['go order board', 'interact-right']]);
+  hook('subagent-stop', { agent_id: 'perencana1', agent_type: 'kerjaan2:planner' });
+  t = await turn();
+  assert.deepEqual([t.on, t.did], [false, []]);
+  // a question of the planner on a cancelled ticket waits for nobody
+  assert.equal(asPlanner('ask', other, 'Masih perlu?').code, 0);
+  assert.equal((await turn()).planner.asks, 1);
+  assert.equal(r.k('move', other, 'cancel', '--why', 'tidak jadi').code, 0);
+  t = await turn();
+  assert.deepEqual([t.on, t.planner.asks], [false, 0]);
+
+  // the cast: the planner's character is the Naval Architect, with this duty; no Draughtsman is left
+  const web = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'viewer', 'web', 'space');
+  const castJs = fs.readFileSync(path.join(web, 'cast.js'), 'utf8');
+  assert.match(castJs, /name: 'Naval Architect', role: 'planner', at: 'drafting', chores: chores\.planner, duty: plannerDuty \}/);
+  assert.equal([...castJs.matchAll(/\{ key: \d+, name: '/g)].length + 1, 7, 'seven kinds of people, as before');
+  for (const f of fs.readdirSync(web).filter((n) => n.endsWith('.js'))) assert.doesNotMatch(fs.readFileSync(path.join(web, f), 'utf8'), /draughtsman/i, f);
+  // with no planner at work the architect's chores keep away from the order board
+  const chores = castJs.slice(castJs.indexOf('  planner: ['), castJs.indexOf('  foreman: ['));
+  assert.doesNotMatch(chores, /stations\.(shelf|orders|queue)/);
+});
+
+test('tickets that become todo are carried to the todo table in one walk and lie there in queue order, those that wait for another ticket in the back row', async () => {
+  const { picture } = await import('../viewer/web/space/plan.js');
+  // which todo tickets wait for another ticket, on a real board
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const [base, after, free, paused, solo] = ['Dasar', 'Sesudah dasar', 'Bebas', 'Dijeda', 'Sendirian'].map((title) => plainTicket(r, title));
+  assert.equal(r.k('set', after, `blocked_by=${base}`).code, 0);
+  assert.equal(r.k('set', solo, 'solo=true').code, 0);
+  assert.equal(r.k('queue', 'set', base, after, free, paused, solo, '--pause-before', paused).code, 0);
+  const s = await serve(root);
+  const waiting = async () => { const pic = picture((await get(s, '/api/p/toko/state')).body); return Object.fromEntries([base, after, free, paused, solo].map((id, k) => [['base', 'after', 'free', 'paused', 'solo'][k], pic.byId.get(id).waiting])); };
+  // nothing in flight: only the one blocked by a ticket that has not landed waits for another; a pause waits for the owner
+  assert.deepEqual(await waiting(), { base: false, after: true, free: false, paused: false, solo: false });
+  // one in flight: the solo ticket must wait for it too
+  assert.equal(r.k('start', base).code, 0);
+  assert.deepEqual(await waiting(), { base: false, after: true, free: false, paused: false, solo: true });
+
+  // made-up boards: a solo ticket in flight holds every todo ticket back; landed, none
+  const t = (id, status, more = {}) => ({ id, title: id, status, criteria: [{ done: false }], state: {}, fm: {}, ...more });
+  const rows = (tickets, more = {}) => picture({ tickets, ...more }).tickets.filter((x) => x.status === 'todo').map((x) => x.waiting);
+  assert.deepEqual(rows([t('a', 'in_progress', { fm: { solo: 'true' } }), t('b', 'todo'), t('c', 'todo', { waits: [] })]), [true, true]);
+  assert.deepEqual(rows([t('a', 'done', { fm: { solo: 'true' } }), t('b', 'todo'), t('c', 'todo', { waits: ['x'] })]), [false, true]);
+  assert.deepEqual(rows([t('a', 'review'), t('b', 'todo', { fm: { solo: 'true' } }), t('c', 'todo')]), [true, false]);
+  assert.deepEqual(rows([t('a', 'review'), t('b', 'todo', { fm: { solo: 'true' } })], { places: { used: 0, max: 3 } }), [false], 'what is in flight waits for the owner: it takes no place');
+  assert.equal(picture({ tickets: [t('a', 'backlog', { waits: ['x'] })] }).tickets[0].waiting, false, 'only a todo ticket has a row');
+
+  // in the yard
+  const { dir, settle, T, board, where, errors, journal, E, trailOf, cast, row } = await stagedYard();
+  const ids = ['a', 'b', 'c', 'd', 'e'];
+  const queue = { order: ['c', 'a', 'e', 'b', 'd'] };
+  dir.update(board(ids.map((id) => T(id, 'backlog'))), trailOf([]));
+  await settle();
+  assert.deepEqual(ids.map(row), [null, null, null, null, null]);
+  // the planner moves the whole lot at once: one walk of the architect for all five
+  const todo = (waits) => board(ids.map((id) => T(id, 'todo', { waits: waits[id] || [] })), { queue });
+  let walks = 0;
+  const goTo = cast.planner.goTo;
+  cast.planner.goTo = async (to) => { walks++; return goTo(to); };
+  dir.update(todo({ b: ['z'], e: ['z'] }), trailOf(ids.map((id) => E(id, 'moved', { to: 'todo' }))));
+  assert.equal(cast.planner.jobs.length, 1, 'one walk');
+  assert.deepEqual(ids.map(row), [null, null, null, null, null], 'not on the table before they are carried there');
+  await settle();
+  assert.equal(walks, 2, 'to the order board, then to the todo table');
+  assert.deepEqual(journal, ids.map((id) => `plan ${id}`));
+  assert.deepEqual(new Set(Object.values(where())), new Set(['queue']));
+  // side by side in the order of the queue; b and e wait for another ticket: the back row
+  assert.deepEqual(Object.fromEntries(ids.map((id) => [id, row(id)])), { c: 'front 0', a: 'front 1', d: 'front 2', e: 'back 0', b: 'back 1' });
+  // the queue is put in another order: the table follows
+  dir.update(todo({ b: ['z'], e: ['z'] }), trailOf([]));
+  dir.update(board(ids.map((id) => T(id, 'todo', { waits: { b: ['z'], e: ['z'] }[id] || [] })), { queue: { order: ['d', 'b', 'c', 'e', 'a'] } }), trailOf([]));
+  assert.deepEqual(Object.fromEntries(ids.map((id) => [id, row(id)])), { d: 'front 0', c: 'front 1', a: 'front 2', b: 'back 0', e: 'back 1' });
+  // what e waited for has landed: e comes forward, to its place in the queue; b stays behind
+  dir.update(todo({ b: ['z'] }), trailOf([]));
+  assert.deepEqual(Object.fromEntries(ids.map((id) => [id, row(id)])), { c: 'front 0', a: 'front 1', e: 'front 2', d: 'front 3', b: 'back 0' });
+  // and a ticket that starts to wait goes back
+  dir.update(todo({ b: ['z'], c: ['y'] }), trailOf([]));
+  assert.deepEqual(Object.fromEntries(ids.map((id) => [id, row(id)])), { a: 'front 0', e: 'front 1', d: 'front 2', c: 'back 0', b: 'back 1' });
+  assert.equal(cast.planner.jobs.length, 0, 'nobody carries a ticket from one row to the other');
+
+  // a ticket that becomes todo while the architect is already on the way to the table goes in the next walk
+  journal.length = 0;
+  walks = 0;
+  const more = (st) => board([...ids.map((id) => T(id, 'todo')), T('f', st.f), T('g', st.g)], { queue: { order: [...ids, 'f', 'g'] } });
+  dir.update(more({ f: 'backlog', g: 'backlog' }), trailOf([]));
+  dir.update(more({ f: 'backlog', g: 'backlog' }), trailOf([]));
+  const act = cast.planner.act;
+  let late = false;
+  cast.planner.act = async (name) => { if (name === 'interact-right' && !late) { late = true; dir.update(more({ f: 'todo', g: 'todo' }), trailOf([E('g', 'moved', { to: 'todo' })])); } return act(name); };
+  dir.update(more({ f: 'todo', g: 'backlog' }), trailOf([E('f', 'moved', { to: 'todo' })]));
+  await settle();
+  assert.equal(walks, 4, 'two walks');
+  assert.deepEqual([row('f'), row('g')], ['front 5', 'front 6']);
+  // each row shows eight; the rest is not drawn, and is there when a place comes free
+  const many = Array.from({ length: 10 }, (_, k) => `m${k}`);
+  const full = await stagedYard();
+  full.dir.update(full.board(many.map((id) => full.T(id, 'todo', { waits: ['z'] })), { queue: { order: many } }), full.trailOf([]));
+  assert.deepEqual(many.map(full.row), [...[0, 1, 2, 3, 4, 5, 6, 7].map((k) => `back ${k}`), null, null]);
+  assert.deepEqual(many.map((id) => full.dir.tokens.get(id).obj.visible), [true, true, true, true, true, true, true, true, false, false]);
+  full.dir.update(full.board(many.map((id, k) => full.T(id, 'todo', { waits: k ? ['z'] : [] })), { queue: { order: many } }), full.trailOf([]));
+  assert.deepEqual([full.row('m0'), full.row('m8'), full.row('m9')], ['front 0', 'back 7', null]);
+  assert.deepEqual([...errors, ...full.errors], []);
+  // the limit is written where the owner reads it
+  const doc = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'galangan-padanan.md'), 'utf8');
+  assert.match(doc, /Naval Architect/);
+  assert.match(doc, /8 di baris depan dan 8 di baris belakang/);
+  assert.doesNotMatch(doc, /papan QUEUE/);
+});
+
+test('the demo shows the architect reading, asking and moving tickets, with a back row on the todo table', async () => {
+  const { picture } = await import('../viewer/web/space/plan.js');
+  const { startDemo } = await import('../viewer/web/space/demo.js');
+  const { dir, settle, errors, cast, row } = await stagedYard();
+  const reads = [];
+  const stop = startDemo((D, trail) => reads.push([D, trail]));
+  stop();
+  assert.ok(picture(reads[0][0]).tickets.some((t) => t.status === 'todo' && t.waiting) && picture(reads[0][0]).tickets.some((t) => t.status === 'todo' && !t.waiting), 'both rows from the first look');
+  const phases = []; // what the planner of the demo is seen doing, each change once
+  let carried = 0, came = 0, batch = 0;
+  for (let i = 0; i < 1500; i++) {
+    if (i) stop.step();
+    for (const [D, trail] of reads.splice(0)) {
+      const p = picture(D).planner;
+      const phase = p.asks ? (p.reading ? 'reading and asking' : 'asking') : p.reading ? 'reading' : 'idle';
+      if (phases[phases.length - 1] !== phase) phases.push(phase);
+      if (p.reading) assert.equal(typeof p.step, 'string');
+      if (p.asks) assert.ok(D.inbox.some((x) => x.kind === 'question' && D.tickets.find((t) => t.id === x.id).plannerAsks), 'the question is in the inbox, on the ticket it is about');
+      const moved = trail.events.filter((e) => e.event === 'moved' && e.to === 'todo');
+      // tickets are moved at the end of a turn of reading, never out of nowhere
+      if (moved.length) assert.equal(phases[phases.length - 2], 'reading', phases.join(' > '));
+      batch = Math.max(batch, moved.length);
+      dir.update(D, trail);
+      carried += cast.planner.jobs.length;
+      await settle();
+      const todo = D.tickets.filter((x) => x.status === 'todo');
+      assert.ok(todo.length <= 8, 'the demo keeps to what the table shows');
+      for (const t of todo) assert.equal(row(t.id)?.split(' ')[0], picture(D).byId.get(t.id).waiting ? 'back' : 'front', t.id);
+      // a ticket that waited comes forward when the one it waited for has landed
+      for (const t of D.tickets) if (t.status === 'todo' && !t.waits.length && dir.tokens.get(t.id).wasBack) came++;
+      for (const t of D.tickets) dir.tokens.get(t.id).wasBack = t.status === 'todo' && t.waits.length > 0;
+    }
+  }
+  assert.deepEqual(phases.slice(0, 5), ['idle', 'reading', 'asking', 'reading', 'idle'], 'the first round asks');
+  assert.ok(carried > 3, 'the architect carried tickets');
+  assert.ok(batch > 1, 'several in one walk at least once');
+  assert.ok(came > 0, 'a ticket came forward');
   assert.deepEqual(errors, []);
 });
 
