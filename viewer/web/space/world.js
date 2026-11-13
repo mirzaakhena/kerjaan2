@@ -316,7 +316,7 @@ export function buildWorld(scene) {
   box(world, 2, 0.9, 0.9, C.wood, 12, 0.45, -17.6);
   prop(world, 'pirate/flag-high', 14.6, 0, -16, { s: 1.1 });
   sign(world, 'INSPECTION', 12, 3.9, -15.55, { w: 3.4 });
-  // timber: what the shipwrights fetch, and where a cancelled hull ends
+  // timber: what the shipwrights fetch
   for (const [dx, dz, ry, n] of [[0, 0, 0, 4], [2.6, -0.6, 0.4, 3], [-2.5, -0.8, -0.2, 2]]) for (let k = 0; k < n; k++) prop(world, 'pirate/platform-planks', 22 + dx, k * 0.4, -18 + dz, { ry: ry + k * 0.08 });
   prop(world, 'watercraft/cargo-pile-a', 26.5, 0, -18.5);
   sign(world, 'TIMBER', 22, 0.5, -15.6, { w: 2.2 });
@@ -421,6 +421,27 @@ export function buildWorld(scene) {
     });
   }
 
+  // Fades: a thing that goes out of sight slowly. It gets materials of its own, so nothing else fades.
+  const fades = [];
+  function fade(o, secs) {
+    return new Promise((done) => {
+      const mats = [];
+      o.traverse((n) => {
+        if (!n.isMesh) return;
+        const own = (Array.isArray(n.material) ? n.material : [n.material]).map((m) => {
+          const c = m.clone();
+          c.transparent = true;
+          c.depthWrite = false;
+          mats.push(c);
+          return c;
+        });
+        n.material = Array.isArray(n.material) ? own : own[0];
+        n.castShadow = false;
+      });
+      fades.push({ o, mats, from: mats.map((m) => m.opacity), t: 0, secs, done });
+    });
+  }
+
   const stations = {
     pierEnd: { x: -28, z: 8.8, face: 0 },
     orders: { x: -24.6, z: -15.4, face: Math.PI },
@@ -457,6 +478,12 @@ export function buildWorld(scene) {
     tug.position.x = 6 + Math.cos(a) * 13;
     tug.position.z = 14.6 + Math.sin(a) * 2.2;
     tug.rotation.y = Math.atan2(-Math.sin(a) * 13, Math.cos(a) * 2.2);
+    for (let i = fades.length - 1; i >= 0; i--) {
+      const f = fades[i];
+      f.t = Math.min(1, f.t + dt / f.secs);
+      f.mats.forEach((m, j) => { m.opacity = f.from[j] * (1 - ease(f.t)); });
+      if (f.t >= 1) { fades.splice(i, 1); for (const m of f.mats) m.dispose(); f.done(); }
+    }
     for (let i = moves.length - 1; i >= 0; i--) {
       const m = moves[i];
       m.t = Math.min(1, m.t + dt / m.secs);
@@ -474,7 +501,7 @@ export function buildWorld(scene) {
   }
 
   return {
-    stations, slips, shelfSlots, queueSlots, waitSlots, anchors, crane: craneState, update, move,
+    stations, slips, shelfSlots, queueSlots, waitSlots, anchors, crane: craneState, update, move, fade,
     make: { scroll, plank, crate: () => { const o = spawn('pirate/crate'); o.scale.setScalar(0.5); return o; }, ship: makeShip },
     sea: SEA,
     floatOn(o, draft, sway = 0.5) { afloat.push({ o, y: SEA - draft, phase: rnd() * 6, sway }); },

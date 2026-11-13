@@ -513,7 +513,9 @@ async function stagedYard() {
     stations: new Proxy({}, { get: (_, name) => ({ x: 0, z: 0, name }) }), crane: {}, sea: 0,
     make: { scroll: thing, plank: thing, crate: thing, ship: (size, livery) => ({ o: thing(), size, livery, built: null, rigged: null, setBuild(b) { this.built = b; }, setRigged(v) { this.rigged = v; }, dispose() {} }) },
     move: async () => {}, floatOn() {}, floatOff() {}, setFlags() {}, mailIn() {}, mailTake() {}, mailOut() {},
+    fade: async (o) => { faded.push(o); },
   };
+  const faded = [];
   const person = () => ({ jobs: [], doing: '', say() {}, hold() {}, goTo: async () => {}, act: async () => {}, wait: async () => {} });
   const cast = { courier: person(), planner: person(), foreman: person(), wrights: [person(), person(), person(), person()], inspector: person(), crane: person(), keeper: person() };
   const people = [cast.courier, cast.planner, cast.foreman, ...cast.wrights, cast.inspector, cast.crane, cast.keeper];
@@ -557,7 +559,7 @@ async function stagedYard() {
     const f = world.queueSlots.indexOf(tok.slot), b = world.waitSlots.indexOf(tok.slot);
     return f >= 0 ? `front ${f}` : `back ${b}`;
   };
-  return { dir, settle, T, board, where, errors, journal, E, trailOf, clock, asked, people, cast, row, world };
+  return { dir, settle, T, board, where, errors, journal, E, trailOf, clock, asked, people, cast, row, world, faded };
 }
 
 test('the yard plays the trail of a ticket: every event a scene, in the order written, none skipped and none run over', async () => {
@@ -884,6 +886,47 @@ test('the yard moves tickets as the board does: four slips, each held by one shi
   assert.equal(dir.slipOf[2], null);
   assert.equal(dir.tokens.get(gone).ship, null);
   assert.deepEqual(errors, []);
+});
+
+test('a cancelled ticket tells no story: its token fades where it is, nobody walks for it, its place is free at once', async () => {
+  const { dir, settle, T, board, where, errors, E, trailOf, faded, people, world } = await stagedYard();
+  const live = [T('s', 'backlog'), T('q', 'todo'), T('w', 'in_progress', { criteria: [{ done: true }] }), T('r', 'review', { criteria: [{ done: true }] }), T('d', 'done', { landed: 5 }), T('x', 'todo')];
+  dir.update(board(live), trailOf([]));
+  await settle();
+  assert.deepEqual(where(), { s: 'shelf', q: 'queue', w: 'slip', r: 'slip', d: 'bay', x: 'queue' });
+  const slipOfW = dir.tokens.get('w').slip, anchorOfD = dir.tokens.get('d').anchor;
+  const things = ['s', 'q', 'w', 'r', 'd'].map((id) => dir.tokens.get(id).ship?.o || dir.tokens.get(id).obj);
+  assert.ok(things.every(Boolean));
+  const cancelled = live.map((t) => (t.id === 'x' ? t : { ...t, status: 'cancel' }));
+  dir.update(board(cancelled), trailOf(['s', 'q', 'w', 'r', 'd'].map((id) => E(id, 'moved', { to: 'cancel' }))));
+  // nobody is asked for anything, and everything is done in the same look
+  assert.ok(people.every((a) => !a.jobs.length), 'no person has a job for it');
+  await settle();
+  assert.deepEqual(faded, things, 'every token fades, where it was');
+  for (const id of ['s', 'q', 'w', 'r', 'd']) {
+    const tok = dir.tokens.get(id);
+    assert.equal(tok.place, 'scrap');
+    assert.equal(tok.obj, null);
+    assert.equal(tok.ship, null);
+  }
+  assert.deepEqual(dir.slipOf, [null, null, null, null]);
+  assert.equal(dir.anchorOf[anchorOfD], null);
+  assert.deepEqual(dir.fleet, []);
+  // the slip they left is at once taken by another ticket
+  dir.update(board([...cancelled.slice(0, 5), T('x', 'in_progress')]), trailOf([E('x', 'started')]));
+  await settle();
+  assert.equal(dir.tokens.get('x').place, 'slip');
+  assert.equal(dir.tokens.get('x').slip >= 0 && dir.slipOf[dir.tokens.get('x').slip].id, 'x');
+  // a page opened on a board with a cancelled ticket shows nothing of it
+  const later = await stagedYard();
+  later.dir.update(later.board([later.T('k', 'cancel'), later.T('l', 'todo')]), later.trailOf([]));
+  await later.settle();
+  assert.deepEqual(later.where(), { k: 'scrap', l: 'queue' });
+  assert.deepEqual(later.faded, []);
+  assert.equal(later.dir.tokens.get('k').obj, null);
+  assert.equal(later.dir.tokens.get('k').ship, null);
+  assert.deepEqual(errors, []);
+  void world;
 });
 
 test('the architect reads the order board while the planner works, shows a "?" while a question of the planner waits, and not otherwise', async () => {

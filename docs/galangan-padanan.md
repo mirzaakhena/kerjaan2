@@ -64,7 +64,7 @@ kapal tunda tetap pada kecepatannya. Angkanya ada di `plan.js` (`CALM`,
 | `verdict` lulus | Inspector memberi "✓"; layar dan bendera dipasang |
 | `verdict` ditolak | Inspector memberi "✗"; kriteria yang disebut gagal dicabut, lambung turun |
 | `landed` | Kapal meluncur dan berlabuh |
-| `moved` ke cancel | Lambung dibongkar atau gulungan dibuang |
+| `moved` ke cancel | Tanpa cerita: tokennya (gulungan atau kapal) memudar pelan, sekitar 2 detik, di tempatnya lalu hilang. Tak ada pemeran yang berjalan; dok atau slot yang ditinggalkan langsung bisa dipakai. Tiket yang sudah cancel saat halaman dibuka tidak tampil |
 | `moved` mundur (misalnya todo ke backlog, atau dibuka lagi) | Langsung diletakkan, tanpa cerita |
 | `agent`, `test`, `question`, `answer`, `assumption*`, `manual*`, `integrate`, `integrated`, `conflict`, `held`, `accepted`, `amended`, `released`, `retry` | Belum punya adegan: dilewati |
 
@@ -170,7 +170,7 @@ Batas-batasnya:
 | Reviewer meluluskan (lencana ⚠ belum di-merge) | Inspector memberi "✓"; layar dan bendera kapal dipasang |
 | Tiket nomor 1 di antrean merge | Crane operator bersiap meluncurkan kapal itu |
 | Tiket landed → done | Setelah adegan sebelumnya selesai, kapal meluncur di landasan ke air dan berlabuh di teluk; empat kapal terbaru tinggal, yang tertua berlayar pergi |
-| Tiket cancel | Shipwright membongkar lambungnya, atau Courier membuang gulungannya ke TIMBER |
+| Tiket cancel | Tak ada pemeran: tokennya memudar pelan lalu hilang (keputusan 31) |
 | "Waiting for you" berisi N butir | N bendera (paling banyak 5) di dekat mercusuar; Keeper memberi isyarat |
 | Judul dan nomor tiket | Papan nama di kepala landasan tiap dok; kartu tiket saat kapal atau gulungan diklik |
 | Ukuran kontrak (jumlah kriteria) | Ukuran kapal: kecil (≤3), sedang (≤6), besar |
