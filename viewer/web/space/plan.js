@@ -19,6 +19,63 @@ export function nextStep(from, to) {
   return STEPS[a];
 }
 
+// How much of the hull stands: a quarter once the keel is laid, the rest by the
+// criteria met. It moves only when one is met, taken back or struck out. The
+// lines that are the owner's to check are not counted: the hull is whole when
+// the worker's part is.
+export function buildOf(status, crit) {
+  if (status !== 'in_progress' && status !== 'review') return 0;
+  const mine = crit.filter((c) => !c.void && !c.owner);
+  return 0.25 + 0.75 * (mine.length ? mine.filter((c) => c.done).length / mine.length : status === 'review' ? 1 : 0);
+}
+
+// ----- the trail: what the yard plays -----
+//
+// The yard keeps, for every ticket, what it has shown of it so far, and
+// changes that only by playing the events of the ticket's trail, in order.
+// What the trail does not carry (an agent's last step, a running test, a
+// stuck agent, a question) is read from the board as it is.
+export const seen = (p) => ({ status: p.status, crit: p.crit.map((c) => ({ ...c })), rigged: p.rigged, rejected: p.rejected });
+// (sails matter only while a hull is in review)
+export const sameSeen = (a, b) => a.status === b.status && (a.status !== 'review' || a.rigged === b.rigged) && a.rejected === b.rejected
+  && a.crit.length === b.crit.length && a.crit.every((c, i) => c.done === b.crit[i].done && c.void === b.crit[i].void);
+
+// One event, played: `see` becomes what the ticket was after it. Says 'pass'
+// or 'reject' when the inspector has a verdict to give. An event with no
+// scene of its own changes nothing here.
+export function play(see, e) {
+  const mark = (n, key, value) => { const c = see.crit[Number(n) - 1]; if (c) c[key] = value; };
+  switch (e.event) {
+    case 'created': see.status = PLACE[e.status] ? e.status : 'backlog'; return null;
+    case 'moved': if (PLACE[e.to]) { see.status = e.to; see.rigged = false; } return null;
+    case 'started': see.status = 'in_progress'; return null;
+    case 'check': mark(e.n, 'done', true); return null;
+    case 'uncheck': mark(e.n, 'done', false); return null;
+    case 'void': mark(e.n, 'void', true); return null;
+    case 'submitted': see.status = 'review'; see.rigged = !!e.passed; return e.passed ? 'pass' : null;
+    case 'amended': see.rigged = false; return null;
+    case 'landed': see.status = 'done'; return null;
+    case 'verdict':
+      if (e.integration) return null; // on how main was brought in: the ship stays as it is
+      if (e.result === 'pass') { see.rigged = true; return 'pass'; }
+      see.status = 'in_progress';
+      see.rigged = false;
+      see.rejected++;
+      for (const n of String(e.failed || '').split(',')) mark(n, 'done', false);
+      return 'reject';
+    default: return null;
+  }
+}
+
+// The yard's own clock may run behind the board's, never ahead. Up to CALM
+// behind, scenes play as they are; further behind they play faster, up to
+// FAST times; more than LATE behind, the yard gives up the story (0) and is
+// put as the board is now.
+export const CALM = 30000;
+export const LATE = 300000;
+export const FAST = 4;
+export const paceOf = (lag) => (lag > LATE ? 0 : lag > CALM ? Math.min(FAST, lag / CALM) : 1);
+
 // A larger contract is a larger ship.
 export function sizeOf(t) {
   const n = (t.criteria || []).filter((c) => !c.void).length;
@@ -46,7 +103,7 @@ export function picture(D) {
   const tickets = (D.tickets || []).map((t) => {
     const mine = inbox.filter((i) => i.id === t.id);
     const at = (role) => (t.run?.role !== role ? 'away' : mine.some((i) => i.kind === 'stuck' && String(i.text).startsWith(`${role} `)) ? 'stuck' : 'working');
-    const crit = (t.criteria || []).filter((c) => !c.void);
+    const crit = (t.criteria || []).map((c) => ({ done: !!c.done, void: !!c.void, owner: !!c.owner }));
     const test = live.tests?.[t.id];
     const quiet = test ? now - test.lastOutput : 0;
     return {
@@ -56,8 +113,8 @@ export function picture(D) {
       place: PLACE[t.status] || 'shelf',
       size: sizeOf(t),
       livery: liveryOf(t.id),
-      // how much of the hull stands: a quarter once started, the rest by criteria met; all of it in review
-      build: t.status === 'review' ? 1 : t.status === 'in_progress' ? 0.25 + 0.6 * (crit.length ? crit.filter((c) => c.done).length / crit.length : 0) : 0,
+      crit,
+      build: buildOf(t.status, crit),
       rigged: !!t.state?.passed,
       worker: at('worker'),
       reviewer: at('reviewer'),

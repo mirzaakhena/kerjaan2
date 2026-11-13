@@ -1,12 +1,18 @@
 // A board that is not there: tickets made up in the page, moving through a
-// whole life, in the shape `viewer/snapshot.mjs` gives. For looking at the
-// yard when the real board is quiet. The page says plainly that it is a demo.
+// whole life, in the shape `viewer/snapshot.mjs` gives, with the trail of
+// what happened to them in the shape the server's `timeline` gives: the yard
+// plays the demo as it plays a real board. For looking at the yard when the
+// real board is quiet. The page says plainly that it is a demo.
 const TITLES = ['Save button on the invoice form', 'Rounding of tax per line', 'Export the ledger as CSV', 'Login expires too soon', 'Search by customer name', 'Monthly closing report', 'Currency on the summary', 'Undo for a deleted entry', 'Print layout of receipts', 'Import bank statements', 'Faster trial balance', 'Dark theme for the journal', 'Attach a scan to an entry', 'Audit trail of edits'];
 import { LIVERIES, liveryOf } from './plan.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 
+// `onState(state, trail)` is called once a second. The function returned stops
+// the demo; its `step()` moves the made-up board on by one second at once.
 export function startDemo(onState) {
+  let events = []; // what happened since the last state was given
+  const log = (t, event, more = {}) => events.push({ ticket: t.id, at: Date.now(), event, ...more });
   let n = 0;
   let serial = 0;
   let clock = 0;
@@ -29,11 +35,11 @@ export function startDemo(onState) {
   function tick(dt) {
     clock += dt;
     const flying = tickets.filter((t) => ['in_progress', 'review'].includes(t.status)).length;
-    if (tickets.filter((t) => t.status === 'backlog').length < 2 && Math.random() < dt / 20) make('backlog');
+    if (tickets.filter((t) => t.status === 'backlog').length < 2 && Math.random() < dt / 35) log(make('backlog'), 'created', { status: 'backlog' });
     for (const t of tickets) {
       t.wait -= dt;
-      if (t.status === 'backlog' && t.wait <= 0) { t.status = Math.random() < 0.08 ? 'cancel' : 'todo'; t.wait = rnd(30, 45); }
-      else if (t.status === 'todo' && t.wait <= 0 && flying < 3) { t.status = 'in_progress'; t.run = { role: 'worker', agent: 'demo', since: Date.now() }; t.wait = rnd(25, 35); return; }
+      if (t.status === 'backlog' && t.wait <= 0) { t.status = Math.random() < 0.08 ? 'cancel' : 'todo'; t.wait = rnd(30, 45); log(t, 'moved', { to: t.status }); }
+      else if (t.status === 'todo' && t.wait <= 0 && flying < 3) { t.status = 'in_progress'; t.run = { role: 'worker', agent: 'demo', since: Date.now() }; t.wait = rnd(25, 35); log(t, 'started'); return; }
       else if (t.status === 'in_progress') {
         if (t.ask > 0) { t.ask -= dt; if (t.ask <= 0) t.run = { role: 'worker', agent: 'demo', since: Date.now() }; continue; }
         if (t.stuck > 0) { t.stuck -= dt; continue; }
@@ -44,15 +50,15 @@ export function startDemo(onState) {
         if (dice < 0.08) { t.ask = rnd(10, 16); t.run = null; }
         else if (dice < 0.14) t.stuck = rnd(8, 12);
         else if (dice < 0.3) { t.test = rnd(6, 10); t.lastOut = Date.now(); }
-        else if (open) open.done = true;
-        else { t.status = 'review'; t.run = { role: 'reviewer', agent: 'demo', since: Date.now() }; }
+        else if (open) { open.done = true; log(t, 'check', { n: t.criteria.indexOf(open) + 1 }); }
+        else { t.status = 'review'; t.run = { role: 'reviewer', agent: 'demo', since: Date.now() }; log(t, 'submitted', { to: 'review' }); }
         t.wait = t.status === 'review' ? rnd(25, 35) : rnd(6, 12);
       } else if (t.status === 'review' && t.wait <= 0) {
         if (!t.state.passed) {
-          if (Math.random() < 0.25 && t.rejected < 2) { t.rejected++; t.status = 'in_progress'; t.criteria[t.criteria.length - 1].done = false; t.run = { role: 'worker', agent: 'demo', since: Date.now() }; }
-          else { t.state.passed = true; t.run = null; }
+          if (Math.random() < 0.25 && t.rejected < 2) { t.rejected++; t.status = 'in_progress'; t.criteria[t.criteria.length - 1].done = false; t.run = { role: 'worker', agent: 'demo', since: Date.now() }; log(t, 'verdict', { result: 'reject', round: t.rejected, failed: String(t.criteria.length) }); }
+          else { t.state.passed = true; t.run = null; log(t, 'verdict', { result: 'pass', round: t.rejected + 1 }); }
           t.wait = rnd(20, 30);
-        } else { t.status = 'done'; t.landed = Date.now(); }
+        } else { t.status = 'done'; t.landed = Date.now(); log(t, 'landed'); }
       }
     }
   }
@@ -70,13 +76,21 @@ export function startDemo(onState) {
     }
     return {
       project: 'demo', now, demo: true,
-      tickets: tickets.map((t) => ({ id: t.id, title: t.title, status: t.status, fm: t.fm, criteria: t.criteria, state: { passed: !!t.state.passed }, rejected: t.rejected, landed: t.landed, run: ['in_progress', 'review'].includes(t.status) ? t.run || undefined : undefined })),
+      tickets: tickets.map((t) => ({ id: t.id, title: t.title, status: t.status, fm: t.fm, criteria: t.criteria.map((c) => ({ ...c })), state: { passed: !!t.state.passed }, rejected: t.rejected, landed: t.landed, run: ['in_progress', 'review'].includes(t.status) ? t.run || undefined : undefined })),
       queue: { order: tickets.filter((t) => t.status === 'todo').map((t) => t.id) },
       mergeQueue: tickets.filter((t) => t.status === 'review' && t.state.passed).map((t) => t.id),
       inbox, live,
     };
   }
-  onState(state());
-  const timer = setInterval(() => { tick(1); onState(state()); }, 1000);
-  return () => clearInterval(timer);
+  const give = () => {
+    const s = state();
+    onState(s, { now: s.now, events, reread: false });
+    events = [];
+  };
+  give();
+  const step = () => { tick(1); give(); };
+  const timer = setInterval(step, 1000);
+  const stop = () => clearInterval(timer);
+  stop.step = step;
+  return stop;
 }
