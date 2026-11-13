@@ -4,7 +4,7 @@
 // ticket, with a clock of its own. The yard may lag behind the board, it never
 // runs ahead; behind by much, it plays faster; behind by too much, it is put
 // as the board is now, with no story (the limits are in plan.js).
-import { picture, nextStep, FLEET, placeOf, seen, sameSeen, play, buildOf, paceOf, joins } from './plan.js';
+import { picture, nextStep, FLEET, placeOf, seen, sameSeen, play, buildOf, paceOf, joins, boatOf } from './plan.js';
 // (What is drawn comes through `world.make`, so this module runs without a scene: tests/viewer.test.mjs.)
 
 const BERTH_Y = 0.28;
@@ -416,7 +416,7 @@ export class Director {
   async deliver(tok, live) {
     // a boat that has left, or whose last order is too old, is not joined: the next one comes when it is gone
     while (this.party && !joins(this.party, tok.born)) await this.party.gone;
-    const party = this.party || this.sail();
+    const party = this.party || this.sail(tok.id);
     party.last = tok.born;
     party.titles.push(tok.pic.title);
     await party.filed;
@@ -425,9 +425,10 @@ export class Director {
 
   // One boat and one walk of the courier for a whole party. In from the open sea; the courier goes
   // out only once it lies at the pier, takes the one crate, and the boat leaves by the other side.
-  sail() {
+  // Which boat it is follows from the party's first order (`boatOf`).
+  sail(first) {
     const { courier } = this.cast;
-    const party = this.party = { last: 0, open: true, titles: [], filed: null, gone: null };
+    const party = this.party = { last: 0, open: true, titles: [], filed: null, gone: null, boat: boatOf(first).kind };
     let left;
     party.gone = new Promise((done) => { left = done; });
     const leave = async () => {
@@ -439,7 +440,7 @@ export class Director {
     };
     party.filed = (async () => {
       try {
-        await this.w.mailIn(this.speed);
+        await this.w.mailIn(this.speed, party.boat);
         await this.job(courier, async (a) => {
           a.doing = 'walking out to the order boat';
           await a.goTo(this.w.stations.pierEnd);

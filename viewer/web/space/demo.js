@@ -4,7 +4,7 @@
 // plays the demo as it plays a real board. For looking at the yard when the
 // real board is quiet. The page says plainly that it is a demo.
 const TITLES = ['Save button on the invoice form', 'Rounding of tax per line', 'Export the ledger as CSV', 'Login expires too soon', 'Search by customer name', 'Monthly closing report', 'Currency on the summary', 'Undo for a deleted entry', 'Print layout of receipts', 'Import bank statements', 'Faster trial balance', 'Dark theme for the journal', 'Attach a scan to an entry', 'Audit trail of edits'];
-import { LIVERIES, liveryOf } from './plan.js';
+import { LIVERIES, liveryOf, BOATS, boatOf } from './plan.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 
@@ -24,11 +24,13 @@ export function startDemo(onState, { docks = 4 } = {}) {
   const PLOTS = ['pass', 'again', 'held'];
   let reviews = 0;
   const tickets = [];
-  const make = (status) => {
+  // `boat`: the order boat this ticket calls, when it is the first of its sitting
+  const make = (status, boat) => {
     const size = [2, 3, 5, 6, 8][Math.floor(rnd(0, 5))];
-    // the ID decides the ship, as on a real board; the demo picks IDs so that all ten ships come by, a pirate among the first
+    // the ID decides the ship, and the order boat of the party it opens, as on a real board; the demo picks
+    // IDs so that all ten ships come by, a pirate among the first, and the five order boats in turn
     let id;
-    do id = `26111${String(10000000 + serial++).slice(1)}`; while (liveryOf(id) !== LIVERIES[(8 + n * 3) % LIVERIES.length]);
+    do id = `26111${String(10000000 + serial++).slice(1)}`; while (liveryOf(id) !== LIVERIES[(8 + n * 3) % LIVERIES.length] || (boat && boatOf(id) !== boat));
     const t = { id, title: TITLES[n % TITLES.length], status, fm: { lane: 'standard' }, criteria: Array.from({ length: size }, () => ({ done: false })), state: {}, rejected: 0, landed: 0, wait: rnd(14, 30), ask: 0, stuck: 0, test: 0, lastOut: 0, held: 0 };
     n++;
     tickets.push(t);
@@ -81,8 +83,9 @@ export function startDemo(onState, { docks = 4 } = {}) {
     // (the first sitting soon and never a single order, so that a party is there to be seen)
     const waiting = (status) => tickets.filter((t) => t.status === status).length;
     if (waiting('backlog') < 2 * busy && waiting('todo') < Math.min(6, 4 * busy) && Math.random() < (dt / (sittings ? 35 : 6)) * busy) {
+      const boat = BOATS[(sittings + 1) % BOATS.length]; // the sail boat first: the row boat is the one known of old
       const many = sittings++ ? Math.floor(rnd(1, 4)) : 3;
-      for (let k = 0; k < many; k++) { const t = make('backlog'); t.wait += k * rnd(4, 9); log(t, 'created', { status: 'backlog' }); }
+      for (let k = 0; k < many; k++) { const t = make('backlog', k ? null : boat); t.wait += k * rnd(4, 9); log(t, 'created', { status: 'backlog' }); }
     }
     plan(dt);
     for (const t of tickets) {

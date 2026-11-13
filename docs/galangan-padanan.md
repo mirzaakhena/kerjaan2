@@ -50,8 +50,8 @@ umur kejadian tertua yang adegannya belum selesai.
 | lebih dari 5 menit | cerita dilepas: semua tiket langsung diletakkan di keadaan papan sekarang, seperti halaman yang baru dibuka |
 
 Yang dipercepat hanya adegan (orang yang sedang membawa tiket, kapal yang
-meluncur, lambung yang naik atau turun); pekerjaan pengisi waktu, laut, dan
-kapal tunda tetap pada kecepatannya. Angkanya ada di `plan.js` (`CALM`,
+meluncur, lambung yang naik atau turun); pekerjaan pengisi waktu dan laut
+tetap pada kecepatannya. Angkanya ada di `plan.js` (`CALM`,
 `FAST`, `LATE`, `paceOf`).
 
 **Kejadian dan adegannya.**
@@ -106,7 +106,8 @@ Batas-batasnya:
 
 ## Perahu rombongan
 
-Tiket baru (kejadian `created`) datang dengan perahu kecil, serombongan.
+Tiket baru (kejadian `created`) datang dengan perahu, serombongan. Ada lima
+macam perahu pesanan (lihat "Lima macam perahu" di bawah).
 
 - **Satu rombongan** adalah tiket-tiket yang dibuat berdekatan: tiap tiket
   dibuat paling lama **60 detik** sesudah tiket sebelumnya di rombongan itu,
@@ -121,6 +122,32 @@ Tiket baru (kejadian `created`) datang dengan perahu kecil, serombongan.
 - Perahu muncul dari ujung laut (tepi luar teluk), berlabuh di sisi dermaga,
   lalu pergi memutari ujung dermaga ke sisi seberangnya dan menghilang. Di
   luar itu tidak ada perahu di dermaga.
+- **Lima macam perahu.** Perahu dayung (E1 di ruang pamer), perahu layar (E2),
+  dan ketiga perahu E5: kapal tunda jingga, kapal tunda hijau, dan kapal tarik
+  biru. Tiap rombongan mendapat salah satunya secara acak: perahunya
+  ditentukan oleh hash kecil dari ID tiket pertama rombongan itu (`boatOf` di
+  `plan.js`), jadi rombongan yang sama memakai perahu yang sama di setiap
+  halaman yang terbuka, dan besar rombongan tidak ikut menentukan. Hash-nya
+  lain dari hash warna kapal, supaya perahu tidak selalu datang bersama dua
+  warna kapal yang sama.
+- **Lintasannya dihitung per perahu** (`courseOf` di `plan.js`, dari lebar
+  dan panjang lambung di `BOATS`). Datang: haluan di depan dari ujung laut
+  sampai di lepas tempat labuhnya; di sana perahu berputar sampai haluannya
+  menghadap laut, sejauh satu panjang lambung dari dermaga, lalu merapat
+  menyamping sampai 0,25 dari sisi timur dermaga, dengan peti sejajar tempat
+  Courier berdiri. Pergi: lurus ke depan sampai buritannya lepas dari ujung
+  dermaga, berbelok memutari ujung dermaga, lalu pergi ke sisi barat dengan
+  haluan di depan. Perahu yang lebih panjang berputar lebih jauh dari dermaga
+  dan maju lebih jauh sebelum berbelok. Uji memeriksa tiap saat lintasan
+  kelima perahu: lambung tidak menyentuh dermaga, daratan, pelampung di ujung
+  dermaga, atau air yang dilewati kapal yang meluncur dari dok terdekat, pada
+  1 sampai 10 dok.
+- Peti berdiri di geladak depan (di perahu dayung: di tengah) dan terlihat
+  sampai Courier mengangkatnya.
+- Kelima bentuk itu **hanya** terlihat saat membawa pesanan. Kapal tunda yang
+  dulu berkeliling teluk dan kapal tarik di dekat mercusuar sudah dihapus
+  (keputusan 37 di `docs/galangan-tahap2.md`); perahu nelayan dan perahu layar
+  di timur tetap sebagai hiasan.
 - Courier hanya berjalan ke dermaga setelah perahu berlabuh. Ia mengambil satu
   peti, berapa pun isi rombongannya; saat peti diangkat perahu pergi, dan
   rombongan itu tertutup. Semua tiket rombongan muncul di rak ORDERS pada saat
@@ -129,11 +156,18 @@ Tiket baru (kejadian `created`) datang dengan perahu kecil, serombongan.
 - Tiket usulan yang lahir sesudah tiket lain selesai memakai kejadian
   `created` yang sama, jadi datang dengan cara yang sama.
 - Mode `?demo` menulis pesanan beberapa sekaligus; kiriman pertamanya, tidak
-  lama setelah halaman dibuka, selalu satu rombongan berisi tiga tiket.
+  lama setelah halaman dibuka, selalu satu rombongan berisi tiga tiket. Demo
+  memilih ID tiketnya supaya kelima perahu datang bergiliran: perahu layar,
+  kapal tunda jingga, kapal tunda hijau, kapal tarik, perahu dayung, lalu
+  berulang.
 
 Batas-batasnya:
 
-- Bentuk perahunya masih perahu dayung yang lama; bentuk baru belum dipilih.
+- Perahu dipilih acak, jadi dua rombongan berurutan kadang memakai perahu
+  yang sama (kira-kira satu dari lima kali), kecuali di mode demo.
+- Saat merapat, perahu bergeser menyamping pada bagian terakhirnya (seperti
+  ditarik tali tambat), tidak maju dengan haluan di depan.
+- Dayung perahu dayung masuk ke bawah lantai dermaga, seperti sebelumnya.
 - Courier dipanggil oleh perahu yang berlabuh, bukan oleh lonceng Keeper (belum
   diputuskan).
 - Bila Courier sedang sibuk, perahu menunggu di dermaga sampai ia datang, dan
@@ -214,7 +248,7 @@ Batas-batasnya:
 
 | Saat di viewer kanban… | …di galangan |
 |---|---|
-| Tiket baru muncul (selagi halaman terbuka), termasuk usulan sesudah tiket lain selesai | Perahu rombongan datang dari ujung laut dan berlabuh di dermaga; Courier berjalan ke ujung dermaga, mengambil satu peti, dan menaruh semua tiket rombongan itu di rak ORDERS; perahu pergi ke sisi lain dan menghilang |
+| Tiket baru muncul (selagi halaman terbuka), termasuk usulan sesudah tiket lain selesai | Perahu rombongan (satu dari lima macam, acak per rombongan) datang dari ujung laut dan berlabuh di dermaga; Courier berjalan ke ujung dermaga, mengambil satu peti, dan menaruh semua tiket rombongan itu di rak ORDERS; perahu pergi ke sisi lain dan menghilang |
 | Tiket ada di kolom backlog | Satu gulungan di rak ORDERS |
 | Kartu "Planning the backlog" di Control room (planner sedang bekerja) | Naval Architect berdiri di papan pesanan (rak ORDERS) dan membaca tiket; keterangannya adalah langkah terakhir planner. Di luar itu ia di meja DRAWINGS |
 | Pertanyaan planner menunggu pemilik | Naval Architect memakai balon "?" di papan pesanan; di antara dua giliran planner ia tetap di sana, diam, sampai semua pertanyaan planner terjawab |

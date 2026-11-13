@@ -113,11 +113,64 @@ export function sizeOf(t) {
 // would come out as neighbours. Eight plain hulls named for their sail (the
 // flag has the sail's colour), two pirates named for their flag.
 export const LIVERIES = ['white', 'red', 'teal', 'yellow', 'blue', 'green', 'orange', 'purple', 'pirate-red', 'pirate-white'];
-export function liveryOf(id) {
+function hashOf(text) {
   let h = 0x811c9dc5;
-  for (const c of String(id)) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193);
+  for (const c of String(text)) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193);
   h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
-  return LIVERIES[(h >>> 0) % LIVERIES.length];
+  return h >>> 0;
+}
+export const liveryOf = (id) => LIVERIES[hashOf(id) % LIVERIES.length];
+
+// ----- the order boats -----
+//
+// Five boats bring the orders. Which one a party gets is as good as random, and the same on every
+// page that shows the board: a small hash of the ID of the party's first order (not the hash that
+// picks the ship, or a boat would always come with the same two liveries).
+// `beam` is half the hull's width, `bow` and `stern` how far it reaches fore and aft of its middle,
+// `crate` where the crate of orders stands on it; the model's bow is at +z.
+export const BOATS = [
+  { kind: 'row', key: 'pirate/boat-row-small', beam: 0.71, bow: 1.19, stern: 1.19, draft: 0.2, crate: [0, 0.22, 0] },
+  { kind: 'sail', key: 'watercraft/boat-sail-b', beam: 0.89, bow: 2.29, stern: 1.78, draft: 0.3, crate: [0, 0.7, 1.5] },
+  { kind: 'tug-a', key: 'watercraft/boat-tug-a', beam: 0.89, bow: 1.73, stern: 1.73, draft: 0.32, crate: [0, 0.8, 1.36] },
+  { kind: 'tug-b', key: 'watercraft/boat-tug-b', beam: 0.89, bow: 1.43, stern: 1.43, draft: 0.32, crate: [0, 0.8, 1.02] },
+  { kind: 'tow', key: 'watercraft/boat-tow-a', beam: 1.44, bow: 2.81, stern: 3.32, draft: 0.4, crate: [0, 1.16, 2.2] },
+];
+export const boatOf = (id) => BOATS[hashOf(`boat ${id}`) % BOATS.length];
+
+// The mail pier where the yard has four slips (it moves west with a wider island, and the boat's
+// course with it): `x0`..`x1` wide, from the quay (z = 0) out to `z1`.
+export const PIER = { x0: -29.5, x1: -26.5, z1: 10.4 };
+export const BUOY = { x: -30, z: 16 }; // the flagged buoy off the pier's end, which the boats leave to port
+const SEAWAY = { far: { x: -15, z: 25.4 }, off: { x: -31.7, z: 22.5 }, gap: 0.25, hand: 8.6, small: 0.02 };
+const heading = (a, b) => Math.atan2(b.x - a.x, b.z - a.z);
+
+// The course of such a boat, as legs { x, z, ry, s, secs } played one after the other from `from`.
+// In: from the open edge of the sea, bow first, to a point off its berth; there it swings round, a
+// hull's length clear of the pier, until its bow is to the sea, and is warped in sideways to lie along
+// the east side of the pier, its crate abreast of where the courier stands. Out: straight ahead until
+// its stern is clear of the pier's end, round the end to the other side, and away. A longer boat
+// swings further off the pier and goes further out before it turns; none comes into the water a hull
+// takes on its way down the nearest slip.
+export function courseOf(boat) {
+  const { far, off, gap, hand, small } = SEAWAY;
+  const reach = Math.hypot(boat.beam, Math.max(boat.bow, boat.stern)); // the circle it sweeps as it turns
+  const berth = { x: PIER.x1 + gap + boat.beam, z: hand - boat.crate[2], ry: 0, s: 1 };
+  const swung = { ...berth, x: PIER.x1 + gap + reach };
+  const swing = { x: swung.x, z: swung.z + 2.5, s: 1 };
+  const from = { ...far, ry: heading(far, swing), s: small };
+  const clear = { x: berth.x, z: PIER.z1 + boat.stern + 0.5 };
+  const round = { x: PIER.x0 + 1.9, z: clear.z + 3 };
+  return {
+    berth,
+    from,
+    in: [{ ...swing, ry: from.ry, secs: 8 }, { ...swung, secs: 2.2 }, { ...berth, secs: 1.6 }],
+    out: [
+      { ...clear, ry: 0, s: 1, secs: 2 },
+      { ...round, ry: heading(clear, round), s: 1, secs: 2.6 },
+      { ...round, ry: heading(round, off), s: 1, secs: 1.1 },
+      { ...off, ry: heading(round, off), s: small, secs: 7 },
+    ],
+  };
 }
 
 // ----- the slips: as many as the board's `max_parallel` -----
@@ -164,7 +217,7 @@ export function footprints(Y) {
   });
   rect('crane', Y.crane.x, 1.2, Y.crane.z - 1.2, Y.crane.z + 1.2);
   rect('lighthouse', Y.light.x, 3.6, Y.light.z - 3.6, Y.light.z + 3.6);
-  rect('pier', Y.pier.x + 1.1, 2.7, 0, 10.4); // with the mail boat alongside
+  out.push({ kind: 'pier', x0: Y.pier.x - 1.6, x1: Y.pier.x + 1.5 + SEAWAY.gap + 2 * Math.max(...BOATS.map((b) => b.beam)), z0: 0, z1: PIER.z1 }); // with the widest order boat alongside
   out.push({ kind: 'street', x0: -Y.half, x1: Y.half, z0: STREET - 0.8, z1: STREET + 0.8 });
   if (Y.back) {
     out.push({ kind: 'street', x0: -Y.half, x1: Y.half, z0: STREET - ROW - 0.8, z1: STREET - ROW + 0.8 });
