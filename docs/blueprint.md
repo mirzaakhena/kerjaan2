@@ -966,6 +966,26 @@ Kejadian yang belum punya adegan di 0.16.0 dilewati, dan tiket yang mundur
 tetap langsung diletakkan (Q2 dan Q4). Rinciannya, beserta batasnya, ada di
 `docs/galangan-padanan.md` bagian "Linimasa".
 
+## Perencana dan meja todo di galangan (tiket 261113190704)
+
+Keputusan pemilik 26 (`docs/galangan-tahap2.md`) mengganti dua baris padanan
+di bagian "Galangan" di atas (backlog → todo, dan todo):
+
+- Juru gambar (Draughtsman) menjadi Naval Architect, dengan karakter yang
+  sama. Selama papan mencatat planner bekerja ia membaca di papan pesanan;
+  selama ada pertanyaan planner yang menunggu pemilik ia memakai "?", dan di
+  antara dua giliran planner ia tetap di papan pesanan, diam, sampai semuanya
+  terjawab (Q1). Adegan menggambar di meja DRAWINGS dibuang; meja itu tinggal
+  tempatnya saat senggang (Q4).
+- Papan QUEUE diganti meja todo. Tiket yang pindah ke todo hampir bersamaan
+  dibawa dalam satu jalan (Q3) dan berjejer menurut urutan antrean: 8 di baris
+  depan, 8 di baris belakang, sisanya tidak digambar (Q5). Baris belakang
+  untuk tiket yang menunggu tiket lain (`blocked_by` belum landed, atau
+  karena tiket solo); tiket yang dijeda pemilik tetap di depan (Q2).
+
+Rinciannya, beserta batasnya, ada di `docs/galangan-padanan.md` bagian
+"Perencana dan meja todo".
+
 ## Galangan: tukang menjemput tiketnya, dok mengikuti `max_parallel` (tiket 261113190705)
 
 Keputusan pemilik 27 dan 28 (`docs/galangan-tahap2.md`) dan jawaban pemilik di
@@ -973,7 +993,7 @@ tiket itu mengganti dua hal dari bagian "Galangan" di atas:
 
 - Foreman tidak lagi mengantar gulungan ke dok. `k2 start` hanya menyiapkan
   dok (papan nama dipasang, Foreman menyapa tukangnya). Saat worker tercatat
-  dikirim, tukang dok itu sendiri menjemput gulungannya dari papan QUEUE, dan
+  dikirim, tukang dok itu sendiri menjemput gulungannya dari meja todo, dan
   lunas baru diletakkan sesudah ia kembali.
 - Dok tidak lagi selalu empat. Jumlahnya sama dengan `max_parallel`: satu
   sampai enam dalam satu baris, tujuh sampai sepuluh dalam dua baris dengan

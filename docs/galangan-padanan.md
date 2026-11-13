@@ -1,8 +1,9 @@
 # Galangan: padanan viewer kanban ke ruang 3D
 
 Ditulis 13 November 2026, untuk versi 0.16.0; sepuluh macam kapal, pemutar
-linimasa, perahu rombongan, tukang yang menjemput tiketnya, dan dok yang
-mengikuti `max_parallel` ditambahkan sesudahnya. Berkas ini mendaftar apa yang
+linimasa, perahu rombongan, perencana (Naval Architect) dan meja todo, lalu
+tukang yang menjemput tiketnya dan dok yang mengikuti `max_parallel`
+ditambahkan sesudahnya. Berkas ini mendaftar apa yang
 terjadi di viewer kanban (`k2 view`) dan apa padanannya di halaman galangan
 (`/p/<proyek>/space`), serta apa yang belum punya padanan. Keputusan dan batas
 galangan ada di bagian "Galangan" pada akhir `docs/blueprint.md`.
@@ -57,9 +58,9 @@ kapal tunda tetap pada kecepatannya. Angkanya ada di `plan.js` (`CALM`,
 | Kejadian | Adegan |
 |---|---|
 | `created` | Perahu rombongan; Courier membawa peti ke rak ORDERS (lihat "Perahu rombongan") |
-| `moved` ke todo | Draughtsman menggambar dan memasang gulungan di papan QUEUE |
-| `started` | Dok kosong disiapkan untuk tiket itu: papan namanya dipasang, Foreman datang menyapa tukang dok itu. Gulungan tetap di papan QUEUE; belum ada lambung |
-| `agent` (worker) | Tukang dok itu berjalan ke papan QUEUE, mengambil gulungannya, membawanya ke doknya; sesudah ia tiba lunas diletakkan. Hanya sekali per tiket: worker kedua (setelah ditolak) tidak menjemput lagi |
+| `moved` ke todo | Naval Architect mengambil tiket dari papan pesanan dan menjejerkannya di meja todo; tiket yang pindah hampir bersamaan dibawa dalam satu jalan |
+| `started` | Dok kosong disiapkan untuk tiket itu: papan namanya dipasang, Foreman datang menyapa tukang dok itu. Gulungan tetap di meja todo; belum ada lambung |
+| `agent` (worker) | Tukang dok itu berjalan ke meja todo, mengambil gulungannya, membawanya ke doknya; sesudah ia tiba lunas diletakkan. Hanya sekali per tiket: worker kedua (setelah ditolak) tidak menjemput lagi |
 | `check`, `uncheck`, `void` | Lambung naik atau turun |
 | `submitted` | Status di dok menjadi review (di jalur light: langsung lulus, layar dipasang) |
 | `verdict` lulus | Inspector memberi "✓"; layar dan bendera dipasang |
@@ -72,7 +73,8 @@ kapal tunda tetap pada kecepatannya. Angkanya ada di `plan.js` (`CALM`,
 **Yang tetap dibaca dari keadaan papan**, karena tidak ada di linimasa:
 langkah terakhir agen, uji yang sedang berjalan (lampu dok), agen macet,
 pertanyaan yang menunggu pemilik, bendera kotak masuk, urutan antrean, giliran
-merge. Semua itu tampil seketika.
+merge, planner yang sedang bekerja, dan baris tiket di meja todo (siap atau
+menunggu tiket lain). Semua itu tampil seketika.
 
 **Sambungan putus.** Halaman mengingat sampai titik mana linimasa sudah
 dibaca. Pembacaan yang gagal tidak menggeser titik itu, jadi setelah tersambung
@@ -141,7 +143,7 @@ Batas-batasnya:
 | Karakter | Padanan di kerjaan2 |
 |---|---|
 | Courier | penerima tiket baru (tidak ada agen untuk ini) |
-| Draughtsman | planner |
+| Naval Architect | planner (menggantikan Draughtsman; karakternya masih yang sama) |
 | Foreman | mandor (sesi utama): saat `k2 start` ia menyapa tukang di dok yang disiapkan; ia tidak membawa tiket |
 | Shipwright 1–10 | worker; satu tukang per dok, sebanyak dok yang ada. Tukang 5–10 memakai ulang empat model tukang yang ada dengan urutan lain; daftar pemeran bisa digulir |
 | Inspector | reviewer |
@@ -154,10 +156,13 @@ Batas-batasnya:
 |---|---|
 | Tiket baru muncul (selagi halaman terbuka), termasuk usulan sesudah tiket lain selesai | Perahu rombongan datang dari ujung laut dan berlabuh di dermaga; Courier berjalan ke ujung dermaga, mengambil satu peti, dan menaruh semua tiket rombongan itu di rak ORDERS; perahu pergi ke sisi lain dan menghilang |
 | Tiket ada di kolom backlog | Satu gulungan di rak ORDERS |
-| Tiket pindah backlog → todo (hasil kerja planner) | Draughtsman mengambil gulungan dari rak, menggambar di meja DRAWINGS, lalu memasangnya di papan QUEUE |
-| Tiket ada di kolom todo | Gulungan di papan QUEUE, urutannya sama dengan antrean |
-| Tiket pindah todo → in_progress (`k2 start`) | Satu dok kosong disiapkan: papan nama tiket dipasang di kepala landasan, Foreman menyapa tukangnya. Gulungan pindah ke urutan depan papan QUEUE |
-| Worker dikirim ke tiket itu | Tukang dok itu menjemput gulungannya dari papan QUEUE dan kembali ke doknya; baru sesudah ia tiba lunas kapal muncul |
+| Kartu "Planning the backlog" di Control room (planner sedang bekerja) | Naval Architect berdiri di papan pesanan (rak ORDERS) dan membaca tiket; keterangannya adalah langkah terakhir planner. Di luar itu ia di meja DRAWINGS |
+| Pertanyaan planner menunggu pemilik | Naval Architect memakai balon "?" di papan pesanan; di antara dua giliran planner ia tetap di sana, diam, sampai semua pertanyaan planner terjawab |
+| Tiket pindah backlog → todo (hasil kerja planner) | Naval Architect mengambil gulungan dari papan pesanan dan menjejerkannya di meja todo. Tiket yang pindah hampir bersamaan dibawa dalam satu jalan |
+| Tiket ada di kolom todo | Gulungan di meja todo (TODO), berjejer menurut urutan antrean |
+| Alasan "starts after X lands" atau "solo" pada tiket todo | Gulungan itu di baris belakang meja, berpita abu-abu; yang siap di baris depan, berpita merah. Begitu tidak lagi menunggu, gulungan bergeser ke baris depan |
+| Tiket pindah todo → in_progress (`k2 start`) | Satu dok kosong disiapkan: papan nama tiket dipasang di kepala landasan, Foreman menyapa tukangnya. Gulungan pindah ke urutan depan baris depan meja todo |
+| Worker dikirim ke tiket itu | Tukang dok itu menjemput gulungannya dari meja todo dan kembali ke doknya; baru sesudah ia tiba lunas kapal muncul |
 | `max_parallel` papan | Jumlah dok (lihat "Dok mengikuti `max_parallel`") |
 | Kartu agen "worker" di Control room | Shipwright dok itu memalu lambung; keterangannya adalah langkah terakhir agen dari transkrip |
 | Kriteria "Done when" tercentang, dicabut, atau dibatalkan | Lambung naik atau turun: seperempat sejak lunas diletakkan, sisanya menurut bagian kriteria yang terpenuhi. Kriteria yang dibatalkan dan kriteria `(owner)` tidak dihitung, jadi lambung penuh saat semua bagian worker terpenuhi. Lambung tidak bergerak karena hal lain |
@@ -182,7 +187,7 @@ Keputusan 27 dan jawaban pemilik di tiket 261113190705.
 - `k2 start` hanya menyiapkan dok: papan nama dipasang, Foreman datang dan
   menyapa. Foreman tidak pernah membawa gulungan.
 - Tukang baru berangkat saat worker tercatat dikirim (kejadian `agent` dengan
-  peran worker). Ia berjalan ke papan QUEUE, mengambil gulungan tiketnya,
+  peran worker). Ia berjalan ke meja todo, mengambil gulungan tiketnya,
   kembali ke doknya, dan sesudah ia tiba lunas diletakkan.
 - Bila ada pekerjaan pada tiket tanpa worker yang tercatat (kriteria
   dicentang, dicabut, dibatalkan, tiket diserahkan, atau putusan reviewer),
@@ -220,7 +225,7 @@ digambar oleh `setDocks` (`world.js`).
 - **Tiket lebih banyak daripada dok.** Tiket yang hanya menunggu pemilik tidak
   memakai jatah `max_parallel`, dan kapal yang lulus tetap di dok sampai
   landed, jadi tiket berjalan bisa lebih banyak daripada dok. Tiket
-  berikutnya menunggu sebagai gulungan di papan QUEUE sampai ada dok kosong;
+  berikutnya menunggu sebagai gulungan di meja todo sampai ada dok kosong;
   kejadiannya tetap dicatat dan lambungnya langsung setinggi yang benar saat
   dok didapat.
 - **`max_parallel` berubah selagi halaman terbuka.** Dinaikkan: dok dan tukang
@@ -269,15 +274,70 @@ yang sama di tiap pemuatan halaman dan di tiap perangkat. Aturannya ada di
 - Mode `?demo` memilih ID buatannya sehingga kesepuluh corak muncul
   bergiliran, dengan satu kapal bajak laut di antara yang pertama berlabuh.
 
+## Perencana dan meja todo
+
+Keputusan 26 di `docs/galangan-tahap2.md`, dengan jawaban pemilik atas lima
+pertanyaan di tiket 261113190704.
+
+**Kapan si perencana di papan pesanan.** Dua hal dibaca dari keadaan papan,
+bukan dari linimasa:
+
+| Keadaan papan | Naval Architect |
+|---|---|
+| Planner tercatat sedang bekerja (`live.planner`) | di papan pesanan, membaca; keterangannya langkah terakhir planner |
+| Planner bekerja dan ada pertanyaannya yang belum terjawab | sama, dengan balon "?" |
+| Planner sudah berhenti, pertanyaannya masih menunggu pemilik | tetap di papan pesanan, diam, dengan balon "?" |
+| Tidak keduanya | di meja DRAWINGS, mengerjakan pekerjaan pengisi waktu; tidak ke papan pesanan |
+
+- "Pertanyaan planner" adalah pertanyaan yang belum terjawab dan ditulis oleh
+  planner sendiri (kejadian `question` yang `by`-nya `planner:…`), pada tiket
+  mana pun yang tidak dibatalkan. Pertanyaan worker atau sesi utama tidak
+  dihitung. Papan yang ditulis sebelum kerjaan2 mencatat `by` tidak punya
+  tanda itu: pertanyaan lamanya tidak memunculkan "?".
+- Membawa tiket ke meja todo didahulukan: selama itu ia tidak di papan
+  pesanan. Sesudah pertanyaan terakhir terjawab, balon hilang dalam beberapa
+  detik.
+- Planner yang tidak pernah terlihat berhenti (sesi ditutup di tengah jalan)
+  dianggap tidak bekerja lagi setelah `stuck_after_minutes` tanpa tanda
+  hidup, sama seperti di Control room.
+
+**Satu jalan untuk serombongan.** Tiket yang kejadian `moved` ke todo-nya tiba
+sebelum si perencana meninggalkan papan pesanan ikut dalam jalan yang sama;
+yang tiba sesudahnya ikut jalan berikutnya. Di tangannya hanya tampak satu
+gulungan, berapa pun yang ia bawa; di meja ia meletakkannya satu per satu.
+
+**Baris depan dan belakang.** Baris belakang berarti "menunggu tiket lain":
+
+- ada `blocked_by` yang belum landed (yang ditampilkan `k2 ready` sebagai
+  "starts after … lands"); atau
+- ada tiket solo yang sedang berjalan (semua tiket todo menunggu); atau
+- tiket itu sendiri solo dan masih ada tiket lain yang mengisi tempat.
+
+Tiket yang dijeda pemilik (pause before) tetap di baris depan: ia menunggu
+pemilik, bukan tiket lain. Tiket todo yang belum siap karena hal lain (kontrak
+kosong, pertanyaan yang menahan) juga di baris depan. Tiket di belakang tiket
+solo yang sedang menunggu tidak ikut dipindah ke baris belakang, walau
+`k2 next` belum akan memulainya.
+
+**Batas.** Meja memuat 8 di baris depan dan 8 di baris belakang, masing-masing
+menurut urutan antrean; sisanya tidak digambar dan tidak diberi tanda, sampai
+ada tempat. Tiket berjalan yang tidak mendapat dok menunggu di baris depan,
+sesudah semua tiket todo.
+
+**Demo.** Di `?demo` planner buatan mulai membaca beberapa detik setelah
+halaman dibuka, bertanya di giliran pertamanya (dan sesekali sesudahnya),
+lalu memindahkan semua pesanan yang sudah waktunya sekaligus; sebagian
+dijadwalkan sesudah tiket yang sedang berjalan, jadi baris belakang terisi dan
+maju saat tiket itu berlabuh.
+
 ## Yang ada di viewer tetapi belum punya padanan
 
-- **Planner sedang bekerja.** Papan tidak mencatat kapan planner berjalan,
-  hanya hasilnya. Draughtsman baru bergerak setelah tiket sudah pindah ke
-  todo, bukan selama planning.
 - **Mandor (sesi utama).** Foreman hanya menyapa saat `start`; kegiatan sesi
   utama lainnya tidak terlihat.
-- **Alasan tiket todo tertahan** ("starts after X lands", jeda): gulungannya
-  tampil sama dengan yang siap.
+- **Tiket todo yang dijeda pemilik** (pause before) atau belum siap:
+  gulungannya tampil sama dengan yang siap.
+- **Tiket mana yang ditunggu:** baris belakang hanya berkata "menunggu tiket
+  lain", tidak menunjuk tiketnya.
 - **Lulus tetapi ditahan atau dihentikan** (held, stopped): kapalnya tampil
   sama dengan yang menunggu giliran merge.
 - **Main dibawa masuk sebelum merge** (worker atau reviewer dipanggil lagi
@@ -290,15 +350,10 @@ yang sama di tiap pemuatan halaman dan di tiap perangkat. Aturannya ada di
   hanya di kartu tiket.
 - **Tab History** (lama pengerjaan, tingkat penolakan): tidak ada.
 - **Lebih dari yang muat:** tiket berjalan yang tidak mendapat dok menunggu
-  sebagai gulungan di papan QUEUE; rak memuat 12 gulungan dan papan 8,
-  sisanya tidak digambar dan tidak diberi tanda.
+  sebagai gulungan di meja todo; rak memuat 12 gulungan dan meja todo 8 per
+  baris, sisanya tidak digambar dan tidak diberi tanda.
 
 ## Usul kelanjutan (belum diputuskan pemilik)
 
-1. **Planner bekerja.** Butuh catatan baru di papan: hook sudah mencatat
-   worker dan reviewer, planner belum. Ini perubahan di inti (`core/`,
-   `hooks/`), bukan hanya di galangan.
-2. **Ditahan atau dihentikan.** Kapal lulus yang ditahan diberi tanda
+1. **Ditahan atau dihentikan.** Kapal lulus yang ditahan diberi tanda
    sendiri, misalnya rantai di dok dan bendera kuning.
-3. **Alasan todo tertahan.** Gulungan yang menunggu tiket lain diberi pita
-   warna berbeda.

@@ -215,6 +215,7 @@ function renderCard() {
   if (p.reviewer !== 'away') lines.push(p.reviewer === 'stuck' ? 'its reviewer is stuck' : `reviewer at work${p.step ? `: ${p.step}` : ''}`);
   if (p.testing) lines.push('tests running');
   if (p.asked) lines.push('a question waits for you');
+  if (p.waiting && p.status === 'todo') lines.push('waits for another ticket');
   if (p.rigged && p.status === 'review') lines.push(p.held ? 'passed, held' : p.merge >= 0 ? `passed · merge queue no. ${p.merge + 1}` : 'passed');
   if (p.rejected) lines.push(`sent back ${p.rejected}×`);
   const html = `<div class="card-head"><span class="ro"><i style="background:var(--${esc(p.status)})"></i>${esc(p.status.replace('_', ' '))}</span><span class="tid">${esc(p.id.slice(0, 8))}<b>${esc(p.id.slice(8))}</b></span><button class="chip" id="card-close" aria-label="Close">×</button></div>

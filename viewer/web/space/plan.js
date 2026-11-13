@@ -6,8 +6,10 @@
 //   (new)   backlog     todo     in_progress    in_progress, review     done      cancel
 //
 // `ready`: `k2 start` has given the ticket a slip (its name is up) and no
-// worker has come yet; its drawing still lies with the queue. The shipwright
+// worker has come yet; its drawing still lies on the todo table. The shipwright
 // of that slip fetches it when a worker is sent, and only then the keel is laid.
+// The shelf is the order board; the queue is the todo table, with two rows:
+// in front what may start, behind what waits for another ticket.
 
 export const PLACE = { backlog: 'shelf', todo: 'queue', in_progress: 'slip', review: 'slip', done: 'bay', cancel: 'scrap' };
 const ORDER = ['mail', 'shelf', 'queue', 'ready', 'slip', 'bay'];
@@ -162,8 +164,21 @@ export function footprints(Y) {
   return out;
 }
 
+// A todo ticket that cannot start because of another ticket: one it is
+// blocked by has not landed, or a solo ticket must be through first (one in
+// flight, or this one while anything is in flight). A pause before it is not
+// that: it waits for the owner.
+function waitsOnAnother(t, flying, used) {
+  if (t.status !== 'todo') return false;
+  if (t.waits?.length) return true;
+  if (flying.some((o) => o.fm?.solo === 'true')) return true;
+  return t.fm?.solo === 'true' && used > 0;
+}
+
 export function picture(D) {
   const inbox = D.inbox || [];
+  const flying = (D.tickets || []).filter((t) => t.status === 'in_progress' || t.status === 'review');
+  const used = D.places?.used ?? flying.length;
   const live = D.live || {};
   const now = live.now || D.now || Date.now();
   const order = D.queue?.order || [];
@@ -196,10 +211,15 @@ export function picture(D) {
       held: !!(t.state?.held || t.state?.stopped),
       rejected: t.rejected || 0,
       order: order.indexOf(t.id) < 0 ? 1e9 : order.indexOf(t.id),
+      waiting: waitsOnAnother(t, flying, used),
       merge: merge.indexOf(t.id),
       landed: t.landed || 0,
     };
   });
   const fleet = tickets.filter((t) => t.status === 'done').sort((a, b) => b.landed - a.landed || (a.id < b.id ? 1 : -1)).slice(0, FLEET).map((t) => t.id);
-  return { tickets, byId: new Map(tickets.map((t) => [t.id, t])), needs: inbox.length, fleet, launchNext: merge[0] || null, docks: docksOf(D.settings?.max_parallel) };
+  // The planner belongs to no ticket: at work while the board says so (`reading`), and asking for as
+  // long as a question it wrote on any ticket waits for the owner.
+  const asks = (D.tickets || []).reduce((n, t) => n + (t.status === 'cancel' ? 0 : t.plannerAsks || 0), 0);
+  const planner = { reading: !!live.planner, step: live.planner?.step || null, asks };
+  return { tickets, byId: new Map(tickets.map((t) => [t.id, t])), needs: inbox.length, fleet, launchNext: merge[0] || null, planner, docks: docksOf(D.settings?.max_parallel) };
 }

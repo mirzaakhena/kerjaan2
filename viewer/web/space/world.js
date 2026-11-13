@@ -25,7 +25,7 @@ const SEA = -0.72;
 
 const C = {
   rock: 0x7d72b3, stone: 0xcbc5da, stoneDark: 0xa9a2c2, pad: 0xb3acc8, grass: 0x86c35a, sand: 0xe6cf98,
-  wood: 0xb0703f, woodDark: 0x8a5230, woodLight: 0xd29a62, paper: 0xfbf6e8, iron: 0x4b4f6b, red: 0xd9503f, water: 0x2b86e0, deep: 0x1f5fc0,
+  wood: 0xb0703f, woodDark: 0x8a5230, woodLight: 0xd29a62, paper: 0xfbf6e8, iron: 0x4b4f6b, red: 0xd9503f, grey: 0x8b93b0, water: 0x2b86e0, deep: 0x1f5fc0,
 };
 
 // The same yard every time it is opened.
@@ -135,10 +135,13 @@ const SHARED = {
   plank: new THREE.BoxGeometry(1.7, 0.09, 0.3),
 };
 const part = (g, geo, color) => { const m = new THREE.Mesh(geo, mat(color)); m.castShadow = m.receiveShadow = true; g.add(m); };
+// Its band is red; grey while the ticket waits for another one (`userData.tie`).
 export function scroll() {
   const g = new THREE.Group();
   part(g, SHARED.roll, C.paper);
   part(g, SHARED.band, C.red);
+  const band = g.children[1];
+  g.userData.tie = (waiting) => { band.material = mat(waiting ? C.grey : C.red); };
   return g;
 }
 export function plank() {
@@ -316,7 +319,7 @@ export function buildWorld(scene) {
   const shelfSlots = [];
   for (let r = 2; r >= 0; r--) for (let k = 0; k < 4; k++) shelfSlots.push({ x: -22.5 + k * 0.6, y: 0.62 + r * 0.72, z: -18.72, z0: -18.72, ry: Math.PI / 2 });
   sign(back, 'ORDERS', -24, 3.9, -15.55);
-  // drawings: where the planner works
+  // drawings: where the architect is when the planner is not at work
   prop(back, 'pirate/structure-roof', -13, 0, -17.6, { s: S });
   const desk = box(back, 2.2, 0.08, 1.4, C.woodLight, -13, 1.02, -17.3);
   desk.rotation.x = 0.35;
@@ -326,13 +329,16 @@ export function buildWorld(scene) {
   prop(back, 'pirate/barrel', -15.2, 0, -18.6, { s: 0.7 });
   for (let k = 0; k < 3; k++) { const s = scroll(); s.position.set(-15.2 + (k - 1) * 0.16, 1.05, -18.6); s.rotation.z = Math.PI / 2 - 0.2 * (k - 1); back.add(s); }
   sign(back, 'DRAWINGS', -13, 0.5, -15.3, { w: 2.6 });
-  // the queue: drawings pinned in the order they will be built (todo)
-  box(back, 5.2, 2.6, 0.16, C.woodDark, -3, 1.9, -20.85);
-  box(back, 4.8, 2.2, 0.06, 0xdcc9a0, -3, 1.9, -20.75);
-  for (const dx of [-2.4, 2.4]) cyl(back, 0.1, 3.3, C.woodDark, -3 + dx, 1.65, -20.85, 6);
-  const queueSlots = [];
-  for (let k = 0; k < 8; k++) queueSlots.push({ x: -4.7 + (k % 4) * 1.13, y: 2.45 - Math.floor(k / 4) * 1.05, z: -20.62, z0: -20.62, ry: 0 });
-  sign(back, 'QUEUE', -3, 3.75, -20.8, { w: 2.4 });
+  // the todo table (E3 of the showroom): the tickets lie side by side in the order they will be built;
+  // in the front row what may start, in the back row, with a grey band, what waits for another ticket
+  const TX = -3, TZ = -18.6;
+  box(back, 7.2, 0.14, 2, C.woodLight, TX, 1, TZ);
+  for (const dx of [-3.2, 3.2]) for (const dz of [-0.8, 0.8]) box(back, 0.2, 1, 0.2, C.woodDark, TX + dx, 0.5, TZ + dz);
+  box(back, 7.2, 0.02, 0.06, C.woodDark, TX, 1.08, TZ);
+  const row = (dz) => Array.from({ length: 8 }, (_, k) => ({ x: TX - 2.87 + k * 0.82, y: 1.19, z: TZ + dz, z0: TZ + dz, ry: Math.PI / 2 }));
+  const queueSlots = row(0.5), waitSlots = row(-0.5);
+  for (const dx of [-1.1, 1.1]) cyl(back, 0.07, 2.7, C.woodDark, TX + dx, 1.35, TZ - 1.5, 6);
+  sign(back, 'TODO', TX, 2.75, TZ - 1.45, { w: 2.4 });
   // inspection: where the reviewer keeps the stamps
   prop(back, 'pirate/structure-fence', 12, 0, -17.6, { s: S });
   box(back, 2, 0.9, 0.9, C.wood, 12, 0.45, -17.6);
@@ -449,8 +455,9 @@ export function buildWorld(scene) {
     pierEnd: [-28, 8.8, 0, west],
     orders: [-24.6, -15.4, Math.PI, back],
     shelf: [-21.6, -17.6, Math.PI, back],
+    reading: [-19.8, -17.4, -2.2, back], // beside the order board, clear of the roof: whoever reads there is seen
     drafting: [-13, -16.1, Math.PI, back],
-    queue: [-3, -19.4, Math.PI, back],
+    queue: [-3, -17.05, Math.PI, back],
     inspection: [12, -16.3, Math.PI, back],
     timber: [22, -16.2, Math.PI, back],
     crane: [21.5, -5.3, 0, east],
@@ -499,7 +506,7 @@ export function buildWorld(scene) {
       stations[key].z = z - (part === back ? Y.deep : 0);
     }
     stations.edge.x = row[0].x - 4.6;
-    for (const slot of [...shelfSlots, ...queueSlots]) slot.z = slot.z0 - Y.deep;
+    for (const slot of [...shelfSlots, ...queueSlots, ...waitSlots]) slot.z = slot.z0 - Y.deep;
     WAYS.back = STREET - Y.deep;
     WAYS.cross = Y.cross;
     Object.assign(BOUNDS, { x0: -Y.half, x1: Y.half, z0: -30 - Y.deep });
@@ -544,7 +551,7 @@ export function buildWorld(scene) {
   }
 
   const api = {
-    stations, slips, shelfSlots, queueSlots, anchors, crane: craneState, update, move, setDocks,
+    stations, slips, shelfSlots, queueSlots, waitSlots, anchors, crane: craneState, update, move, setDocks,
     yard: null, // how it is laid out now (`yardOf`)
     rev: 0, // goes up with every new layout
     make: { scroll, plank, crate: () => { const o = spawn('pirate/crate'); o.scale.setScalar(0.5); return o; }, ship: makeShip },

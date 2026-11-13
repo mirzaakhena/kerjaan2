@@ -130,6 +130,8 @@ function trailFacts(board, id) {
     rejected: log.filter((x) => x.event === 'verdict' && x.result !== 'pass' && !x.integration).length,
     broughtIn: Math.max(log.filter((x) => x.event === 'integrate').length, log.filter((x) => x.event === 'integrated').length),
     last: last ? { ...last, at: ms(last.t) } : null,
+    // the questions the planner wrote: the role guard names who ran each step
+    plannerQs: log.filter((x) => x.event === 'question' && String(x.by || '').startsWith('planner:')).map((x) => x.key),
   };
   logCache.set(file, { sig, facts });
   return facts;
@@ -254,6 +256,9 @@ export function boardState(project) {
       broughtIn: facts.broughtIn,
     };
     if (t.status === 'todo') out.waits = C.readiness(board, t).waits;
+    // Questions of the planner that still wait for the owner (the yard's architect shows them).
+    const asks = t.status === 'cancel' ? 0 : t.record.questions.filter((q) => q.status !== 'answered' && facts.plannerQs.includes(q.key)).length;
+    if (asks) out.plannerAsks = asks;
     if (IN_FLIGHT.includes(t.status)) {
       out.worktree = rel(board, B.worktreeOf(board, t.id));
       out.state = { round: st.round || 1, rejections: st.rejections || 0, slot: st.slot || null, passed: !!st.passed, held: st.held || null, needs: st.needs || null, stopped: st.stopped || null, conflict: st.conflict || null };
