@@ -5,17 +5,21 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { die, parseArgs, run } from '../core/util.mjs';
-import { scanProjects, isBoard, MAX_DEPTH, openProject, boardSignature, boardState, liveState, ticketDetail, projectCard } from './snapshot.mjs';
+import { scanProjects, isBoard, MAX_DEPTH, openProject, boardSignature, boardState, liveState, ticketDetail, projectCard, trailSince, samePoint } from './snapshot.mjs';
 
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), 'web');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.glb': 'model/gltf-binary' };
 const DEFAULT_PORT = 4322;
+// How far back a page may ask the trail from; a point older than this, or one
+// this server does not know, is answered with no history and `reread`.
+const TRAIL_REACH = 10 * 60 * 1000;
+const TRAIL_POINTS = 500;
 
 const hash = (s) => createHash('sha1').update(s).digest('hex');
 
-export function startServer({ root, port = DEFAULT_PORT, lan = false, depth = 1 } = {}) {
+export function startServer({ root, port = DEFAULT_PORT, lan = false, depth = 1, clock = Date.now } = {}) {
   root = fs.realpathSync(path.resolve(root));
   const host = lan ? '0.0.0.0' : '127.0.0.1';
   const cache = new Map(); // project name -> { sig, body }
@@ -53,6 +57,31 @@ export function startServer({ root, port = DEFAULT_PORT, lan = false, depth = 1 
     const body = JSON.stringify(boardState(p));
     cache.set(p.name, { sig, body });
     return body;
+  }
+
+  // The trail since a point. The points live in this process only, so asking
+  // writes nothing: a point is a name for how far every trail had been read.
+  // While nothing is written the newest point is handed out again and stays
+  // fresh; one left behind for longer than the reach is forgotten.
+  const points = new Map(); // project name -> Map(name of the point -> { point, seen })
+  function timeline(p, since) {
+    const now = clock();
+    const mine = points.get(p.name) || points.set(p.name, new Map()).get(p.name);
+    for (const [name, x] of mine) if (now - x.seen > TRAIL_REACH) mine.delete(name);
+    const board = openProject(p);
+    const from = since === null ? null : mine.get(since) || null;
+    let got = from ? trailSince(board, from.point) : null;
+    const reread = since !== null && !got;
+    if (!got) got = trailSince(board);
+    let name = [...mine.keys()].pop();
+    if (name === undefined || !samePoint(mine.get(name).point, got.point)) {
+      name = randomBytes(9).toString('hex');
+      mine.set(name, { point: got.point, seen: now });
+      if (mine.size > TRAIL_POINTS) mine.delete(mine.keys().next().value);
+    } else {
+      mine.get(name).seen = now;
+    }
+    return { now, point: name, reread, events: got.events };
   }
 
   // One watch per board, however many pages follow it: once a second it
@@ -147,6 +176,7 @@ export function startServer({ root, port = DEFAULT_PORT, lan = false, depth = 1 
           if (!p) return json(res, { error: `no board named "${parts[2]}" under ${root}` }, 404);
           if (parts[3] === 'state' && parts.length === 4) return send(res, 200, stateBody(p));
           if (parts[3] === 'events' && parts.length === 4) return events(req, res, p);
+          if (parts[3] === 'timeline' && parts.length === 4) return json(res, timeline(p, url.searchParams.get('since')));
           if (parts[3] === 'ticket' && parts.length === 5) {
             const t = ticketDetail(p, parts[4]);
             return t ? json(res, t) : json(res, { error: `no ticket ${parts[4]}` }, 404);
