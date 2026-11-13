@@ -4,7 +4,7 @@
 // ticket, with a clock of its own. The yard may lag behind the board, it never
 // runs ahead; behind by much, it plays faster; behind by too much, it is put
 // as the board is now, with no story (the limits are in plan.js).
-import { picture, nextStep, FLEET, placeOf, seen, sameSeen, play, buildOf, paceOf, joins } from './plan.js';
+import { picture, nextStep, FLEET, placeOf, seen, sameSeen, play, buildOf, paceOf, joins, craneGoal } from './plan.js';
 // (What is drawn comes through `world.make`, so this module runs without a scene: tests/viewer.test.mjs.)
 
 const BERTH_Y = 0.28;
@@ -82,7 +82,7 @@ export class Director {
   }
 
   token(p, see) {
-    const tok = { id: p.id, board: p, see, pic: null, place: null, obj: null, ship: null, slip: -1, anchor: -1, slot: null, busy: false, gone: 0, shown: 0, todo: [], playing: null, run: 0, odd: false, risen: null, rig: false, stay: false, meet: null, lapped: false, hook: null, drop: 0 };
+    const tok = { id: p.id, board: p, see, pic: null, place: null, obj: null, ship: null, slip: -1, anchor: -1, slot: null, busy: false, gone: 0, shown: 0, todo: [], playing: null, run: 0, odd: false, risen: null, rig: false, stay: false, wait: false, meet: null, lapped: false, hook: null, drop: 0 };
     this.look(tok);
     tok.shown = tok.pic.build;
     tok.rig = tok.pic.rigged;
@@ -185,7 +185,9 @@ export class Director {
     this.look(tok);
     tok.rig = tok.pic.rigged;
     tok.stay = false;
+    tok.wait = false;
     tok.meet = null;
+    if (tok.slip >= 0 && this.crane(tok.slip)) this.crane(tok.slip).cancel(); // nobody waits for a piece any more
     // a hull that stays on its slip is not rebuilt, unless a launch cut short has left it down the ramp
     // (or a drawing was in somebody's hands)
     if (tok.place !== tok.pic.place || tok.adrift) this.put(tok, tok.pic.place);
@@ -228,7 +230,11 @@ export class Director {
       tok.ship.dispose();
       tok.ship = null;
     }
-    if (tok.slip >= 0) { this.slipOf[tok.slip] = null; tok.slip = -1; }
+    if (tok.slip >= 0) {
+      if (this.crane(tok.slip)) this.crane(tok.slip).cancel();
+      this.slipOf[tok.slip] = null;
+      tok.slip = -1;
+    }
     if (tok.anchor >= 0) { this.anchorOf[tok.anchor] = null; tok.anchor = -1; }
     const i = this.fleet.indexOf(tok);
     if (i >= 0) this.fleet.splice(i, 1);
@@ -268,6 +274,7 @@ export class Director {
       if (k >= 0 && place === 'slip') {
         this.berth(tok, k);
         tok.shown = tok.pic.build;
+        if (tok.pic.rigged && this.crane(k)) this.crane(k).reset(); // the sails are up: its crane is parked, with no story
         return;
       }
       if (k >= 0) { this.slipOf[k] = tok; tok.slip = k; } // its name is up; its drawing still lies on the todo table
@@ -335,7 +342,7 @@ export class Director {
   // How high the hull of a token on a slip is to stand; null when it has none there.
   goal(tok) {
     if (tok.place !== 'slip' || !tok.ship) return null;
-    if (tok.stay) return tok.shown; // sent back: it stands as it stood until the inspector has said so
+    if (tok.stay || tok.wait) return tok.shown; // sent back: it stands as it stood until the inspector has said so; a criterion met: until the crane has set the piece down
     return tok.pic.status === 'done' ? 1 : tok.pic.build; // done: on its way down the ramp
   }
 
@@ -353,13 +360,15 @@ export class Director {
     for (const tok of this.tokens.values()) {
       if (tok.busy || tok.gone) continue;
       // events with no scene are over at once; the first that has one is played to its end
-      let verdict = null, at = null, played = false;
+      let verdict = null, at = null, played = false, piece = false;
       while (tok.todo.length && !verdict && !this.stepFor(tok) && !this.uneven(tok)) {
         const e = tok.todo.shift();
         verdict = play(tok.see, e);
         this.look(tok);
         at = e.at;
         played = true;
+        // a criterion met on a hull that stands on its slip: the slip's crane brings a piece first
+        piece = e.event === 'check' && !this.stepFor(tok) && this.uneven(tok) && this.goal(tok) > tok.shown;
       }
       if (!verdict && !this.stepFor(tok) && !this.uneven(tok)) {
         // all of it shown: the board may have been read before the last of these events
@@ -369,12 +378,14 @@ export class Director {
       tok.busy = true;
       tok.playing = at;
       tok.stay = verdict === 'reject';
+      tok.wait = piece;
       const run = tok.run;
       const live = () => tok.run === run;
-      this.story(tok, verdict, live)
+      this.story(tok, verdict, live, piece)
         .catch((e) => { console.error(`scene ${tok.id}:`, e); if (live()) this.put(tok, tok.pic.place); })
         .finally(() => {
           tok.stay = false;
+          if (live()) tok.wait = false;
           tok.busy = false;
           tok.playing = null;
           if (!tok.todo.length && this.ask) this.ask();
@@ -386,7 +397,7 @@ export class Director {
 
   // Carry the token to where the event left it, step by step; then the scene of the review, if the
   // event was one. `scene` is what `play` said: 'handed', 'pass', 'reject' or 'cheer'.
-  async story(tok, scene, live) {
+  async story(tok, scene, live, piece = false) {
     for (let step; live() && (step = this.stepFor(tok));) {
       if (step === 'prepare' && tok.slip < 0) {
         // the slip is taken here and now, so two that start in one look never get the same one
@@ -395,6 +406,10 @@ export class Director {
         tok.slip = k;
       }
       await this[step](tok, live);
+    }
+    if (piece && live()) {
+      await this.hoist(tok);
+      if (live()) tok.wait = false;
     }
     // a hull that an event raised or lowered is seen to move before the next event plays
     if (live() && this.uneven(tok)) await this.rise(tok);
@@ -411,6 +426,21 @@ export class Director {
   }
 
   reset(tok) { this.put(tok, tok.pic.place); }
+
+  // ----- the crane of a slip (crane.js): none in a yard that has no cranes -----
+
+  crane(k) { return (this.w.cranes && this.w.cranes[k]) || null; }
+
+  // A criterion is met: the crane of the slip sets one piece down in the hull. Only then does the hull rise.
+  async hoist(tok) {
+    const crane = this.crane(tok.slip);
+    if (!crane || craneGoal(tok.pic) === 'park' || !tok.ship) return;
+    crane.pace = this.speed;
+    await crane.deliver(() => (tok.ship && tok.ship.top ? tok.ship.top() : 2));
+  }
+
+  // No arm is over a hull whose sails go up: they are set once the slip's crane is parked.
+  parked(k) { const crane = this.crane(k); return !crane || crane.parked; }
 
   // mail -> shelf: the order comes with its party by the order boat, and the courier files them all
   async deliver(tok, live) {
@@ -545,9 +575,9 @@ export class Director {
     if (!ship || crane.jobs.length >= BUSY) return this.put(tok, 'bay');
     await this.job(crane, async (a) => {
       a.doing = `launching “${short(tok.pic.title)}”`;
-      this.w.crane.aim = 0.2;
       await a.goTo(this.w.slips[k].spots[7]);
       await a.act('interact-left', 1.6);
+      if (this.crane(k)) { this.crane(k).aim('park'); await this.crane(k).whenParked(); } // the slip's crane is out of the way of the masts
       if (!live()) return;
       tok.adrift = true;
       tok.shown = 1;
@@ -752,15 +782,24 @@ export class Director {
     this.slipOf.forEach((tok, k) => {
       const slip = this.w.slips[k];
       if (!slip) return;
-      if (!tok || !tok.ship || tok.place !== 'slip') { slip.lamp(null); slip.label(tok ? `${tok.id.slice(8)} ${tok.pic.title}` : ''); return; }
+      const crane = this.crane(k);
+      if (crane) crane.pace = this.speed;
+      if (!tok || !tok.ship || tok.place !== 'slip') {
+        if (crane) crane.aim('park'); // no hull: it stands parked
+        slip.lamp(null);
+        slip.label(tok ? `${tok.id.slice(8)} ${tok.pic.title}` : '');
+        return;
+      }
       const p = tok.pic;
       const landed = p.status === 'done'; // on its way down the ramp
       // the hull stands as high as the criteria met: it moves when one is met, taken back or struck out
       const goal = this.goal(tok);
       tok.shown += (goal - tok.shown) * Math.min(1, dt * this.speed * 0.5);
       if (tok.risen && !this.uneven(tok)) { const done = tok.risen; tok.risen = null; done(); }
+      // the crane works while the ticket's worker does; a piece asked for (`hoist`) it brings whatever it is told
+      if (crane) crane.aim(tok.gone ? 'hold' : craneGoal(p));
       tok.ship.setBuild(landed ? 1 : tok.shown);
-      tok.ship.setRigged(landed || tok.rig);
+      tok.ship.setRigged(tok.adrift || ((landed || tok.rig) && this.parked(k)));
       this.moor(tok, k, dt);
       slip.lamp(p.testing);
       slip.label(`${tok.id.slice(8)} ${p.title}`);
@@ -797,5 +836,17 @@ export async function plannerDuty(a, w, dir) {
     a.doing = `waiting for the owner's answer to ${p.asks === 1 ? 'a question' : `${p.asks} questions`} about the orders`;
     await a.act('idle', 2.6);
   }
+  return true;
+}
+
+// The crane operator stands by the ship that holds the turn to land: at its bow, on the side of the water.
+// (The name is from the yard that had one large crane. There is none now: every slip has its own, and
+// none of them is this person's.) No such ship on a slip: this is no duty.
+export async function craneDuty(a, w, dir) {
+  const tok = dir && dir.pic && dir.pic.launchNext ? dir.tokens.get(dir.pic.launchNext) : null;
+  if (!tok || !tok.ship || tok.place !== 'slip' || tok.gone || !w.slips[tok.slip]) return false;
+  a.doing = `standing by to launch “${short(tok.pic.title)}”`;
+  await a.goTo(w.slips[tok.slip].spots[7]);
+  await a.act('interact-left', 3.5, { repeat: true });
   return true;
 }

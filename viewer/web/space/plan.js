@@ -11,6 +11,8 @@
 // The shelf is the order board; the queue is the todo table, with two rows:
 // in front what may start, behind what waits for another ticket.
 
+import { craneAt, FOOT } from './crane.js';
+
 export const PLACE = { backlog: 'shelf', todo: 'queue', in_progress: 'slip', review: 'slip', done: 'bay', cancel: 'scrap' };
 const ORDER = ['mail', 'shelf', 'queue', 'ready', 'slip', 'bay'];
 const STEPS = ['deliver', 'plan', 'prepare', 'fetch', 'launch'];
@@ -132,7 +134,7 @@ export const STREET = -13.6; // the walkway behind the front row
 export const ROW = 14.8; // how far behind the front row the second one stands
 const DOCK = 3.4; // half the width of a slip, scaffold and all
 const HULL = 2.4; // half the beam of the widest ship
-const WEST = 15.5, EAST = 17; // what the mail pier, and the crane with the lighthouse, take of the waterfront
+const WEST = 15.5, EAST = 17; // what the mail pier, and the lighthouse with the quay beside it, take of the waterfront
 
 // Where everything stands for `n` slips. x runs along the water, z is negative inland; the quay's edge is z = 0.
 // `half` is half the island's width: it grows when the slips need more waterfront than the yard of four had.
@@ -150,8 +152,13 @@ export function yardOf(n) {
   for (let k = 0; k < back; k++) docks.push({ x: x0 + (k + 0.5) * pitch, z: -ROW, row: 1 });
   // where one walks from the street behind the back row to the one between the rows: past the ends of the back row, and between its slips
   const cross = back ? Array.from({ length: back + 1 }, (_, k) => x0 + k * pitch) : [];
-  return { n, front, back, pitch, half, deep: back ? ROW : 0, east: half - 32, side, docks, cross, crane: { x: half - 10.5, z: -3 }, light: { x: half - 4, z: 3.4 }, pier: { x: 4 - half } };
+  return { n, front, back, pitch, half, deep: back ? ROW : 0, east: half - 32, side, docks, cross, cranes: docks.map(craneAt), light: { x: half - 4, z: 3.4 }, pier: { x: 4 - half } };
 }
+
+// What the crane of a slip is to do (crane.js), by what the yard shows of the ticket there (`p`: null when no
+// hull stands on the slip): parked beside sails that are up or going up, and at an empty slip; at work only
+// while the ticket's worker is; else it stands as it is.
+export const craneGoal = (p) => (!p || p.rigged || p.status === 'done' ? 'park' : p.status === 'in_progress' && p.worker === 'working' ? 'work' : 'hold');
 
 // What stands on the ground of such a yard, as rectangles { kind, x0, x1, z0, z1 }: for the test that nothing overlaps.
 export function footprints(Y) {
@@ -162,7 +169,7 @@ export function footprints(Y) {
     rect('slipway', d.x, HULL, d.z - 0.1, 10.5, { k }); // what its hull sweeps on the way to the water
     for (const s of [-1, 1]) for (const dz of [-10, -7.5, -5, -2.5]) out.push({ kind: 'spot', x0: d.x + s * Y.side, x1: d.x + s * Y.side, z0: d.z + dz, z1: d.z + dz, k });
   });
-  rect('crane', Y.crane.x, 1.2, Y.crane.z - 1.2, Y.crane.z + 1.2);
+  Y.cranes.forEach((c, k) => rect('crane', c.x, FOOT, c.z - FOOT, c.z + FOOT, { k })); // at the head of its own slip, on its corner
   rect('lighthouse', Y.light.x, 3.6, Y.light.z - 3.6, Y.light.z + 3.6);
   rect('pier', Y.pier.x + 1.1, 2.7, 0, 10.4); // with the mail boat alongside
   out.push({ kind: 'street', x0: -Y.half, x1: Y.half, z0: STREET - 0.8, z1: STREET + 0.8 });
