@@ -117,6 +117,9 @@ export class Actor {
   }
 
   say(glyph, seconds = 2.5) {
+    // said again while it still shows: it stays up, it does not pop anew
+    if (this.bubble.visible && this.glyph === glyph && this.bubbleLeft > 0.2) { this.bubbleLeft = Math.max(this.bubbleLeft, seconds); return; }
+    this.glyph = glyph;
     const first = !this.bubble.material.map;
     this.bubble.material.map = bubbleTexture(glyph);
     if (first) this.bubble.material.needsUpdate = true;

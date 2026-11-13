@@ -8,11 +8,14 @@ import { PEOPLE, startCast } from './cast.js';
 import { Director } from './director.js';
 import { startDemo } from './demo.js';
 import { drawFaces } from './faces.js';
+import { docksOf } from './plan.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const PROJECT = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || '');
-const DEMO = new URLSearchParams(location.search).has('demo');
+const QUERY = new URLSearchParams(location.search);
+const DEMO = QUERY.has('demo');
+const DEMO_DOCKS = docksOf(QUERY.get('docks')); // `?demo&docks=6`: the demo's board has that many places (4 when not said)
 const STATUSES = ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancel'];
 const HERE = `/p/${encodeURIComponent(PROJECT)}`;
 
@@ -21,6 +24,7 @@ document.title = `${PROJECT} · shipyard · k2`;
 $('#demo').textContent = DEMO ? 'Leave the demo' : 'Demo';
 $('#demo').href = DEMO ? `${HERE}/space` : `${HERE}/space?demo`;
 $('#demo-note').hidden = !DEMO;
+if (DEMO) $('#demo-note').innerHTML += ` Slips: ${[1, 3, 4, 6, 7, 10].map((n) => (n === DEMO_DOCKS ? `<b>${n}</b>` : `<a href="${HERE}/space?demo&amp;docks=${n}">${n}</a>`)).join(' · ')}`;
 
 // ----- the board -----
 let D = null; // the last state read
@@ -72,7 +76,7 @@ function readSoon() {
   if (!soon) soon = setTimeout(() => { soon = 0; read(); }, 1000);
 }
 function follow_board() {
-  if (DEMO) return startDemo(show);
+  if (DEMO) { window.k2space.demo = startDemo(show, { docks: DEMO_DOCKS }); return; }
   read();
   const es = new EventSource(`/api${HERE}/events`);
   // a stream that opens again may have missed changes: read the board afresh
@@ -83,6 +87,7 @@ function follow_board() {
 }
 
 // ----- the scene -----
+let world = null; // the yard, once its models are loaded
 const stage = $('#stage');
 let renderer;
 try {
@@ -110,7 +115,7 @@ sun.position.set(-28, 46, 30);
 sun.target.position.set(0, 0, -4);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(small ? 2048 : 4096);
-Object.assign(sun.shadow.camera, { left: -46, right: 46, top: 46, bottom: -46, near: 1, far: 150 });
+Object.assign(sun.shadow.camera, { left: -46, right: 46, top: 46, bottom: -46, near: 1, far: 190 });
 sun.shadow.bias = -0.0003;
 sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
@@ -121,7 +126,7 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.screenSpacePanning = false;
 controls.minDistance = 9;
-controls.maxDistance = 320;
+controls.maxDistance = 520;
 controls.minPolarAngle = 0.2;
 controls.maxPolarAngle = 1.46;
 
@@ -133,14 +138,28 @@ function resize() {
   camera.updateProjectionMatrix();
   if (atHome) home();
 }
+// The whole yard in view, however many slips it has.
 function home() {
-  const far = camera.aspect < 1 ? 300 : 140;
-  controls.target.set(2, 0, 1);
+  const Y = world && world.yard;
+  const grown = Y ? Math.max(Y.half / 32, (56 + Y.deep) / 56) : 1;
+  const far = (camera.aspect < 1 ? 300 : 140) * grown;
+  controls.target.set(2, 0, 1 - (Y ? Y.deep / 2 : 0));
   camera.position.copy(controls.target).add(new THREE.Vector3(0.6, 0.62, 0.82).normalize().multiplyScalar(far));
   atHome = true;
 }
 resize();
 addEventListener('resize', resize);
+// The yard was laid out anew (the board has more places, or fewer): the light and the view go with it.
+let laid = 0;
+function relaid() {
+  laid = world.rev;
+  const Y = world.yard, reach = Math.max(46, Y.half + 4, (56 + Y.deep) / 2 + 12);
+  Object.assign(sun.shadow.camera, { left: -reach, right: reach, top: reach, bottom: -reach });
+  sun.shadow.camera.updateProjectionMatrix();
+  sun.target.position.set(0, 0, -4 - Y.deep / 2);
+  sun.position.set(-28, 46, 30 - Y.deep / 2);
+  if (atHome) home();
+}
 controls.addEventListener('start', () => { atHome = false; });
 
 // ----- following one person -----
@@ -156,15 +175,20 @@ function follow(actor) {
   for (const b of document.querySelectorAll('#roster [data-actor]')) b.setAttribute('aria-pressed', String(actors[Number(b.dataset.actor)] === followed));
   $('#doing').textContent = followed ? `Following ${followed.name}: ${followed.doing}` : '';
 }
-// One row per person: the face, the name, and what they are doing now.
+// One row per person: the face, the name, and what they are doing now. Drawn again when a shipwright comes or goes.
+const faceOf = new Map();
+let rosterTimer = 0;
 function renderRoster() {
-  const faces = drawFaces(actors.map((a) => a.key));
+  const fresh = [...new Set(actors.map((a) => a.key))].filter((key) => !faceOf.has(key));
+  if (fresh.length) drawFaces(fresh).forEach((url, i) => faceOf.set(fresh[i], url));
+  const faces = actors.map((a) => faceOf.get(a.key));
   $('#roster').innerHTML = actors.map((a, i) => `<button class="who" data-actor="${i}" aria-pressed="false" title="Follow ${esc(a.name)}">${faces[i] ? `<img src="${faces[i]}" alt="">` : '<span class="noface"></span>'}<span class="txt"><b>${esc(a.name)}</b><small></small></span></button>`).join('');
+  for (const b of document.querySelectorAll('#roster [data-actor]')) b.setAttribute('aria-pressed', String(actors[Number(b.dataset.actor)] === followed));
   renderDoing();
-  setInterval(renderDoing, 500);
+  if (!rosterTimer) rosterTimer = setInterval(renderDoing, 500);
 }
 function renderDoing() {
-  document.querySelectorAll('#roster small').forEach((el, i) => { if (el.textContent !== actors[i].doing) el.textContent = actors[i].doing; });
+  document.querySelectorAll('#roster small').forEach((el, i) => { if (actors[i] && el.textContent !== actors[i].doing) el.textContent = actors[i].doing; });
 }
 $('#roster').addEventListener('click', (e) => {
   const b = e.target.closest('[data-actor]');
@@ -191,6 +215,7 @@ function renderCard() {
   if (p.reviewer !== 'away') lines.push(p.reviewer === 'stuck' ? 'its reviewer is stuck' : `reviewer at work${p.step ? `: ${p.step}` : ''}`);
   if (p.testing) lines.push('tests running');
   if (p.asked) lines.push('a question waits for you');
+  if (p.waiting && p.status === 'todo') lines.push('waits for another ticket');
   if (p.rigged && p.status === 'review') lines.push(p.held ? 'passed, held' : p.merge >= 0 ? `passed · merge queue no. ${p.merge + 1}` : 'passed');
   if (p.rejected) lines.push(`sent back ${p.rejected}×`);
   const html = `<div class="card-head"><span class="ro"><i style="background:var(--${esc(p.status)})"></i>${esc(p.status.replace('_', ' '))}</span><span class="tid">${esc(p.id.slice(0, 8))}<b>${esc(p.id.slice(8))}</b></span><button class="chip" id="card-close" aria-label="Close">×</button></div>
@@ -231,13 +256,13 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 });
 
 // ----- go -----
-let world = null;
 const clock = new THREE.Clock();
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.1);
   const t = clock.elapsedTime;
   world.update(t, dt);
   director.frame(dt);
+  if (world.rev !== laid) relaid();
   for (const a of actors) a.update(a.hurry ? dt * director.speed : dt); // a scene keeps the yard's pace
   if (followed) {
     // the camera keeps its angle and rides along with the person
@@ -266,13 +291,19 @@ function frame() {
     world = buildWorld(scene);
     const cast = startCast(scene, world, () => director);
     actors = cast.actors;
+    cast.onChange = () => {
+      actors = cast.actors;
+      if (followed && !actors.includes(followed)) follow(null);
+      renderRoster();
+    };
     director = new Director(scene, world, cast.cast);
+    director.crew = cast.setWrights;
     if (!DEMO) director.ask = readSoon;
     cast.begin();
     renderRoster();
     $('#loading').hidden = true;
     renderer.setAnimationLoop(frame);
-    window.k2space = { scene, camera, controls, actors, world, director, follow, home, read };
+    window.k2space = { scene, camera, controls, get actors() { return actors; }, world, director, follow, home, read };
     follow_board();
   } catch (e) {
     console.error(e);

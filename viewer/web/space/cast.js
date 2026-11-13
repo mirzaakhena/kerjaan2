@@ -4,7 +4,7 @@
 // and claims nothing about any ticket.
 import { Actor } from './actor.js';
 import { plank } from './world.js';
-import { short, LAP } from './director.js';
+import { short, plannerDuty, LAP } from './director.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -30,11 +30,10 @@ const chores = {
   planner: [
     async (a, w) => { a.doing = 'sharpening pencils'; await a.goTo(w.stations.drafting); await a.act('interact-left', rnd(2, 4), { repeat: true }); },
     async (a, w) => { await a.goTo(w.stations.drafting); await think(a, 'studying old drawings'); },
-    async (a, w) => { a.doing = 'reading the queue'; await a.goTo(near(w.stations.queue)); await a.wait(rnd(3, 5)); },
   ],
   foreman: [
-    async (a, w) => { a.doing = 'reading the queue'; await a.goTo(near(w.stations.queue)); await a.wait(rnd(3, 5)); },
-    async (a, w) => { const k = Math.floor(rnd(0, 4)); a.doing = `looking in on slip ${k + 1}`; await a.goTo(w.slips[k].spots[pick([0, 4])]); await a.wait(rnd(2, 4)); },
+    async (a, w) => { a.doing = 'looking over the todo table'; await a.goTo(near(w.stations.queue)); await a.wait(rnd(3, 5)); },
+    async (a, w) => { const k = Math.floor(rnd(0, w.slips.length)); a.doing = `looking in on slip ${k + 1}`; await a.goTo(w.slips[k].spots[pick([0, 4])]); await a.wait(rnd(2, 4)); },
     async (a, w) => { a.doing = 'watching the launch ramps'; await a.goTo(w.stations.edge); await a.wait(rnd(3, 5)); },
     async (a, w) => { await a.goTo(near(w.stations.timber, 2)); await think(a, 'counting the timber'); },
   ],
@@ -73,7 +72,7 @@ const chores = {
 // shipwright builds, and says the agent's own last step.
 async function wrightDuty(a, w, dir, k) {
   const tok = dir.onSlip(k);
-  if (!tok) return false;
+  if (!tok || !w.slips[k]) return false;
   const p = tok.pic, title = `“${short(p.title)}”`;
   const side = w.slips[k].spots;
   if (tok.meet != null) {
@@ -162,18 +161,20 @@ async function keeperDuty(a, w, dir) {
 
 const CAST = [
   { key: 0, name: 'Courier', role: 'courier', at: 'orders', chores: chores.courier },
-  { key: 1, name: 'Draughtsman', role: 'planner', at: 'drafting', chores: chores.planner },
+  { key: 1, name: 'Naval Architect', role: 'planner', at: 'drafting', chores: chores.planner, duty: plannerDuty },
   { key: 2, name: 'Foreman', role: 'foreman', at: 'queue', chores: chores.foreman },
-  ...[3, 4, 5, 6].map((key, k) => ({ key, name: `Shipwright ${k + 1}`, role: 'wright', slip: k, chores: chores.wright, duty: wrightDuty })),
   { key: 7, name: 'Inspector', role: 'inspector', at: 'inspection', chores: chores.inspector, duty: inspectorDuty },
   { key: 8, name: 'Crane operator', role: 'crane', at: 'crane', chores: chores.crane, duty: craneDuty },
   { key: 9, name: 'Keeper', role: 'keeper', at: 'bench', chores: chores.keeper, duty: keeperDuty },
 ];
+// One shipwright for each slip. There are four of them to look at: from the fifth slip on they come again, in another order.
+const WRIGHTS = [3, 4, 5, 6, 5, 3, 6, 4, 4, 6];
+const wrightOf = (k) => ({ key: WRIGHTS[k % WRIGHTS.length], name: `Shipwright ${k + 1}`, role: 'wright', slip: k, chores: chores.wright, duty: wrightDuty });
 
-// One thing at a time, for ever: an actor has one walk and one wait, so
+// One thing at a time, for as long as they are in the yard: an actor has one walk and one wait, so
 // nothing else may drive it while this loop does.
 async function day(c, a, w, director) {
-  for (;;) {
+  while (!a.gone) {
     try {
       const job = a.jobs.shift();
       if (job) {
@@ -182,6 +183,7 @@ async function day(c, a, w, director) {
         await pick(c.chores)(a, w, c.slip);
       }
     } catch (e) {
+      if (a.gone) return; // its slip was taken away under it
       console.error(`${c.name}:`, e);
       a.hold(null);
       await a.wait(2);
@@ -190,16 +192,41 @@ async function day(c, a, w, director) {
 }
 
 // `director` is a function: the director is made after the people it directs.
+// `setWrights(n)` keeps one shipwright for each of `n` slips; `onChange` is told when people come or go.
 export function startCast(scene, world, director) {
-  const actors = CAST.map((c) => {
-    const at = c.slip === undefined ? world.stations[c.at] : world.slips[c.slip].spots[c.slip % 2 ? 5 : 1];
+  let begun = false;
+  const enter = (c, at) => {
     const actor = new Actor({ key: PEOPLE[c.key], name: c.name, role: c.role, at });
     scene.add(actor.root);
     actor.key = PEOPLE[c.key];
+    if (begun) day(c, actor, world, director);
     return actor;
-  });
-  const by = (role) => actors.filter((a) => a.role === role);
-  const cast = { courier: by('courier')[0], planner: by('planner')[0], foreman: by('foreman')[0], wrights: by('wright'), inspector: by('inspector')[0], crane: by('crane')[0], keeper: by('keeper')[0] };
-  const begin = () => CAST.forEach((c, i) => { day(c, actors[i], world, director); });
-  return { actors, cast, begin };
+  };
+  const fixed = CAST.map((c) => enter(c, world.stations[c.at]));
+  const by = (role) => fixed.find((a) => a.role === role);
+  const wrights = [];
+  const out = {
+    cast: { courier: by('courier'), planner: by('planner'), foreman: by('foreman'), wrights, inspector: by('inspector'), crane: by('crane'), keeper: by('keeper') },
+    onChange: () => {},
+    // in the order of the list beside the yard: the shipwrights after the foreman
+    get actors() { return [...fixed.slice(0, 3), ...wrights, ...fixed.slice(3)]; },
+    setWrights(n) {
+      if (n === wrights.length) return;
+      while (wrights.length < n) { const k = wrights.length; wrights.push(enter(wrightOf(k), world.slips[k].spots[k % 2 ? 5 : 1])); }
+      while (wrights.length > n) {
+        const a = wrights.pop();
+        a.gone = true;
+        scene.remove(a.root);
+        for (const job of a.jobs.splice(0)) job.done(); // nobody waits for one who has left
+      }
+      out.onChange();
+    },
+    begin() {
+      begun = true;
+      CAST.forEach((c, i) => { day(c, fixed[i], world, director); });
+      wrights.forEach((a, k) => { day(wrightOf(k), a, world, director); });
+    },
+  };
+  out.setWrights(world.slips.length);
+  return out;
 }

@@ -265,9 +265,14 @@ test('the yard reads the board: where each ticket is, who is on it, and what wai
   const at = (id) => pic.byId.get(id);
   assert.equal(at(waiting).place, { backlog: 'shelf', todo: 'queue' }[at(waiting).status]);
   assert.equal(at(working).status, 'in_progress');
-  assert.equal(at(working).place, 'slip');
+  assert.equal(at(working).place, 'ready', 'started, and no worker sent yet: its slip is ready, its drawing not fetched');
   assert.equal(at(working).worker, 'away', 'no agent was recorded on it');
-  assert.ok(at(working).build >= 0.25 && at(working).build < 1);
+  assert.equal(at(working).build, 0);
+  assert.equal(pic.docks, 3, 'as many slips as the board has places');
+  assert.equal(r.k('agent', working, 'worker', 'w1').code, 0);
+  const sent = picture((await get(s, '/api/p/toko/state')).body).byId.get(working);
+  assert.equal(sent.place, 'slip');
+  assert.ok(sent.build >= 0.25 && sent.build < 1);
   assert.equal(at(working).title, 'Dikerjakan');
   assert.equal(pic.needs, D.inbox.length);
   assert.deepEqual(pic.fleet, []);
@@ -318,7 +323,7 @@ test('the yard reads the board: where each ticket is, who is on it, and what wai
   assert.match(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'core', 'cmd-board.mjs'), 'utf8'), /add\('stuck', '', `\$\{role\} \$\{st\[role\]\.agent\} has been on it/);
 
   // one step at a time towards where the board has it
-  assert.deepEqual(['mail', 'shelf', 'queue', 'slip'].map((from) => nextStep(from, 'bay')), ['deliver', 'plan', 'start', 'launch']);
+  assert.deepEqual(['mail', 'shelf', 'queue', 'ready', 'slip'].map((from) => nextStep(from, 'bay')), ['deliver', 'plan', 'prepare', 'fetch', 'launch']);
   assert.equal(nextStep('shelf', 'shelf'), null);
   assert.equal(nextStep('queue', 'scrap'), 'scrap');
   assert.equal(nextStep('slip', 'queue'), 'reset', 'a ticket moved back is put there, with no story');
@@ -506,27 +511,39 @@ async function stagedYard() {
   const { Director } = await import('../viewer/web/space/director.js');
   const thing = () => ({ position: { x: 0, y: 0, z: 0, set(x, y, z) { Object.assign(this, { x, y, z }); } }, rotation: { y: 0, set() {} }, userData: {}, visible: true });
   const spot = { x: 0, z: 0 };
+  const slipAt = (k) => ({ x: k * 10, z: -6.4, k, spots: Array.from({ length: 8 }, (_, i) => ({ x: k * 10, z: 0, slip: k, spot: i })), lamp() {}, label(text) { this.name = text; } });
   const world = {
-    slips: [0, 1, 2, 3].map((k) => ({ x: k * 10, spots: Array.from({ length: 8 }, (_, i) => ({ ...spot, name: `slip ${k + 1} spot ${i}` })), lamp() {}, label() {} })),
+    slips: [0, 1, 2, 3].map(slipAt),
+    laid: [], // every layout asked for
+    setDocks(n) { this.laid.push(n); this.slips.length = 0; for (let k = 0; k < n; k++) this.slips.push(slipAt(k)); },
     anchors: [0, 1, 2, 3].map((k) => ({ x: k * 10, z: 20, ry: 0 })),
-    shelfSlots: Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })), queueSlots: Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })),
-    stations: new Proxy({}, { get: (_, name) => ({ x: 0, z: 0, name }) }), crane: {}, sea: 0,
-    make: { scroll: thing, plank: thing, crate: thing, ship: (size, livery) => ({ o: thing(), size, livery, built: null, rigged: null, setBuild(b) { this.built = b; }, setRigged(v) { this.rigged = v; }, dispose() {} }), anchor: () => ({ o: thing(), drop: null, set(k) { this.drop = k; } }) },
+    shelfSlots: Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })), queueSlots: Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })), waitSlots: Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })),
+    stations: new Proxy({}, { get: (_, name) => ({ x: 0, z: 0, name, station: name }) }), crane: {}, sea: 0,
+    make: { scroll: thing, plank: thing, crate: thing, ship: (size, livery) => ({ o: thing(), size, livery, built: null, rigged: null, setBuild(b) { this.built = b; }, setRigged(v) { this.rigged = v; }, dispose() {} }), anchor: () => ({ o: thing(), drop: null, set(k) { this.drop = k; }, at() {} }) },
     move: async () => {}, floatOn() {}, floatOff() {}, setFlags() {}, mailIn() {}, mailTake() {}, mailOut() {},
   };
-  // `drama`: what the people said, did and went to, and the scenes of the review, in order
+  // a person keeps a diary: where they went (a station, or a slip) and what they took in their hands
+  // `drama`: what the people said and did, which spot of a slip they went to, and the scenes of the review, in order
   const drama = [];
-  const person = (who) => ({ jobs: [], doing: '', say(glyph) { drama.push(`${who} says ${glyph}`); }, hold() {}, goTo: async (to) => { if (to && to.name) drama.push(`${who} to ${to.name}`); }, act: async (name) => { drama.push(`${who} ${name}`); }, wait: async () => {} });
-  const cast = { courier: person('courier'), planner: person('planner'), foreman: person('foreman'), wrights: [1, 2, 3, 4].map((n) => person(`wright ${n}`)), inspector: person('inspector'), crane: person('crane'), keeper: person('keeper') };
+  const person = (name) => {
+    const diary = [];
+    return { name, jobs: [], doing: '', diary, say(glyph) { drama.push(`${name} says ${glyph}`); }, hold(item) { diary.push(item ? 'takes a drawing' : 'hands empty'); }, goTo: async (to) => { diary.push(to.station ? `to ${to.station}` : `to slip ${to.slip + 1}`); if (to.spot !== undefined) drama.push(`${name} to slip ${to.slip + 1} spot ${to.spot}`); }, act: async (what) => { drama.push(`${name} ${what}`); }, wait: async () => {} };
+  };
+  const cast = { courier: person('courier'), planner: person('planner'), foreman: person('foreman'), wrights: [0, 1, 2, 3].map((k) => person(`wright ${k + 1}`)), inspector: person('inspector'), crane: person('crane'), keeper: person('keeper') };
   const people = [cast.courier, cast.planner, cast.foreman, ...cast.wrights, cast.inspector, cast.crane, cast.keeper];
   const errors = [];
   const dir = new Director({ add() {}, remove() {} }, world, cast);
+  // one shipwright for each slip, as the page keeps them
+  dir.crew = (n) => {
+    while (cast.wrights.length < n) { const a = person(`wright ${cast.wrights.length + 1}`); cast.wrights.push(a); people.push(a); }
+    while (cast.wrights.length > n) people.splice(people.indexOf(cast.wrights.pop()), 1);
+  };
   const clock = { t: 1700000000000 };
   dir.clock = () => clock.t;
   const asked = { n: 0 };
   dir.ask = () => { asked.n++; };
   const journal = [];
-  for (const step of ['deliver', 'plan', 'start', 'launch', 'scrap', 'verdict']) {
+  for (const step of ['deliver', 'plan', 'prepare', 'fetch', 'launch', 'scrap', 'verdict']) {
     const real = dir[step].bind(dir);
     dir[step] = (tok, a, b) => { journal.push(step === 'verdict' ? `${a ? 'pass' : 'reject'} ${tok.id}` : `${step} ${tok.id}`); if (step === 'verdict' || step === 'launch') drama.push(`[${journal[journal.length - 1]}]`); return real(tok, a, b); };
   }
@@ -556,7 +573,14 @@ async function stagedYard() {
   // an event of the trail, and a read of it, in the shape the server gives
   const E = (ticket, event, more = {}) => ({ ticket, event, at: clock.t, ...more });
   const trailOf = (events, more = {}) => ({ now: clock.t, events, reread: false, ...more });
-  return { dir, settle, T, board, where, errors, journal, E, trailOf, clock, asked, people, world, cast, drama };
+  // where a ticket lies on the todo table: 'front 0', 'back 2', or null when it is not drawn there
+  const row = (id) => {
+    const tok = dir.tokens.get(id);
+    if (!tok || tok.place !== 'queue' || !tok.slot) return null;
+    const f = world.queueSlots.indexOf(tok.slot), b = world.waitSlots.indexOf(tok.slot);
+    return f >= 0 ? `front ${f}` : `back ${b}`;
+  };
+  return { dir, settle, T, board, where, errors, journal, E, trailOf, clock, asked, people, cast, row, world, drama };
 }
 
 test('the yard plays the trail of a ticket: every event a scene, in the order written, none skipped and none run over', async () => {
@@ -572,7 +596,7 @@ test('the yard plays the trail of a ticket: every event a scene, in the order wr
     [T(id, 'review', { criteria: crit(true, true), rejected: 1, state: { passed: true } }), [E(id, 'check', { n: 2 }), E(id, 'submitted', { to: 'review' }), E(id, 'verdict', { result: 'pass', round: 2 })], 'slip'],
     [T(id, 'done', { criteria: crit(true, true), rejected: 1, landed: 5 }), [E(id, 'integrate', {}), E(id, 'integrated', {}), E(id, 'landed')], 'bay'],
   ];
-  const played = (id) => ['deliver', 'plan', `hull ${id} 0.25`, 'start', `hull ${id} 0.625`, `hull ${id} 1`, `hull ${id} 0.625`, 'reject', `hull ${id} 1`, 'pass', 'launch'].map((x) => (x.startsWith('hull') ? x : `${x} ${id}`));
+  const played = (id) => ['deliver', 'plan', 'prepare', `hull ${id} 0.25`, 'fetch', `hull ${id} 0.625`, `hull ${id} 1`, `hull ${id} 0.625`, 'reject', `hull ${id} 1`, 'pass', 'launch'].map((x) => (x.startsWith('hull') ? x : `${x} ${id}`));
 
   dir.update(board([]), trailOf([])); // the page opens on an empty board
   // one read of the board per step of the ticket's life
@@ -629,7 +653,7 @@ test('the yard is never ahead of the board, plays faster when it is behind, and 
   dir.update(board([T('a', 'in_progress'), T('b', 'todo')]), trailOf([E('a', 'started')]));
   dir.frame(0.016);
   assert.equal(dir.speed, 1);
-  assert.equal(where().a, 'queue', 'the foreman has not carried it yet');
+  assert.equal(where().a, 'ready', 'its slip is taken; the foreman is still on his way to look in');
   // the scene is not over and the board moves on: the yard falls behind
   for (const [behind, speed] of [[20000, 1], [30000, 1], [45000, 1.5], [90000, 3], [120000, 4], [299000, 4]]) {
     clock.t = 1700000000000 + behind;
@@ -641,14 +665,16 @@ test('the yard is never ahead of the board, plays faster when it is behind, and 
   await settle();
   dir.frame(0.016);
   assert.equal(dir.speed, 1);
+  dir.update(board([T('a', 'in_progress'), T('b', 'todo')]), trailOf([E('a', 'agent', { role: 'worker' })]));
+  await settle();
   assert.equal(where().a, 'slip');
-  assert.deepEqual(journal, ['hull a 0.25', 'start a']);
+  assert.deepEqual(journal, ['prepare a', 'hull a 0.25', 'fetch a']);
 
   // more than five minutes behind: no story; everything is put as the board is now
   journal.length = 0;
   const ship = dir.tokens.get('a').ship;
   dir.update(board([T('a', 'in_progress'), T('b', 'in_progress')]), trailOf([E('b', 'started')]));
-  assert.deepEqual(journal, ['hull b 0.25', 'start b'], 'the scene began');
+  assert.deepEqual(journal, ['prepare b'], 'the scene began');
   clock.t += 301000;
   const now = board([T('a', 'review', { criteria: [{ done: true }] }), T('b', 'review', { criteria: [{ done: true }], state: { passed: true } })]);
   dir.update(now, trailOf([E('a', 'check', { n: 1 }), E('a', 'submitted'), E('b', 'check', { n: 1 }), E('b', 'submitted'), E('b', 'verdict', { result: 'pass' })].map((e) => ({ ...e, at: e.at - 301000 }))));
@@ -662,7 +688,7 @@ test('the yard is never ahead of the board, plays faster when it is behind, and 
   const built = b.ship;
   await settle(); // the foreman, cut short, finishes his walk: it changes nothing
   dir.frame(0.016);
-  assert.equal(journal.filter((x) => /^(pass|reject|launch|deliver|plan|scrap)/.test(x)).length, 0, 'nothing was played');
+  assert.equal(journal.filter((x) => /^(pass|reject|launch|deliver|plan|scrap|fetch)/.test(x)).length, 0, 'nothing was played');
   assert.equal(journal.length, n);
   assert.equal(b.ship, built);
   assert.deepEqual(dir.slipOf.map((t) => t && t.id), ['a', 'b', null, null]);
@@ -773,8 +799,8 @@ test('a page that lost the viewer and found it again plays every scene once: non
   // connected again: everything since the point, each scene once
   const back = await read();
   assert.equal(back.reread, false);
-  assert.deepEqual(where(), { [a]: 'slip', [b]: 'slip' });
-  const scenes = [`hull ${a} 0.25`, `start ${a}`, `hull ${a} 1`, `hull ${b} 0.25`, `start ${b}`];
+  assert.deepEqual(where(), { [a]: 'slip', [b]: 'ready' });
+  const scenes = [`prepare ${a}`, `hull ${a} 1`, `fetch ${a}`, `prepare ${b}`];
   assert.deepEqual([...journal].sort(), [...scenes].sort());
   assert.deepEqual(journal.filter((x) => x.includes(a)), scenes.filter((x) => x.includes(a)), 'in order');
   assert.equal(dir.tokens.get(a).pic.status, 'review');
@@ -791,12 +817,14 @@ test('a page that lost the viewer and found it again plays every scene once: non
   point = 'a-point-nobody-knows';
   const cold = await read();
   assert.equal(cold.reread, true);
-  assert.deepEqual(where(), { [a]: 'slip', [b]: 'slip', [c]: 'slip' });
+  assert.deepEqual(where(), { [a]: 'slip', [b]: 'ready', [c]: 'ready' });
   assert.equal(dir.tokens.get(a).pic.status, 'in_progress');
   assert.equal(journal.length, scenes.length, 'no scene for what was missed');
+  // work on a ticket nobody was seen sent for: its drawing is fetched first, then the hull rises
   assert.equal(r.k('check', b, '1', 'terlihat').code, 0);
   await read();
-  assert.deepEqual(journal.slice(scenes.length), [`hull ${b} 1`]);
+  assert.deepEqual(journal.slice(scenes.length), [`hull ${b} 1`, `fetch ${b}`]);
+  assert.equal(where()[b], 'slip');
   assert.deepEqual(errors, []);
 });
 
@@ -850,7 +878,7 @@ test('the yard moves tickets as the board does: four slips, each held by one shi
   await settle();
   assert.deepEqual(new Set(Object.values(where())), new Set(['queue']));
   // six start in one look at the board: four get a slip, two wait as drawings
-  dir.update(board(ids.map((id) => T(id, 'in_progress'))), trailOf(ids.map((id) => E(id, 'started'))));
+  dir.update(board(ids.map((id) => T(id, 'in_progress'))), trailOf(ids.flatMap((id) => [E(id, 'started'), E(id, 'agent', { role: 'worker' })])));
   await settle();
   const berthed = [...dir.tokens.values()].filter((t) => t.place === 'slip');
   assert.equal(berthed.length, 4);
@@ -882,6 +910,433 @@ test('the yard moves tickets as the board does: four slips, each held by one shi
   assert.equal(where()[gone], 'scrap');
   assert.equal(dir.slipOf[2], null);
   assert.equal(dir.tokens.get(gone).ship, null);
+  assert.deepEqual(errors, []);
+});
+
+test('a ticket that starts: its slip is made ready, and when a worker is sent the slip\'s own shipwright fetches the drawing; the keel is laid when he is back', async () => {
+  const { dir, settle, T, board, where, errors, journal, E, trailOf, cast, world } = await stagedYard();
+  dir.update(board([T('a', 'todo'), T('b', 'todo'), T('c', 'in_progress')]), trailOf([]));
+  await settle();
+  assert.deepEqual(dir.slipOf.map((t) => t && t.id), ['c', null, null, null]);
+  for (const a of [cast.foreman, ...cast.wrights]) a.diary.length = 0;
+  // `k2 start`: the slip is taken and named; the drawing stays with the queue and no hull stands
+  dir.update(board([T('a', 'in_progress'), T('b', 'todo'), T('c', 'in_progress')]), trailOf([E('a', 'started')]));
+  await settle();
+  dir.frame(0.016);
+  const a = dir.tokens.get('a');
+  assert.deepEqual([a.place, a.slip, a.ship, !!a.obj, a.pic.build], ['ready', 1, null, true, 0]);
+  assert.match(world.slips[1].name, /a$/, 'its name is up on the slip');
+  assert.deepEqual(journal, ['prepare a']);
+  assert.deepEqual(cast.foreman.diary, ['to slip 2'], 'the foreman looks in, and carries nothing');
+  assert.deepEqual(cast.wrights[1].diary, [], 'nobody fetches before a worker is sent');
+  // looks at the board alone, however many, start nothing
+  for (let i = 0; i < 5; i++) { dir.update(board([T('a', 'in_progress', { run: { role: 'worker' } }), T('b', 'todo'), T('c', 'in_progress')])); await settle(); }
+  assert.equal(a.ship, null);
+  // the worker is sent: that slip's shipwright, and nobody else, goes to the queue and back
+  let onTheWay = null;
+  const walk = cast.wrights[1].goTo;
+  cast.wrights[1].goTo = async function (to) { if (to.slip !== undefined) onTheWay = { ship: a.ship, obj: !!a.obj, place: a.place }; return walk.call(this, to); };
+  dir.update(board([T('a', 'in_progress', { run: { role: 'worker' } }), T('b', 'todo'), T('c', 'in_progress')]), trailOf([E('a', 'agent', { role: 'worker', agent: 'w1' })]));
+  assert.equal(a.ship, null, 'not at once');
+  await settle();
+  assert.deepEqual(cast.wrights[1].diary, ['to queue', 'takes a drawing', 'to slip 2', 'hands empty']);
+  assert.deepEqual(onTheWay, { ship: null, obj: false, place: 'ready' }, 'while he carries the drawing it is off the queue, and no hull stands yet');
+  assert.deepEqual([a.place, a.slip, !!a.ship, a.obj, a.pic.build], ['slip', 1, true, null, 0.25]);
+  assert.deepEqual(journal, ['prepare a', 'hull a 0.25', 'fetch a']);
+  assert.deepEqual(cast.foreman.diary, ['to slip 2'], 'the foreman never carried a drawing to a slip');
+  for (const k of [0, 2, 3]) assert.deepEqual(cast.wrights[k].diary, []);
+  // a second worker on the same ticket (sent back, sent again) fetches nothing
+  dir.update(board([T('a', 'in_progress', { run: { role: 'worker' } }), T('b', 'todo'), T('c', 'in_progress')]), trailOf([E('a', 'agent', { role: 'worker', agent: 'w2' }), E('a', 'agent', { role: 'reviewer', agent: 'r1' })]));
+  await settle();
+  assert.equal(journal.length, 3);
+  // a reviewer sent is not a worker; a ticket started and cancelled before any worker came gives its slip back
+  dir.update(board([T('a', 'in_progress'), T('b', 'in_progress'), T('c', 'in_progress')]), trailOf([E('b', 'started'), E('b', 'agent', { role: 'reviewer' })]));
+  await settle();
+  assert.deepEqual([where().b, dir.tokens.get('b').slip], ['ready', 2]);
+  dir.update(board([T('a', 'in_progress'), T('b', 'cancel'), T('c', 'in_progress')]), trailOf([E('b', 'moved', { to: 'cancel' })]));
+  await settle();
+  assert.deepEqual([where().b, dir.slipOf[2]], ['scrap', null]);
+  // a page opened between the two events shows the same: a slip made ready, no hull
+  const later = await stagedYard();
+  later.dir.update(later.board([T('a', 'in_progress', { last: { event: 'started' } }), T('c', 'in_progress', { last: { event: 'agent' } })]), later.trailOf([]));
+  assert.deepEqual(later.where(), { a: 'ready', c: 'slip' });
+  assert.equal(later.people.some((p) => p.jobs.length), false);
+  later.dir.update(later.board([T('a', 'in_progress', { run: { role: 'worker' } }), T('c', 'in_progress')]), later.trailOf([later.E('a', 'agent', { role: 'worker' })]));
+  await later.settle();
+  assert.deepEqual(later.journal, ['hull a 0.25', 'fetch a']);
+  // no word of the foreman carrying a ticket is left in the yard
+  const src = ['director.js', 'cast.js'].map((f) => fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'viewer', 'web', 'space', f), 'utf8')).join('\n');
+  assert.doesNotMatch(src.slice(src.indexOf('async prepare('), src.indexOf('async fetch(')), /hold\(/);
+  assert.doesNotMatch(src, /foreman[^\n]*hold\(/);
+  assert.deepEqual([...errors, ...later.errors], []);
+});
+
+test('the yard has as many slips as the board has places: one row up to six, two rows from seven to ten, and nothing stands on anything else', async () => {
+  const { yardOf, footprints, docksOf, picture, DOCKS_MAX } = await import('../viewer/web/space/plan.js');
+  assert.equal(DOCKS_MAX, 10);
+  // what the board says -> how many slips
+  for (const [said, n] of [[1, 1], [3, 3], [6, 6], [7, 7], [10, 10], [11, 10], [40, 10], [0, 1], [undefined, 4]]) {
+    assert.equal(docksOf(said), n, `max_parallel ${said}`);
+    assert.equal(picture({ tickets: [], settings: said === undefined ? undefined : { max_parallel: said } }).docks, n);
+  }
+  const rows = Object.fromEntries(Array.from({ length: 10 }, (_, k) => [k + 1, [yardOf(k + 1).front, yardOf(k + 1).back]]));
+  assert.deepEqual(rows, { 1: [1, 0], 2: [2, 0], 3: [3, 0], 4: [4, 0], 5: [5, 0], 6: [6, 0], 7: [4, 3], 8: [5, 3], 9: [5, 4], 10: [6, 4] });
+  const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.z0 < b.z1 && b.z0 < a.z1;
+  const inside = (p, r) => p.x0 > r.x0 && p.x0 < r.x1 && p.z0 > r.z0 && p.z0 < r.z1;
+  for (let n = 1; n <= 10; n++) {
+    const Y = yardOf(n);
+    assert.equal(Y.docks.length, n);
+    assert.equal(Y.docks.filter((d) => d.z === 0).length, Y.front);
+    // every slipway of the back row runs to the water between two slips of the front row
+    const front = Y.docks.slice(0, Y.front).map((d) => d.x);
+    for (const d of Y.docks.slice(Y.front)) assert.ok(front.some((x, i) => i + 1 < front.length && Math.abs(d.x - (x + front[i + 1]) / 2) < 1e-9), `${n}: slip at ${d.x}`);
+    const F = footprints(Y);
+    const of = (kind) => F.filter((f) => f.kind === kind);
+    assert.equal(of('dock').length, n);
+    const solid = [...of('dock'), ...of('crane'), ...of('lighthouse'), ...of('pier'), ...of('sheds')];
+    for (const a of solid) for (const b of solid) if (a !== b) assert.equal(hit(a, b), false, `${n} slips: ${a.kind} ${a.k ?? ''} on ${b.kind} ${b.k ?? ''}`);
+    // nothing stands where a hull goes down to the water, but its own slip
+    for (const way of of('slipway')) for (const b of [...solid, ...of('slipway')]) if (b.k !== way.k || (b.kind !== 'dock' && b.kind !== 'slipway')) assert.equal(hit(way, b), false, `${n} slips: slipway ${way.k} on ${b.kind} ${b.k ?? ''}`);
+    // where people walk and stand: clear of every slip, the crane, the lighthouse and the sheds; nobody stands where a hull of another slip goes down
+    for (const path of [...of('street'), ...of('lane')]) for (const b of solid) if (b.kind !== 'pier') assert.equal(hit(path, b), false, `${n} slips: ${path.kind} on ${b.kind} ${b.k ?? ''}`);
+    for (const p of of('spot')) {
+      for (const b of solid) assert.equal(inside(p, b), false, `${n} slips: a place to stand at slip ${p.k} is on ${b.kind} ${b.k ?? ''}`);
+      for (const way of of('slipway')) if (way.k !== p.k) assert.equal(inside(p, way), false, `${n} slips: a place to stand at slip ${p.k} is in slipway ${way.k}`);
+    }
+    // all of it is on the island
+    for (const f of F) assert.ok(f.x0 >= -Y.half && f.x1 <= Y.half, `${n} slips: ${f.kind} is off the island`);
+  }
+  assert.deepEqual(yardOf(4).docks.map((d) => d.x), [-16.5, -6, 4.5, 15], 'the yard of four is the yard as it was');
+  assert.equal(yardOf(4).half, 32);
+
+  // the director keeps that many slips, and a shipwright for each
+  for (const n of [1, 3, 6, 10, 14]) {
+    const { dir, settle, T, board, errors, E, trailOf, cast, world } = await stagedYard();
+    const ids = Array.from({ length: 12 }, (_, k) => `t${String(k).padStart(2, '0')}`);
+    dir.update(board(ids.map((id) => T(id, 'todo')), { settings: { max_parallel: n } }), trailOf([]));
+    const slips = Math.min(n, 10);
+    assert.deepEqual([world.slips.length, cast.wrights.length, dir.slipOf.length], [slips, slips, slips], `max_parallel ${n}`);
+    // twelve start: as many as there are slips are built, each by the shipwright of its slip; the rest wait as drawings
+    dir.update(board(ids.map((id) => T(id, 'in_progress')), { settings: { max_parallel: n } }), trailOf(ids.flatMap((id) => [E(id, 'started'), E(id, 'agent', { role: 'worker' })])));
+    await settle();
+    const built = [...dir.tokens.values()].filter((t) => t.place === 'slip');
+    assert.equal(built.length, slips);
+    assert.deepEqual(built.map((t) => t.slip).sort((a, b) => a - b), Array.from({ length: slips }, (_, k) => k));
+    assert.equal([...dir.tokens.values()].filter((t) => t.place === 'queue' && t.obj).length, 12 - slips, 'the rest wait as drawings');
+    cast.wrights.forEach((a, k) => assert.deepEqual(a.diary, ['to queue', 'takes a drawing', `to slip ${k + 1}`, 'hands empty']));
+    assert.deepEqual(errors, []);
+  }
+});
+
+test('max_parallel changes while the page is open: the slips follow, and no ship is lost', async () => {
+  const { dir, settle, T, board, where, errors, E, trailOf, cast, world } = await stagedYard();
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+  const at = (n, status = {}) => board(ids.map((id) => T(id, status[id] || 'in_progress', status[id] === 'done' ? { landed: 5 } : {})), { settings: { max_parallel: n } });
+  dir.update(at(3), trailOf([]));
+  await settle();
+  assert.equal(world.slips.length, 3);
+  const ships = () => Object.fromEntries([...dir.tokens.values()].filter((t) => t.ship).map((t) => [t.id, t.ship]));
+  const three = ships();
+  assert.deepEqual(Object.keys(three), ['a', 'b', 'c']);
+  assert.deepEqual(Object.values(where()).filter((p) => p === 'queue').length, 4);
+  // raised to six: three more slips and shipwrights; the hulls that stood keep standing, three that waited get a slip
+  dir.update(at(6), trailOf([]));
+  assert.deepEqual([world.slips.length, cast.wrights.length], [6, 6]);
+  await settle();
+  const six = ships();
+  assert.deepEqual(Object.keys(six).sort(), ['a', 'b', 'c', 'd', 'e', 'f']);
+  for (const id of ['a', 'b', 'c']) assert.equal(six[id], three[id], `${id} is the ship it was`);
+  assert.deepEqual(dir.slipOf.map((t) => t.id), ['a', 'b', 'c', 'd', 'e', 'f']);
+  // every hull stands on its own slip, wherever the new layout put that
+  world.setDocks = function (n) { this.laid.push(n); this.slips.length = 0; for (let k = 0; k < n; k++) this.slips.push({ x: 100 + k * 7, z: -6.4 - (k > 3 ? 14.8 : 0), k, spots: Array.from({ length: 8 }, () => ({ x: 0, z: 0, slip: k })), lamp() {}, label() {} }); };
+  // lowered to two while six hulls stand: no slip with a ship goes, and none takes a new one
+  dir.update(at(2), trailOf([]));
+  await settle();
+  assert.equal(world.slips.length, 6, 'a slip that is to go stays until its ship has left');
+  assert.deepEqual(ships(), six);
+  assert.equal(where().g, 'queue');
+  // the ships of slips 1, 3 and 6 land: slip 6 goes (5 is still held), and the one that waits gets none of the freed ones beyond the two
+  dir.update(at(2, { a: 'done', c: 'done', f: 'done' }), trailOf(['a', 'c', 'f'].map((id) => E(id, 'landed'))));
+  await settle();
+  for (let i = 0; i < 3; i++) dir.frame(1);
+  await settle();
+  assert.deepEqual([where().a, where().c, where().f], ['bay', 'bay', 'bay']);
+  assert.deepEqual([world.slips.length, cast.wrights.length], [5, 5]);
+  assert.deepEqual(dir.slipOf.map((t) => t && t.id), ['g', 'b', null, 'd', 'e'], 'the one that waited took slip 1, within the two; slip 3 stays empty');
+  for (const id of ['b', 'd', 'e']) {
+    const tok = dir.tokens.get(id);
+    assert.equal(tok.ship, six[id]);
+    assert.deepEqual([tok.ship.o.position.x, tok.ship.o.position.z], [world.slips[tok.slip].x, world.slips[tok.slip].z], `${id} moved with its slip`);
+  }
+  for (const id of ['a', 'c', 'f']) assert.equal(dir.tokens.get(id).ship, six[id], 'the ship at anchor is the one that was built');
+  // the last ones leave: two slips are left
+  dir.update(at(2, { a: 'done', c: 'done', f: 'done', d: 'done', e: 'done' }), trailOf(['d', 'e'].map((id) => E(id, 'landed'))));
+  await settle();
+  for (let i = 0; i < 3; i++) dir.frame(1);
+  assert.deepEqual([world.slips.length, cast.wrights.length, dir.slipOf.map((t) => t && t.id)], [2, 2, ['g', 'b']]);
+  assert.equal(Object.keys(ships()).length, 6, 'four at anchor, two on the slips (the oldest at anchor has sailed)');
+  // nothing is laid out anew while a hull is on its way down a slipway
+  dir.tokens.get('b').adrift = true;
+  dir.update(at(8, { a: 'done', c: 'done', f: 'done', d: 'done', e: 'done' }), trailOf([]));
+  assert.equal(world.slips.length, 2);
+  dir.tokens.get('b').adrift = false;
+  dir.frame(1);
+  assert.equal(world.slips.length, 8);
+  assert.deepEqual(errors, []);
+});
+
+test('the demo can be opened with any number of slips', async () => {
+  const { startDemo } = await import('../viewer/web/space/demo.js');
+  const { picture } = await import('../viewer/web/space/plan.js');
+  for (const n of [1, 3, 6, 10]) {
+    const { dir, settle, world, cast, errors } = await stagedYard();
+    const reads = [];
+    const stop = startDemo((D, trail) => reads.push([D, trail]), { docks: n });
+    stop();
+    assert.equal(reads[0][0].settings.max_parallel, n);
+    assert.equal(picture(reads[0][0]).docks, n);
+    let most = 0;
+    for (let i = 0; i < 400; i++) {
+      if (i) stop.step();
+      for (const [D, trail] of reads.splice(0)) { dir.update(D, trail); await settle(); }
+      most = Math.max(most, dir.slipOf.filter((t) => t && t.ship).length);
+      assert.equal(world.slips.length, n);
+    }
+    assert.equal(cast.wrights.length, n);
+    assert.ok(most >= Math.min(n, 2) && most <= n, `${n} slips: ${most} hulls at most`);
+    if (n >= 6) assert.ok(most >= n - 2, `${n} slips: the demo fills them (${most})`);
+    // the made-up board gets another max_parallel while it runs
+    stop.setDocks(n === 10 ? 4 : n + 1);
+    stop.step();
+    assert.equal(reads[0][0].settings.max_parallel, n === 10 ? 4 : n + 1);
+    assert.deepEqual(errors, []);
+  }
+  const main = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'viewer', 'web', 'space', 'main.js'), 'utf8');
+  assert.match(main, /QUERY\.get\('docks'\)/, 'the page takes the number from its address');
+  const doc = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'galangan-padanan.md'), 'utf8');
+  for (const words of [/max_parallel/, /\?demo&docks=/, /dua baris/, /Shipwright 1–10/]) assert.match(doc, words);
+});
+
+test('the architect reads the order board while the planner works, shows a "?" while a question of the planner waits, and not otherwise', async () => {
+  const { picture } = await import('../viewer/web/space/plan.js');
+  const { plannerDuty } = await import('../viewer/web/space/director.js');
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const session = path.join(root, 'claude', 'sess-1.jsonl');
+  const agentFile = path.join(root, 'claude', 'sess-1', 'subagents', 'agent-perencana1.jsonl');
+  fs.mkdirSync(path.dirname(agentFile), { recursive: true });
+  fs.writeFileSync(session, '');
+  const hook = (name, payload) => assert.equal(sh(r.dir, K2, ['hook', name], JSON.stringify({ cwd: r.dir, transcript_path: session, ...payload })).code, 0);
+  const asPlanner = (...a) => sh(r.dir, K2, a, undefined, { K2_ROLE: 'planner', K2_AGENT: 'perencana1' });
+  const order = ticket(r, 'Pesanan baru', { status: 'backlog' });
+  const other = ticket(r, 'Pesanan lain', { status: 'backlog' });
+  const s = await serve(root);
+  const { dir, cast, world } = await stagedYard();
+  world.stations = { reading: { x: -20, z: -17 }, shelf: { x: -21, z: -17 }, drafting: { x: -13, z: -16 }, queue: { x: -3, z: -17 } };
+  // the architect, with what was done written down
+  const did = [];
+  const a = { ...cast.planner, say: (g) => did.push(`say ${g}`), goTo: async (to) => { did.push(`go ${to === world.stations.reading ? 'order board' : 'elsewhere'}`); }, act: async (name) => { did.push(name); } };
+  // one look at the real board, then one turn of the architect's duty
+  const turn = async () => {
+    const D = (await get(s, '/api/p/toko/state')).body;
+    dir.update(D);
+    did.length = 0;
+    a.doing = '';
+    const on = await plannerDuty(a, world, dir);
+    return { on, planner: picture(D).planner, did: [...did], doing: a.doing };
+  };
+
+  // nobody plans: no duty, the architect is left to the chores of the desk, and goes nowhere
+  let t = await turn();
+  assert.deepEqual([t.on, t.planner, t.did], [false, { reading: false, step: null, asks: 0 }, []]);
+  // a question of somebody else (the owner's session, a worker) is not the planner's
+  assert.equal(r.k('ask', other, 'Ini dari sesi utama?').code, 0);
+  t = await turn();
+  assert.deepEqual([t.on, t.planner.asks, t.did], [false, 0, []]);
+
+  // the planner is sent: at the order board, reading, with no "?"
+  hook('agent-sent', { tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:planner', prompt: 'Plan the backlog.' }, tool_response: { status: 'async_launched', agentId: 'perencana1' } });
+  t = await turn();
+  assert.deepEqual([t.on, t.planner.reading, t.planner.asks], [true, true, 0]);
+  assert.deepEqual(t.did, ['go order board', 'interact-right']);
+  assert.equal(t.doing, 'reading the orders');
+  // its last step is what the architect is said to be doing
+  const line = (ts, content) => JSON.stringify({ type: 'assistant', timestamp: new Date(ts).toISOString(), message: { role: 'assistant', content } }) + '\n';
+  fs.writeFileSync(agentFile, line(Date.now() + 1000, [{ type: 'tool_use', name: 'Bash', input: { command: 'k2 list backlog', description: 'Membaca backlog' } }]));
+  t = await turn();
+  assert.equal(t.doing, 'reading the orders: Membaca backlog');
+
+  // it asks the owner two things, still at work: reading, with a "?"
+  assert.equal(asPlanner('ask', order, '--blocking', 'Satu pesanan atau dua?').code, 0);
+  assert.equal(asPlanner('ask', order, 'Warna apa?').code, 0);
+  t = await turn();
+  assert.deepEqual([t.planner.reading, t.planner.asks], [true, 2]);
+  assert.deepEqual(t.did, ['go order board', 'say ?', 'interact-right']);
+  // it stops and waits for the answers: the architect stays at the order board, still, with the "?"
+  hook('subagent-stop', { agent_id: 'perencana1', agent_type: 'kerjaan2:planner' });
+  t = await turn();
+  assert.deepEqual([t.on, t.planner.reading, t.planner.asks], [true, false, 2]);
+  assert.deepEqual(t.did, ['go order board', 'say ?', 'idle']);
+  assert.match(t.doing, /waiting for the owner's answer to 2 questions/);
+  // one answered: one is left, the "?" stays
+  assert.equal(r.k('answer', order, 'Q1', 'Dua.').code, 0);
+  t = await turn();
+  assert.deepEqual([t.on, t.planner.asks, t.did.includes('say ?')], [true, 1, true]);
+  assert.match(t.doing, /to a question/);
+  // the last answered and no planner at work: no "?", no duty, away from the order board
+  assert.equal(r.k('answer', order, 'Q2', 'Biru.').code, 0);
+  t = await turn();
+  assert.deepEqual([t.on, t.planner, t.did], [false, { reading: false, step: null, asks: 0 }, []]);
+  // resumed with the answers: reading again, the "?" gone
+  hook('agent-sent', { tool_name: 'SendMessage', tool_input: { to: 'perencana1', message: 'Jawaban pemilik ada di tiket.' }, tool_response: { success: true } });
+  t = await turn();
+  assert.deepEqual([t.planner.reading, t.did], [true, ['go order board', 'interact-right']]);
+  hook('subagent-stop', { agent_id: 'perencana1', agent_type: 'kerjaan2:planner' });
+  t = await turn();
+  assert.deepEqual([t.on, t.did], [false, []]);
+  // a question of the planner on a cancelled ticket waits for nobody
+  assert.equal(asPlanner('ask', other, 'Masih perlu?').code, 0);
+  assert.equal((await turn()).planner.asks, 1);
+  assert.equal(r.k('move', other, 'cancel', '--why', 'tidak jadi').code, 0);
+  t = await turn();
+  assert.deepEqual([t.on, t.planner.asks], [false, 0]);
+
+  // the cast: the planner's character is the Naval Architect, with this duty; no Draughtsman is left
+  const web = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'viewer', 'web', 'space');
+  const castJs = fs.readFileSync(path.join(web, 'cast.js'), 'utf8');
+  assert.match(castJs, /name: 'Naval Architect', role: 'planner', at: 'drafting', chores: chores\.planner, duty: plannerDuty \}/);
+  assert.equal([...castJs.matchAll(/\{ key: \d+, name: '/g)].length + 1, 7, 'seven kinds of people, as before');
+  for (const f of fs.readdirSync(web).filter((n) => n.endsWith('.js'))) assert.doesNotMatch(fs.readFileSync(path.join(web, f), 'utf8'), /draughtsman/i, f);
+  // with no planner at work the architect's chores keep away from the order board
+  const chores = castJs.slice(castJs.indexOf('  planner: ['), castJs.indexOf('  foreman: ['));
+  assert.doesNotMatch(chores, /stations\.(shelf|orders|queue)/);
+});
+
+test('tickets that become todo are carried to the todo table in one walk and lie there in queue order, those that wait for another ticket in the back row', async () => {
+  const { picture } = await import('../viewer/web/space/plan.js');
+  // which todo tickets wait for another ticket, on a real board
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const [base, after, free, paused, solo] = ['Dasar', 'Sesudah dasar', 'Bebas', 'Dijeda', 'Sendirian'].map((title) => plainTicket(r, title));
+  assert.equal(r.k('set', after, `blocked_by=${base}`).code, 0);
+  assert.equal(r.k('set', solo, 'solo=true').code, 0);
+  assert.equal(r.k('queue', 'set', base, after, free, paused, solo, '--pause-before', paused).code, 0);
+  const s = await serve(root);
+  const waiting = async () => { const pic = picture((await get(s, '/api/p/toko/state')).body); return Object.fromEntries([base, after, free, paused, solo].map((id, k) => [['base', 'after', 'free', 'paused', 'solo'][k], pic.byId.get(id).waiting])); };
+  // nothing in flight: only the one blocked by a ticket that has not landed waits for another; a pause waits for the owner
+  assert.deepEqual(await waiting(), { base: false, after: true, free: false, paused: false, solo: false });
+  // one in flight: the solo ticket must wait for it too
+  assert.equal(r.k('start', base).code, 0);
+  assert.deepEqual(await waiting(), { base: false, after: true, free: false, paused: false, solo: true });
+
+  // made-up boards: a solo ticket in flight holds every todo ticket back; landed, none
+  const t = (id, status, more = {}) => ({ id, title: id, status, criteria: [{ done: false }], state: {}, fm: {}, ...more });
+  const rows = (tickets, more = {}) => picture({ tickets, ...more }).tickets.filter((x) => x.status === 'todo').map((x) => x.waiting);
+  assert.deepEqual(rows([t('a', 'in_progress', { fm: { solo: 'true' } }), t('b', 'todo'), t('c', 'todo', { waits: [] })]), [true, true]);
+  assert.deepEqual(rows([t('a', 'done', { fm: { solo: 'true' } }), t('b', 'todo'), t('c', 'todo', { waits: ['x'] })]), [false, true]);
+  assert.deepEqual(rows([t('a', 'review'), t('b', 'todo', { fm: { solo: 'true' } }), t('c', 'todo')]), [true, false]);
+  assert.deepEqual(rows([t('a', 'review'), t('b', 'todo', { fm: { solo: 'true' } })], { places: { used: 0, max: 3 } }), [false], 'what is in flight waits for the owner: it takes no place');
+  assert.equal(picture({ tickets: [t('a', 'backlog', { waits: ['x'] })] }).tickets[0].waiting, false, 'only a todo ticket has a row');
+
+  // in the yard
+  const { dir, settle, T, board, where, errors, journal, E, trailOf, cast, row } = await stagedYard();
+  const ids = ['a', 'b', 'c', 'd', 'e'];
+  const queue = { order: ['c', 'a', 'e', 'b', 'd'] };
+  dir.update(board(ids.map((id) => T(id, 'backlog'))), trailOf([]));
+  await settle();
+  assert.deepEqual(ids.map(row), [null, null, null, null, null]);
+  // the planner moves the whole lot at once: one walk of the architect for all five
+  const todo = (waits) => board(ids.map((id) => T(id, 'todo', { waits: waits[id] || [] })), { queue });
+  let walks = 0;
+  const goTo = cast.planner.goTo;
+  cast.planner.goTo = async (to) => { walks++; return goTo(to); };
+  dir.update(todo({ b: ['z'], e: ['z'] }), trailOf(ids.map((id) => E(id, 'moved', { to: 'todo' }))));
+  assert.equal(cast.planner.jobs.length, 1, 'one walk');
+  assert.deepEqual(ids.map(row), [null, null, null, null, null], 'not on the table before they are carried there');
+  await settle();
+  assert.equal(walks, 2, 'to the order board, then to the todo table');
+  assert.deepEqual(journal, ids.map((id) => `plan ${id}`));
+  assert.deepEqual(new Set(Object.values(where())), new Set(['queue']));
+  // side by side in the order of the queue; b and e wait for another ticket: the back row
+  assert.deepEqual(Object.fromEntries(ids.map((id) => [id, row(id)])), { c: 'front 0', a: 'front 1', d: 'front 2', e: 'back 0', b: 'back 1' });
+  // the queue is put in another order: the table follows
+  dir.update(todo({ b: ['z'], e: ['z'] }), trailOf([]));
+  dir.update(board(ids.map((id) => T(id, 'todo', { waits: { b: ['z'], e: ['z'] }[id] || [] })), { queue: { order: ['d', 'b', 'c', 'e', 'a'] } }), trailOf([]));
+  assert.deepEqual(Object.fromEntries(ids.map((id) => [id, row(id)])), { d: 'front 0', c: 'front 1', a: 'front 2', b: 'back 0', e: 'back 1' });
+  // what e waited for has landed: e comes forward, to its place in the queue; b stays behind
+  dir.update(todo({ b: ['z'] }), trailOf([]));
+  assert.deepEqual(Object.fromEntries(ids.map((id) => [id, row(id)])), { c: 'front 0', a: 'front 1', e: 'front 2', d: 'front 3', b: 'back 0' });
+  // and a ticket that starts to wait goes back
+  dir.update(todo({ b: ['z'], c: ['y'] }), trailOf([]));
+  assert.deepEqual(Object.fromEntries(ids.map((id) => [id, row(id)])), { a: 'front 0', e: 'front 1', d: 'front 2', c: 'back 0', b: 'back 1' });
+  assert.equal(cast.planner.jobs.length, 0, 'nobody carries a ticket from one row to the other');
+
+  // a ticket that becomes todo while the architect is already on the way to the table goes in the next walk
+  journal.length = 0;
+  walks = 0;
+  const more = (st) => board([...ids.map((id) => T(id, 'todo')), T('f', st.f), T('g', st.g)], { queue: { order: [...ids, 'f', 'g'] } });
+  dir.update(more({ f: 'backlog', g: 'backlog' }), trailOf([]));
+  dir.update(more({ f: 'backlog', g: 'backlog' }), trailOf([]));
+  const act = cast.planner.act;
+  let late = false;
+  cast.planner.act = async (name) => { if (name === 'interact-right' && !late) { late = true; dir.update(more({ f: 'todo', g: 'todo' }), trailOf([E('g', 'moved', { to: 'todo' })])); } return act(name); };
+  dir.update(more({ f: 'todo', g: 'backlog' }), trailOf([E('f', 'moved', { to: 'todo' })]));
+  await settle();
+  assert.equal(walks, 4, 'two walks');
+  assert.deepEqual([row('f'), row('g')], ['front 5', 'front 6']);
+  // each row shows eight; the rest is not drawn, and is there when a place comes free
+  const many = Array.from({ length: 10 }, (_, k) => `m${k}`);
+  const full = await stagedYard();
+  full.dir.update(full.board(many.map((id) => full.T(id, 'todo', { waits: ['z'] })), { queue: { order: many } }), full.trailOf([]));
+  assert.deepEqual(many.map(full.row), [...[0, 1, 2, 3, 4, 5, 6, 7].map((k) => `back ${k}`), null, null]);
+  assert.deepEqual(many.map((id) => full.dir.tokens.get(id).obj.visible), [true, true, true, true, true, true, true, true, false, false]);
+  full.dir.update(full.board(many.map((id, k) => full.T(id, 'todo', { waits: k ? ['z'] : [] })), { queue: { order: many } }), full.trailOf([]));
+  assert.deepEqual([full.row('m0'), full.row('m8'), full.row('m9')], ['front 0', 'back 7', null]);
+  assert.deepEqual([...errors, ...full.errors], []);
+  // the limit is written where the owner reads it
+  const doc = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'galangan-padanan.md'), 'utf8');
+  assert.match(doc, /Naval Architect/);
+  assert.match(doc, /8 di baris depan dan 8 di baris belakang/);
+  assert.doesNotMatch(doc, /papan QUEUE/);
+});
+
+test('the demo shows the architect reading, asking and moving tickets, with a back row on the todo table', async () => {
+  const { picture } = await import('../viewer/web/space/plan.js');
+  const { startDemo } = await import('../viewer/web/space/demo.js');
+  const { dir, settle, errors, cast, row } = await stagedYard();
+  const reads = [];
+  const stop = startDemo((D, trail) => reads.push([D, trail]));
+  stop();
+  assert.ok(picture(reads[0][0]).tickets.some((t) => t.status === 'todo' && t.waiting) && picture(reads[0][0]).tickets.some((t) => t.status === 'todo' && !t.waiting), 'both rows from the first look');
+  const phases = []; // what the planner of the demo is seen doing, each change once
+  let carried = 0, came = 0, batch = 0;
+  for (let i = 0; i < 1500; i++) {
+    if (i) stop.step();
+    for (const [D, trail] of reads.splice(0)) {
+      const p = picture(D).planner;
+      const phase = p.asks ? (p.reading ? 'reading and asking' : 'asking') : p.reading ? 'reading' : 'idle';
+      if (phases[phases.length - 1] !== phase) phases.push(phase);
+      if (p.reading) assert.equal(typeof p.step, 'string');
+      if (p.asks) assert.ok(D.inbox.some((x) => x.kind === 'question' && D.tickets.find((t) => t.id === x.id).plannerAsks), 'the question is in the inbox, on the ticket it is about');
+      const moved = trail.events.filter((e) => e.event === 'moved' && e.to === 'todo');
+      // tickets are moved at the end of a turn of reading, never out of nowhere
+      if (moved.length) assert.equal(phases[phases.length - 2], 'reading', phases.join(' > '));
+      batch = Math.max(batch, moved.length);
+      dir.update(D, trail);
+      carried += cast.planner.jobs.length;
+      await settle();
+      const todo = D.tickets.filter((x) => x.status === 'todo');
+      assert.ok(todo.length <= 8, 'the demo keeps to what the table shows');
+      for (const t of todo) assert.equal(row(t.id)?.split(' ')[0], picture(D).byId.get(t.id).waiting ? 'back' : 'front', t.id);
+      // a ticket that waited comes forward when the one it waited for has landed
+      for (const t of D.tickets) if (t.status === 'todo' && !t.waits.length && dir.tokens.get(t.id).wasBack) came++;
+      for (const t of D.tickets) dir.tokens.get(t.id).wasBack = t.status === 'todo' && t.waits.length > 0;
+    }
+  }
+  assert.deepEqual(phases.slice(0, 5), ['idle', 'reading', 'asking', 'reading', 'idle'], 'the first round asks');
+  assert.ok(carried > 3, 'the architect carried tickets');
+  assert.ok(batch > 1, 'several in one walk at least once');
+  assert.ok(came > 0, 'a ticket came forward');
   assert.deepEqual(errors, []);
 });
 
@@ -1161,9 +1616,9 @@ test('the demo makes up a trail too: a ticket can be watched from its order to i
   assert.ok(seen.filter((e) => e.event === 'created' && e.at - firstAt < 1000).length > 1, 'more than one order in the first party');
   assert.ok(boats.n < seen.filter((e) => e.event === 'created').length, 'fewer boats than orders');
   const life = seen.filter((e) => e.ticket === born).map((e) => e.event);
-  assert.deepEqual([life[0], life[1], life[2], life[life.length - 1]], ['created', 'moved', 'started', 'landed']);
+  assert.deepEqual([life[0], life[1], life[2], life[3], life[life.length - 1]], ['created', 'moved', 'started', 'agent', 'landed']);
   assert.ok(life.includes('check') && life.includes('submitted') && life.includes('verdict'));
-  assert.deepEqual(journal.filter((x) => x.endsWith(` ${born}`) && /^(deliver|plan|start|launch|scrap)/.test(x)), ['deliver', 'plan', 'start', 'launch'].map((x) => `${x} ${born}`));
+  assert.deepEqual(journal.filter((x) => x.endsWith(` ${born}`) && /^(deliver|plan|prepare|fetch|launch|scrap)/.test(x)), ['deliver', 'plan', 'prepare', 'fetch', 'launch'].map((x) => `${x} ${born}`));
   assert.ok(journal.includes(`pass ${born}`));
   assert.equal(where()[born], 'bay');
   // every kind of event the demo writes is one the board writes
