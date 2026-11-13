@@ -114,6 +114,54 @@ test('every folder with a board under the root is a project; others are not', as
   assert.deepEqual((await get(s, '/api/projects')).body.projects.map((p) => p.name), ['alpha', 'beta', 'gamma']);
 });
 
+test('--depth looks further down, three levels at most; one level without it', async () => {
+  const root = workspace();
+  repo(root, 'alpha');
+  fs.mkdirSync(path.join(root, 'group', 'deep'), { recursive: true });
+  repo(root, 'group/beta');
+  repo(root, 'group/deep/gamma');
+  fs.mkdirSync(path.join(root, 'a', 'b', 'c'), { recursive: true });
+  repo(root, 'a/b/c/delta');
+  const names = async (opts) => (await get(await serve(root, opts), '/api/projects')).body.projects.map((p) => p.name);
+  assert.deepEqual(await names(), ['alpha']);
+  assert.deepEqual(await names({ depth: 2 }), ['alpha', 'beta']);
+  assert.deepEqual(await names({ depth: 3 }), ['alpha', 'beta', 'gamma'], 'a board four levels down is out of reach');
+  // A deeper board is told apart by where it is, and opens like any other.
+  const s = await serve(root, { depth: 3 });
+  const cards = (await get(s, '/api/projects')).body.projects;
+  assert.deepEqual(cards.map((p) => p.path), ['alpha', 'group/beta', 'group/deep/gamma']);
+  assert.equal((await get(s, '/api/p/gamma/state')).status, 200);
+  assert.equal((await get(await serve(root), '/api/p/gamma/state')).status, 404);
+  for (const bad of ['0', '4', 'x', '2.5']) {
+    const r = sh(root, K2, ['view', '--depth', bad]);
+    assert.notEqual(r.code, 0, `--depth ${bad}`);
+    assert.match(r.out, /--depth must be 1, 2 or 3/);
+  }
+});
+
+test('a folder git ignores is not a project, nor is one under node_modules or a hidden folder', async () => {
+  const root = workspace();
+  const mono = path.join(root, 'mono');
+  fs.mkdirSync(path.join(mono, 'vendor'), { recursive: true });
+  fs.mkdirSync(path.join(mono, 'packages'));
+  fs.mkdirSync(path.join(mono, 'node_modules'));
+  fs.mkdirSync(path.join(mono, '.cache'));
+  fs.mkdirSync(path.join(root, 'plain'));
+  sh(mono, 'git', ['init', '-q', '-b', 'main']);
+  fs.writeFileSync(path.join(mono, '.gitignore'), 'vendor/\n/scratch\n');
+  repo(root, 'mono/packages/app');
+  repo(root, 'mono/vendor/lib');
+  repo(root, 'mono/scratch');
+  repo(root, 'mono/node_modules/pkg');
+  repo(root, 'mono/.cache/hidden');
+  // A .gitignore outside any repository is only a file: git would not read it either.
+  fs.writeFileSync(path.join(root, 'plain', '.gitignore'), 'kept/\n');
+  repo(root, 'plain/kept');
+  const s = await serve(root, { depth: 3 });
+  assert.deepEqual((await get(s, '/api/projects')).body.projects.map((p) => p.name), ['kept', 'app']);
+  assert.equal((await get(s, '/api/p/lib/state')).status, 404);
+});
+
 test('the state of a board: tickets, queue, inbox and one ticket in full', async () => {
   const root = workspace();
   const r = repo(root, 'toko');

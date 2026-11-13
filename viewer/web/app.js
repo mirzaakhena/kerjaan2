@@ -269,7 +269,7 @@
   function viewHome() {
     if (!projects.length) return `<div class="home"><p class="note">No board under this folder yet. A project appears here as soon as <code>k2 init</code> makes its board.</p></div>`;
     return `<div class="home"><h2>Boards</h2><div class="projects">${projects.map((p) => `<a class="project" href="/p/${encodeURIComponent(p.name)}/">
-        <div class="name">${esc(p.name)}${p.running ? `<span class="badge good">${p.running} running</span>` : ''}${p.needs ? `<span class="badge">${p.needs} need you</span>` : ''}</div>
+        <div class="name">${esc(p.name)}${p.path && p.path !== p.name && p.path !== '.' ? `<span class="where">${esc(p.path)}</span>` : ''}${p.running ? `<span class="badge good">${p.running} running</span>` : ''}${p.needs ? `<span class="badge">${p.needs} need you</span>` : ''}</div>
         ${p.error ? `<p class="err">${esc(p.error)}</p>` : `<div class="counts">${STATUSES.map((s) => `<span data-s="${s}"><i></i>${s.replace('_', ' ')} ${p.counts[s]}</span>`).join('')}</div>`}
       </a>`).join('')}</div></div>`;
   }

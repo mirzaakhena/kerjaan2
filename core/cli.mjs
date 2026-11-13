@@ -67,7 +67,7 @@ Record    ask <id> [--blocking] "<question>" · answer <id> Q1 "<answer>"
           decide <id> "<decision>" · check <id> <n> "<evidence>" · uncheck <id> <n> · void <id> <n> "<decision>"
           manual <id> <n> "<steps>" · manual <id> ok|failed M1 · handoff <id> "<text>"
           followup <id> "<problem>" · followup <id> ticketed|declined F1 · learn "<one line>"
-Viewer    view [--port 4322] [--root <folder of projects>] [--lan]   (read-only pages for every board under the folder)`;
+Viewer    view [--port 4322] [--root <folder of projects>] [--depth 1-3] [--lan]   (read-only pages for every board under the folder; --depth: how many levels down, 1 unless given)`;
 
 export function main(argv) {
   const [cmd, ...rest] = argv;

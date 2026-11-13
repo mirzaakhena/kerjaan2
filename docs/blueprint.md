@@ -677,7 +677,8 @@ Keputusan pemilik sebelum dan selama mockup:
 
 Yang dibangun di 0.15.0:
 
-- `k2 view [--port 4322] [--root <folder>] [--lan]`. Tanpa `--root`, yang
+- `k2 view [--port 4322] [--root <folder>] [--lan]` (sejak 0.17.0 juga
+  `--depth`, lihat bagian terakhir). Tanpa `--root`, yang
   dipindai adalah folder tempat repo ini berada, sehingga proyek tetangganya
   ikut tampil. Papan baru muncul tanpa restart.
 - `viewer/server.mjs` hanya melayani GET, tidak pernah mengambil kunci papan,
@@ -923,3 +924,25 @@ selesai terbaru dibuka lagi; vonis yang jatuh selagi tokennya sedang dibawa
 tidak ditampilkan; peta bayangan digambar ulang tiap bingkai. Lambung yang
 merayap naik selama agen bekerja melebihi yang dikatakan papan; peninjau
 menyerahkannya kepada pemilik untuk diputuskan.
+
+## Viewer mencari papan lebih dalam (0.17.0)
+
+Diminta pemilik: `k2 view` hanya menemukan papan satu tingkat di bawah
+`--root`; ia ingin kedalaman bisa diatur, paling banyak tiga tingkat, dan
+`.gitignore` dihormati.
+
+- `k2 view --depth <1|2|3>`. Tanpa `--depth` tetap satu tingkat, seperti
+  sebelumnya. Nilai lain ditolak dengan pesan.
+- Folder yang diabaikan git tidak menjadi proyek. Yang ditanya adalah git
+  sendiri (`git check-ignore`), sekali untuk tiap repositori yang melingkupi
+  folder berpapan itu, jadi semua aturan git berlaku (`.gitignore` bertingkat,
+  `.git/info/exclude`, pengecualian global). Repositori di atas `--root` tidak
+  ditanya. `.gitignore` di folder yang bukan repositori tidak berarti apa-apa,
+  sama seperti bagi git.
+- Folder tersembunyi dan `node_modules` tidak dimasuki; symlink tidak diikuti.
+- Nama proyek tetap nama foldernya, karena nama itulah alamat halamannya. Dua
+  folder bernama sama: yang paling dekat dengan `--root` yang tampil, yang lain
+  tidak. Kartu di halaman depan menampilkan letak proyek yang lebih dalam.
+- Pencarian tiga tingkat di folder kerja pemilik memakan sekitar 70 ms, maka
+  server mengingat letak papan yang sudah ditemukan dan baru mencari lagi bila
+  papan itu hilang; daftar papan di halaman depan selalu mencari ulang.

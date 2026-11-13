@@ -5,6 +5,7 @@ import path from 'node:path';
 import * as B from '../core/board.mjs';
 import * as T from '../core/ticket.mjs';
 import * as C from '../core/cmd-board.mjs';
+import { run } from '../core/util.mjs';
 import { lastStep } from './transcript.mjs';
 
 const IN_FLIGHT = ['in_progress', 'review'];
@@ -12,19 +13,50 @@ const ms = (t) => (t ? new Date(String(t).replace(' ', 'T')).getTime() : null);
 
 // ----- projects -----
 
-// Every folder directly under `root` (and `root` itself) that holds a board.
-export function scanProjects(root) {
-  const out = [];
-  const add = (dir) => {
-    if (fs.existsSync(path.join(dir, B.BOARD_DIR, 'settings.yml'))) out.push({ name: path.basename(dir), dir });
-  };
-  add(root);
-  let names = [];
-  try {
-    names = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name).sort();
-  } catch {}
-  for (const n of names) add(path.join(root, n));
-  // Two folders of one name cannot both be addressed: the first keeps it.
+export const MAX_DEPTH = 3;
+export const isBoard = (dir) => fs.existsSync(path.join(dir, B.BOARD_DIR, 'settings.yml'));
+
+// Of `dirs`, those git ignores in a repository that encloses them, no higher
+// than `root`. Git itself is asked, once per such repository, so every rule it
+// knows counts; a .gitignore outside any repository counts for nothing.
+function gitIgnored(root, dirs) {
+  const asked = new Map(); // repository -> the folders inside it
+  for (const dir of dirs) {
+    for (let up = dir; up !== root;) {
+      up = path.dirname(up);
+      if (fs.existsSync(path.join(up, '.git'))) (asked.get(up) || asked.set(up, []).get(up)).push(dir);
+    }
+  }
+  const ignored = new Set();
+  for (const [repo, inside] of asked) {
+    const r = run('git', ['check-ignore', '-z', '--stdin'], { cwd: repo, input: inside.map((d) => path.relative(repo, d)).join('\0') });
+    if (r.code === 0) for (const rel of r.out.split('\0')) if (rel) ignored.add(path.join(repo, rel));
+  }
+  return ignored;
+}
+
+// `root` itself and every folder up to `depth` levels under it that holds a
+// board, the nearest first. Hidden folders and node_modules are not entered;
+// a symlink is not followed.
+export function scanProjects(root, depth = 1) {
+  const found = [];
+  let level = [root];
+  for (let d = 0; level.length; d++) {
+    const next = [];
+    for (const dir of level) {
+      if (isBoard(dir)) found.push(dir);
+      if (d >= Math.min(depth, MAX_DEPTH)) continue;
+      let names = [];
+      try {
+        names = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map((e) => e.name).sort();
+      } catch {}
+      for (const n of names) next.push(path.join(dir, n));
+    }
+    level = next;
+  }
+  const ignored = gitIgnored(root, found);
+  const out = found.filter((dir) => !ignored.has(dir)).map((dir) => ({ name: path.basename(dir), dir, path: path.relative(root, dir) || '.' }));
+  // Two folders of one name cannot both be addressed: the nearest keeps it.
   return out.filter((p, i) => out.findIndex((q) => q.name === p.name) === i);
 }
 
@@ -275,8 +307,8 @@ export function projectCard(project) {
     for (const s of B.STATUSES) counts[s] = B.listTickets(board, [s]).length;
     let running = 0;
     for (const t of B.listTickets(board, IN_FLIGHT)) if (activeRole(t, B.getState(board, t.id))) running++;
-    return { name: project.name, counts, running, needs: C.inboxItems(board).length };
+    return { name: project.name, path: project.path, counts, running, needs: C.inboxItems(board).length };
   } catch (e) {
-    return { name: project.name, error: String(e.message || e) };
+    return { name: project.name, path: project.path, error: String(e.message || e) };
   }
 }

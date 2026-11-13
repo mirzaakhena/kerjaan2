@@ -154,6 +154,7 @@ tr.day td { font-weight: 600; background: var(--sunk); font-size: 12.5px; paddin
 .project:hover { border-color: var(--accent); text-decoration: none }
 .project .name { font-size: 16px; font-weight: 600; margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap }
 .project .counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--muted) } .project .counts i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 5px }
+.project .where { font-size: 12px; font-weight: 400; color: var(--muted); overflow-wrap: anywhere }
 .project .err { color: var(--bad); font-size: 13px; overflow-wrap: anywhere }
 
 /* drawer */
