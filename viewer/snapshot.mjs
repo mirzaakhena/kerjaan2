@@ -135,6 +135,86 @@ function trailFacts(board, id) {
   return facts;
 }
 
+// ----- the trail, event by event -----
+
+// A point in the trails of a board: how far each ticket's trail had been read,
+// in bytes of whole lines, and which file that was. A trail only grows, so
+// what lies past a point is exactly what was written after it.
+const trailFiles = (board) => {
+  const dir = path.join(board.dir, 'log');
+  let names = [];
+  try {
+    names = fs.readdirSync(dir).filter((n) => /^\d{12}\.jsonl$/.test(n)).sort();
+  } catch {}
+  return names.map((n) => ({ id: n.slice(0, 12), file: path.join(dir, n) }));
+};
+
+// The events written after `point` (none of them with no point), oldest
+// first, each naming its ticket, and the point to ask from next time. Null
+// when the point is not of this board as it is now (a trail gone, replaced
+// or cut short): the page must read the state again.
+// A line that is no event (cut, not JSON, no time) is passed over.
+export function trailSince(board, point = null) {
+  const at = {};
+  const events = [];
+  const files = trailFiles(board);
+  if (point) {
+    if (point.dir !== board.dir) return null;
+    const have = new Set(files.map((f) => f.id));
+    for (const id of Object.keys(point.at)) if (!have.has(id)) return null;
+  }
+  for (const { id, file } of files) {
+    const was = point?.at[id] || null;
+    let stat;
+    try {
+      stat = fs.statSync(file);
+    } catch {
+      if (was) return null;
+      continue;
+    }
+    if (was && (was.ino !== stat.ino || stat.size < was.end)) return null;
+    const from = was ? was.end : 0;
+    if (was && stat.size === from) {
+      at[id] = was;
+      continue;
+    }
+    let buf;
+    try {
+      buf = fs.readFileSync(file);
+    } catch {
+      if (was) return null;
+      continue;
+    }
+    if (buf.length < from) return null;
+    // Only whole lines: one still being written is read next time.
+    const end = buf.lastIndexOf(10) + 1;
+    at[id] = { ino: stat.ino, end: Math.max(end, from) };
+    if (!point || end <= from) continue;
+    for (const line of buf.subarray(from, end).toString('utf8').split('\n')) {
+      if (!line.trim()) continue;
+      let e;
+      try {
+        e = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!e || typeof e !== 'object' || Array.isArray(e) || typeof e.event !== 'string') continue;
+      const when = ms(e.t);
+      if (!Number.isFinite(when)) continue;
+      events.push({ ...e, ticket: id, at: when });
+    }
+  }
+  // By time; within one second, a ticket's own order is kept.
+  events.sort((a, b) => a.at - b.at);
+  return { events, point: { dir: board.dir, at } };
+}
+
+export const samePoint = (a, b) => {
+  if (a.dir !== b.dir) return false;
+  const ka = Object.keys(a.at);
+  return ka.length === Object.keys(b.at).length && ka.every((id) => b.at[id] && b.at[id].ino === a.at[id].ino && b.at[id].end === a.at[id].end);
+};
+
 // ----- the board -----
 
 const rel = (board, p) => (p ? path.relative(board.root, p) : null);

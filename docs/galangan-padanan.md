@@ -1,6 +1,7 @@
 # Galangan: padanan viewer kanban ke ruang 3D
 
-Ditulis 13 November 2026, untuk versi 0.16.0. Berkas ini mendaftar apa yang
+Ditulis 13 November 2026, untuk versi 0.16.0; sepuluh macam kapal ditambahkan
+sesudahnya. Berkas ini mendaftar apa yang
 terjadi di viewer kanban (`k2 view`) dan apa padanannya di halaman galangan
 (`/p/<proyek>/space`), serta apa yang belum punya padanan. Keputusan dan batas
 galangan ada di bagian "Galangan" pada akhir `docs/blueprint.md`.
@@ -55,6 +56,39 @@ Bila kode berubah, berkas ini ikut diperbarui.
 | "Waiting for you" berisi N butir | N bendera (paling banyak 5) di dekat mercusuar; Keeper memberi isyarat |
 | Judul dan nomor tiket | Papan nama di kepala landasan tiap dok; kartu tiket saat kapal atau gulungan diklik |
 | Ukuran kontrak (jumlah kriteria) | Ukuran kapal: kecil (≤3), sedang (≤6), besar |
+| ID tiket | Macam kapal, satu dari sepuluh corak, tetap sejak lunas di dok sampai berlabuh (lihat "Sepuluh macam kapal") |
+
+## Sepuluh macam kapal
+
+Ukuran kapal mengikuti jumlah kriteria; coraknya mengikuti ID tiket. Hash
+kecil atas ID (bukan angka ID langsung, karena ID adalah cap waktu yang
+berurutan) memilih satu dari sepuluh corak, dan tiap corak berlaku untuk
+ketiga ukuran. Karena hanya ID yang dihitung, tiket yang sama mendapat kapal
+yang sama di tiap pemuatan halaman dan di tiap perangkat. Aturannya ada di
+`liveryOf` (`plan.js`); warnanya di `LIVERY` (`world.js`).
+
+| Corak | Lambung | Layar | Bendera |
+|---|---|---|---|
+| `white` | biasa | putih | putih |
+| `red` | biasa | merah | merah |
+| `teal` | biasa | toska | toska |
+| `yellow` | biasa | kuning | kuning |
+| `blue` | biasa | biru | biru |
+| `green` | biasa | hijau | hijau |
+| `orange` | biasa | jingga | jingga |
+| `purple` | biasa | ungu | ungu |
+| `pirate-red` | bajak laut | hitam bertengkorak | merah |
+| `pirate-white` | bajak laut | hitam bertengkorak | putih |
+
+- Layar hitam bertengkorak digambar di modelnya dan tidak bisa diwarnai; dua
+  kapal bajak laut dibedakan dari benderanya saja.
+- Corak baru terlihat penuh setelah reviewer meluluskan (layar dan bendera
+  dipasang). Sebelum itu, di dok, hanya bentuk lambung yang membedakan: biasa
+  atau bajak laut.
+- Mengubah `liveryOf` atau urutan `LIVERIES` mengganti kapal semua tiket di
+  semua papan.
+- Mode `?demo` memilih ID buatannya sehingga kesepuluh corak muncul
+  bergiliran, dengan satu kapal bajak laut di antara yang pertama berlabuh.
 
 ## Yang ada di viewer tetapi belum punya padanan
 

@@ -75,7 +75,7 @@ export class Director {
   }
 
   launchShip(tok) {
-    tok.ship = this.w.make.ship(tok.pic.size);
+    tok.ship = this.w.make.ship(tok.pic.size, tok.pic.livery);
     tok.ship.o.userData.ticket = tok.id;
     this.scene.add(tok.ship.o);
     return tok.ship;
