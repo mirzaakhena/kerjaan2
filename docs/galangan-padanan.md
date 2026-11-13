@@ -1,7 +1,9 @@
 # Galangan: padanan viewer kanban ke ruang 3D
 
 Ditulis 13 November 2026, untuk versi 0.16.0; sepuluh macam kapal, pemutar
-linimasa, perahu rombongan, lalu perencana (Naval Architect) dan meja todo
+linimasa, perahu rombongan, perencana (Naval Architect) dan meja todo,
+tukang yang menjemput tiketnya dan dok yang mengikuti `max_parallel`, lalu
+drama review (dengan jangkar saat ditahan)
 ditambahkan sesudahnya. Berkas ini mendaftar apa yang
 terjadi di viewer kanban (`k2 view`) dan apa padanannya di halaman galangan
 (`/p/<proyek>/space`), serta apa yang belum punya padanan. Keputusan dan batas
@@ -58,21 +60,25 @@ kapal tunda tetap pada kecepatannya. Angkanya ada di `plan.js` (`CALM`,
 |---|---|
 | `created` | Perahu rombongan; Courier membawa peti ke rak ORDERS (lihat "Perahu rombongan") |
 | `moved` ke todo | Naval Architect mengambil tiket dari papan pesanan dan menjejerkannya di meja todo; tiket yang pindah hampir bersamaan dibawa dalam satu jalan |
-| `started` | Foreman membawa gulungan dari meja todo ke dok kosong; lunas diletakkan |
+| `started` | Dok kosong disiapkan untuk tiket itu: papan namanya dipasang, Foreman datang menyapa tukang dok itu. Gulungan tetap di meja todo; belum ada lambung |
+| `agent` (worker) | Tukang dok itu berjalan ke meja todo, mengambil gulungannya, membawanya ke doknya; sesudah ia tiba lunas diletakkan. Hanya sekali per tiket: worker kedua (setelah ditolak) tidak menjemput lagi |
 | `check`, `uncheck`, `void` | Lambung naik atau turun |
-| `submitted` | Status di dok menjadi review (di jalur light: langsung lulus, layar dipasang) |
-| `verdict` lulus | Inspector memberi "✓"; layar dan bendera dipasang |
-| `verdict` ditolak | Inspector memberi "✗"; kriteria yang disebut gagal dicabut, lambung turun |
-| `landed` | Kapal meluncur dan berlabuh |
+| `submitted` | Shipwright dok itu meloncat senang (🥳). Di jalur light, yang lulus tanpa reviewer: layar langsung dipasang, tanpa Inspector |
+| `verdict` lulus | Inspector mendatangi Shipwright, bicara singkat (💬 lalu "✓"); layar dan bendera dipasang; Shipwright meloncat senang (😄). Kapal tetap di doknya |
+| `verdict` ditolak | Inspector memberi ❌; Shipwright sedih (😢) lalu kembali bekerja; kriteria yang disebut gagal dicabut, lambung turun |
+| `accepted` (`k2 accept` sesudah ditolak) | Seperti lulus di jalur light: Shipwright meloncat senang, layar dipasang, tanpa Inspector |
+| `submitted` dan `verdict` selagi main dibawa masuk sesudah lulus | Tanpa adegan; layar tetap terpasang |
+| `landed` | Kapal meluncur dan berlabuh. Hanya kejadian ini yang meluncurkan kapal |
 | `moved` ke cancel | Tanpa cerita: tokennya (gulungan atau kapal) memudar pelan, sekitar 2 detik, di tempatnya lalu hilang. Tak ada pemeran yang berjalan; dok atau slot yang ditinggalkan langsung bisa dipakai. Tiket yang sudah cancel saat halaman dibuka tidak tampil |
 | `moved` mundur (misalnya todo ke backlog, atau dibuka lagi) | Langsung diletakkan, tanpa cerita |
-| `agent`, `test`, `question`, `answer`, `assumption*`, `manual*`, `integrate`, `integrated`, `conflict`, `held`, `accepted`, `amended`, `released`, `retry` | Belum punya adegan: dilewati |
+| `agent` (reviewer), `test`, `question`, `answer`, `assumption*`, `manual*`, `integrate`, `integrated`, `conflict`, `held`, `amended`, `released`, `retry` | Belum punya adegan: dilewati |
 
 **Yang tetap dibaca dari keadaan papan**, karena tidak ada di linimasa:
 langkah terakhir agen, uji yang sedang berjalan (lampu dok), agen macet,
-pertanyaan yang menunggu pemilik, bendera kotak masuk, urutan antrean, giliran
-merge, planner yang sedang bekerja, dan baris tiket di meja todo (siap atau
-menunggu tiket lain). Semua itu tampil seketika.
+reviewer yang sedang bekerja (Inspector berkeliling), ditahan atau dihentikan
+(jangkar), pertanyaan yang menunggu pemilik, bendera kotak masuk, urutan
+antrean, giliran merge, planner yang sedang bekerja, dan baris tiket di meja
+todo (siap atau menunggu tiket lain). Semua itu tampil seketika.
 
 **Sambungan putus.** Halaman mengingat sampai titik mana linimasa sudah
 dibaca. Pembacaan yang gagal tidak menggeser titik itu, jadi setelah tersambung
@@ -136,14 +142,70 @@ Batas-batasnya:
 - Rak ORDERS memuat 12 gulungan; rombongan yang lebih besar tetap dibawa satu
   peti, sisanya tidak digambar.
 
+## Review, lulus, dan jangkar
+
+Review adalah adegan, dan lulus belum berarti meluncur.
+
+- **Diserahkan** (`submitted`): Shipwright dok itu meloncat senang dengan
+  balon 🥳.
+- **Reviewer bekerja** (dibaca dari keadaan papan): Inspector datang ke kapal
+  itu dan mengelilinginya: menyusuri satu sisi, kembali lewat jalan di belakang
+  dok, lalu menyusuri sisi lainnya, berhenti memeriksa di empat titik. Selama
+  reviewer masih bekerja ia mengulang putaran itu. Bila beberapa kapal sedang
+  direview, ia berkeliling bergiliran.
+- **Lulus** (`verdict` lulus): Shipwright menunggu di sisi dok. Inspector
+  mendekatinya dan bicara singkat (💬, lalu "✓"). Saat itulah layar dan bendera
+  dipasang, tidak sebelumnya; Shipwright meloncat senang (😄). Kapal tetap di
+  doknya.
+- **Ditolak** (`verdict` ditolak): Inspector mendekati Shipwright dan memberi
+  ❌. Lambung baru turun sesudah ❌ itu, tidak selagi Inspector masih di jalan.
+  Shipwright sedih (😢, menggeleng), lalu kembali memalu.
+- **Lulus tanpa reviewer** (jalur light, atau `k2 accept`): Shipwright
+  meloncat senang (🥳) dan layar langsung dipasang. Inspector tidak datang,
+  sebab tidak ada reviewer yang bekerja.
+- **Inspector hanya satu.** Tiap vonis ia antarkan sendiri, satu kapal sampai
+  selesai baru kapal berikutnya, menurut urutan kejadiannya; adegan tiket lain
+  menunggu gilirannya. Vonis tidak lagi ditampilkan tanpa ia datang. Bila ia
+  belum sempat mengelilingi kapal itu (vonis datang bersamaan dengan
+  penyerahan, atau galangan sedang mengejar), ia berkeliling dulu satu
+  putaran. Vonis yang sudah menunggu didahulukan dari putaran keliling.
+- **Meluncur hanya saat `landed`.** Kapal yang lulus menunggu di doknya dengan
+  layar terpasang, berapa pun lamanya dan di urutan mana pun dalam antrean
+  merge. Peluncurannya sendiri tidak berubah dari 0.16.0.
+- **Jangkar.** Kapal yang sudah lulus tetapi ditahan (`held`) atau dihentikan
+  (`stopped`) menurunkan jangkar di sisi haluannya, dan jangkar itu tinggal di
+  dermaga dok selama penahanan berlangsung. Begitu dilepas (pertanyaan
+  dijawab, `k2 retry`, atau `k2 land` berhasil), jangkar naik lagi dan
+  disimpan. Jangkar baru turun sesudah adegan lulusnya selesai (layar sudah
+  terpasang). Tiket yang dihentikan sebelum lulus tidak berjangkar.
+- **Main dibawa masuk sesudah lulus:** layar tetap terpasang dan Shipwright
+  bekerja seperti biasa; penyerahan dan vonis ulangnya tidak punya adegan.
+- Balon perasaan (🥳, 😄, 😢), 💬, dan ❌ digambar kira-kira tiga kali lebih besar
+  daripada balon tanda ("?", "!", "✓") supaya terbaca dari jarak kamera biasa.
+- Mode `?demo` memperlihatkan ketiganya bergiliran: review pertama lulus,
+  review kedua ditolak sekali lalu lulus, review ketiga lulus lalu ditahan
+  sekitar satu menit sebelum dilepas dan mendarat; begitu seterusnya.
+
+Batas-batasnya:
+
+- Penahanan dan pelepasannya dibaca dari keadaan papan, bukan dari linimasa:
+  papan hanya menulis kejadian `held` saat merge ditolak, dan tidak menulis
+  apa pun saat penahanan dilepas. Karena itu jangkar naik seketika saat papan
+  berubah, walau adegan lain tiket itu masih tertinggal.
+- Putaran keliling Inspector juga dibaca dari keadaan (ada reviewer di tiket
+  itu), bukan dari kejadian `agent`.
+- Urutan vonis menurut kejadian berlaku di antara vonis yang sedang menunggu
+  Inspector; vonis yang adegannya sudah ia mulai tidak disela.
+- Bentuk jangkar dibuat dari bentuk dasar, bukan model dari ruang pamer.
+
 ## Pemeran
 
 | Karakter | Padanan di kerjaan2 |
 |---|---|
 | Courier | penerima tiket baru (tidak ada agen untuk ini) |
 | Naval Architect | planner (menggantikan Draughtsman; karakternya masih yang sama) |
-| Foreman | mandor (sesi utama), hanya saat `k2 start` |
-| Shipwright 1–4 | worker; satu tukang per dok, satu dok per tiket yang berjalan |
+| Foreman | mandor (sesi utama): saat `k2 start` ia menyapa tukang di dok yang disiapkan; ia tidak membawa tiket |
+| Shipwright 1–10 | worker; satu tukang per dok, sebanyak dok yang ada. Tukang 5–10 memakai ulang empat model tukang yang ada dengan urutan lain; daftar pemeran bisa digulir |
 | Inspector | reviewer |
 | Crane operator | merge (`k2 land`) |
 | Keeper | kotak masuk pemilik |
@@ -159,22 +221,88 @@ Batas-batasnya:
 | Tiket pindah backlog → todo (hasil kerja planner) | Naval Architect mengambil gulungan dari papan pesanan dan menjejerkannya di meja todo. Tiket yang pindah hampir bersamaan dibawa dalam satu jalan |
 | Tiket ada di kolom todo | Gulungan di meja todo (TODO), berjejer menurut urutan antrean |
 | Alasan "starts after X lands" atau "solo" pada tiket todo | Gulungan itu di baris belakang meja, berpita abu-abu; yang siap di baris depan, berpita merah. Begitu tidak lagi menunggu, gulungan bergeser ke baris depan |
-| Tiket pindah todo → in_progress (`k2 start`) | Foreman mengambil gulungan dari meja todo dan membawanya ke dok kosong; lunas kapal muncul |
+| Tiket pindah todo → in_progress (`k2 start`) | Satu dok kosong disiapkan: papan nama tiket dipasang di kepala landasan, Foreman menyapa tukangnya. Gulungan pindah ke urutan depan baris depan meja todo |
+| Worker dikirim ke tiket itu | Tukang dok itu menjemput gulungannya dari meja todo dan kembali ke doknya; baru sesudah ia tiba lunas kapal muncul |
+| `max_parallel` papan | Jumlah dok (lihat "Dok mengikuti `max_parallel`") |
 | Kartu agen "worker" di Control room | Shipwright dok itu memalu lambung; keterangannya adalah langkah terakhir agen dari transkrip |
 | Kriteria "Done when" tercentang, dicabut, atau dibatalkan | Lambung naik atau turun: seperempat sejak lunas diletakkan, sisanya menurut bagian kriteria yang terpenuhi. Kriteria yang dibatalkan dan kriteria `(owner)` tidak dihitung, jadi lambung penuh saat semua bagian worker terpenuhi. Lambung tidak bergerak karena hal lain |
 | Uji sedang berjalan (hijau, kuning, merah) | Lampu di tiang dok menyala dengan warna yang sama; Shipwright "testing" |
 | Agen macet (stuck) | Shipwright atau Inspector menggeleng dengan balon "?" |
 | Pertanyaan menunggu pemilik pada tiket itu | Shipwright duduk menunggu dengan balon "?" |
-| Tiket pindah ke review, kartu agen "reviewer" | Lambung sudah penuh (semua kriteria worker terpenuhi sebelum diserahkan), belum berlayar; Inspector berkeliling kapal itu (bergiliran bila lebih dari satu) |
-| Reviewer menolak | Inspector memberi "✗"; lambung turun bila ada kriteria yang dicabut, Shipwright kembali bekerja |
-| Reviewer meluluskan (lencana ⚠ belum di-merge) | Inspector memberi "✓"; layar dan bendera kapal dipasang |
+| Tiket pindah ke review, kartu agen "reviewer" | Shipwright meloncat senang (🥳). Lambung sudah penuh (semua kriteria worker terpenuhi sebelum diserahkan), belum berlayar; Inspector mengelilingi kapal itu (bergiliran bila lebih dari satu) |
+| Reviewer menolak | Inspector memberi ❌ kepada Shipwright; Shipwright sedih (😢) lalu kembali bekerja; lambung turun bila ada kriteria yang dicabut |
+| Reviewer meluluskan (lencana ⚠ belum di-merge) | Inspector mendekati Shipwright dan bicara singkat; layar dan bendera kapal dipasang; Shipwright senang (😄). Kapal tetap di doknya |
+| Lulus tanpa reviewer (jalur light, `k2 accept`) | Shipwright meloncat senang (🥳), layar dipasang, tanpa Inspector |
+| Lulus tetapi ditahan atau dihentikan (held, stopped) | Kapal menunggu di doknya dengan jangkar turun; jangkar naik lagi begitu dilepas |
 | Tiket nomor 1 di antrean merge | Crane operator bersiap meluncurkan kapal itu |
-| Tiket landed → done | Setelah adegan sebelumnya selesai, kapal meluncur di landasan ke air dan berlabuh di teluk; empat kapal terbaru tinggal, yang tertua berlayar pergi |
+| Tiket landed → done | Baru saat inilah kapal meluncur: setelah adegan sebelumnya selesai, kapal meluncur di landasan ke air dan berlabuh di teluk; empat kapal terbaru tinggal, yang tertua berlayar pergi |
 | Tiket cancel | Tak ada pemeran: tokennya memudar pelan lalu hilang (keputusan 31) |
 | "Waiting for you" berisi N butir | N bendera (paling banyak 5) di dekat mercusuar; Keeper memberi isyarat |
 | Judul dan nomor tiket | Papan nama di kepala landasan tiap dok; kartu tiket saat kapal atau gulungan diklik |
 | Ukuran kontrak (jumlah kriteria) | Ukuran kapal: kecil (≤3), sedang (≤6), besar |
 | ID tiket | Macam kapal, satu dari sepuluh corak, tetap sejak lunas di dok sampai berlabuh (lihat "Sepuluh macam kapal") |
+
+## Tukang menjemput tiketnya
+
+Keputusan 27 dan jawaban pemilik di tiket 261113190705.
+
+- `k2 start` hanya menyiapkan dok: papan nama dipasang, Foreman datang dan
+  menyapa. Foreman tidak pernah membawa gulungan.
+- Tukang baru berangkat saat worker tercatat dikirim (kejadian `agent` dengan
+  peran worker). Ia berjalan ke meja todo, mengambil gulungan tiketnya,
+  kembali ke doknya, dan sesudah ia tiba lunas diletakkan.
+- Bila ada pekerjaan pada tiket tanpa worker yang tercatat (kriteria
+  dicentang, dicabut, dibatalkan, tiket diserahkan, atau putusan reviewer),
+  galangan menganggap tiketnya sudah dikerjakan: gulungan dijemput dulu, baru
+  lambungnya bergerak.
+- Halaman yang dibuka di antara `k2 start` dan pengiriman worker menampilkan
+  hal yang sama: dok bernama tanpa lambung, gulungan masih di papan. Tandanya
+  dibaca dari papan: kejadian terakhir tiket itu masih `started`.
+- Bila tukangnya sedang punya tiga pekerjaan antre, adegan jemput dilewati
+  dan lunas langsung diletakkan.
+
+## Dok mengikuti `max_parallel`
+
+Keputusan 28. Jumlah dok sama dengan `max_parallel` di `settings.yml`, dan tiap
+dok punya satu tukang. Tata letaknya dihitung di `yardOf` (`plan.js`) dan
+digambar oleh `setDocks` (`world.js`).
+
+| `max_parallel` | Tata letak |
+|---|---|
+| 1 sampai 4 | satu baris, jarak antardok seperti galangan lama; 4 dok persis galangan 0.16.0 |
+| 5 dan 6 | satu baris, dok lebih rapat; pada 6 pulau melebar sedikit |
+| 7 sampai 10 | dua baris: 4+3, 5+3, 5+4, 6+4. Baris belakang digeser setengah langkah, sehingga tiap landasannya lewat di sela dua dok depan sampai ke air |
+| lebih dari 10 | tetap 10 dok |
+
+- Pulau ikut membesar. Untuk dua baris deretan gudang dan teras mundur satu
+  baris dok, dan di antara dua baris ada jalan kedua. Supaya kapal baris
+  belakang bisa lewat di sela dok depan, dok depan direnggangkan, jadi pulau
+  melebar: dermaga pos bergeser ke barat, derek dan mercusuar ke timur. Pada
+  10 dok pulau kira-kira satu setengah kali lebar galangan 4 dok, dan kamera
+  "Whole yard" mundur sebanyak itu.
+- Papan nama tiket sekarang berdiri di tengah kepala landasan (dulu di sisi
+  kiri dok), supaya tidak menghalangi lorong di antara dok.
+- Lampu jalan dan peti di antara dok hanya ada bila selanya cukup lebar
+  (satu baris, sampai 4 dok).
+- **Tiket lebih banyak daripada dok.** Tiket yang hanya menunggu pemilik tidak
+  memakai jatah `max_parallel`, dan kapal yang lulus tetap di dok sampai
+  landed, jadi tiket berjalan bisa lebih banyak daripada dok. Tiket
+  berikutnya menunggu sebagai gulungan di meja todo sampai ada dok kosong;
+  kejadiannya tetap dicatat dan lambungnya langsung setinggi yang benar saat
+  dok didapat.
+- **`max_parallel` berubah selagi halaman terbuka.** Dinaikkan: dok dan tukang
+  bertambah, kapal yang ada tetap di doknya (dok bisa pindah tempat karena
+  tata letak dihitung ulang; kapal ikut doknya), gulungan yang menunggu
+  mendapat dok. Diturunkan: dok dibongkar dari ujung, dan dok yang masih
+  berisi kapal tinggal sampai kapalnya pergi, begitu juga dok bernomor lebih
+  kecil di depannya; dok di luar jatah tidak menerima tiket baru. Tata letak
+  tidak diubah selagi ada kapal yang sedang meluncur. Orang yang sedang
+  berjalan saat tata letak berubah menyelesaikan langkahnya ke tempat lama,
+  lalu berjalan biasa lagi.
+- **Mode demo.** `?demo&docks=6` membuka demo dengan 6 dok (1 sampai 10; tanpa
+  `docks` memakai 4). Catatan demo di kiri atas punya tautan 1, 3, 4, 6, 7,
+  10. Untuk mengubah jumlah selagi demo berjalan:
+  `k2space.demo.setDocks(8)` di konsol peramban.
 
 ## Sepuluh macam kapal
 
@@ -200,7 +328,7 @@ yang sama di tiap pemuatan halaman dan di tiap perangkat. Aturannya ada di
 
 - Layar hitam bertengkorak digambar di modelnya dan tidak bisa diwarnai; dua
   kapal bajak laut dibedakan dari benderanya saja.
-- Corak baru terlihat penuh setelah reviewer meluluskan (layar dan bendera
+- Corak baru terlihat penuh setelah tiket lulus (layar dan bendera
   dipasang). Sebelum itu, di dok, hanya bentuk lambung yang membedakan: biasa
   atau bajak laut.
 - Mengubah `liveryOf` atau urutan `LIVERIES` mengganti kapal semua tiket di
@@ -266,16 +394,14 @@ maju saat tiket itu berlabuh.
 
 ## Yang ada di viewer tetapi belum punya padanan
 
-- **Mandor (sesi utama).** Foreman hanya bergerak saat `start`; kegiatan sesi
+- **Mandor (sesi utama).** Foreman hanya menyapa saat `start`; kegiatan sesi
   utama lainnya tidak terlihat.
 - **Tiket todo yang dijeda pemilik** (pause before) atau belum siap:
   gulungannya tampil sama dengan yang siap.
 - **Tiket mana yang ditunggu:** baris belakang hanya berkata "menunggu tiket
   lain", tidak menunjuk tiketnya.
-- **Lulus tetapi ditahan atau dihentikan** (held, stopped): kapalnya tampil
-  sama dengan yang menunggu giliran merge.
 - **Main dibawa masuk sebelum merge** (worker atau reviewer dipanggil lagi
-  setelah lulus): tampil seperti kerja biasa.
+  setelah lulus): tampil seperti kerja biasa, layar tetap terpasang.
 - **Posisi 2 dan seterusnya di antrean merge:** tidak dibedakan.
 - **Jenis butir kotak masuk** (asumsi, cek tangan, follow-up, ditolak dua
   kali, kontrak berubah): semuanya hanya menjadi bendera.
@@ -283,11 +409,11 @@ maju saat tiket itu berlabuh.
 - **Jalur (lane), model, ronde ke berapa:** tidak tampil di adegan; penolakan
   hanya di kartu tiket.
 - **Tab History** (lama pengerjaan, tingkat penolakan): tidak ada.
-- **Lebih dari yang muat:** tiket berjalan kelima dan seterusnya menunggu
+- **Lebih dari yang muat:** tiket berjalan yang tidak mendapat dok menunggu
   sebagai gulungan di meja todo; rak memuat 12 gulungan dan meja todo 8 per
   baris, sisanya tidak digambar dan tidak diberi tanda.
 
 ## Usul kelanjutan (belum diputuskan pemilik)
 
-1. **Ditahan atau dihentikan.** Kapal lulus yang ditahan diberi tanda
-   sendiri, misalnya rantai di dok dan bendera kuning.
+Usul yang pernah dicatat di sini sudah dikerjakan. Yang masih terbuka ada di
+`docs/galangan-tahap2.md`, bagian "Belum diputuskan pemilik".
