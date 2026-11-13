@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ruang pamer galangan</title>
+<!--
+  Mockup untuk memilih bentuk tiap unit galangan (derek, karakter, kapal, komponen lain).
+  Modul ES tidak bisa dimuat dari file://, jadi buka lewat server kecil dari akar repo:
+    python3 -m http.server 4400 --bind 127.0.0.1
+  lalu http://127.0.0.1:4400/docs/mockups/galangan/
+-->
+<style>
+:root { color-scheme: dark }
+* { box-sizing: border-box }
+html, body { margin: 0; height: 100%; background: #191b2c; color: #e3e9f5; font: 14px/1.4 "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif; overflow: hidden }
+#stage { position: fixed; inset: 0 }
+canvas { display: block }
+.bar { position: fixed; left: 12px; top: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; pointer-events: none }
+.bar > * { pointer-events: auto }
+.bar h1 { font-size: 17px; margin: 0 10px 0 0 }
+button { font: inherit; color: #e3e9f5; background: rgba(20, 24, 44, .8); border: 1px solid #3d4468; border-radius: 999px; padding: 5px 13px; cursor: pointer }
+button:hover { border-color: #5fb2ff }
+button[aria-pressed="true"] { background: #1e7bd6; border-color: #1e7bd6; color: #fff; font-weight: 600 }
+.sep { width: 1px; height: 22px; background: #3d4468; margin: 0 6px }
+#tools { position: fixed; left: 12px; bottom: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
+#tools span { color: #aab3cc; font-size: 13px; margin-right: 4px }
+#note { position: fixed; right: 12px; bottom: 56px; max-width: 360px; background: rgba(20, 24, 44, .85); border: 1px solid #3d4468; border-radius: 10px; padding: 10px 12px; font-size: 13px; color: #c9d1e6 }
+#note b { color: #fff }
+#loading[hidden] { display: none }
+#loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #c9d1e6 }
+</style>
+<script type="importmap">{ "imports": { "three": "../../../viewer/web/space/three/three.module.min.js", "three/addons/": "../../../viewer/web/space/three/" } }</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="loading">Membuka ruang pamer…</div>
+<div class="bar">
+  <h1>Ruang pamer galangan</h1>
+  <button data-go="all">Semua</button>
+  <button data-go="crane">A · Derek</button>
+  <button data-go="people">B · Karakter</button>
+  <button data-go="ships">C · Kapal</button>
+  <button data-go="parts">D · Komponen kapal</button>
+  <button data-go="other">E · Komponen lain</button>
+</div>
+<div id="note"></div>
+<div id="tools"></div>
+<script type="module" src="./mock.js"></script>
+</body>
+</html>

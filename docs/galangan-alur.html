@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alur viewer kanban ke galangan</title>
+<style>
+:root {
+  --ground: #eef1f6; --panel: #fff; --sunk: #e6eaf1; --ink: #172033; --muted: #5b6680; --faint: #b9c2d3; --line: #dde2ec;
+  --backlog: #767ca6; --todo: #1e7bd6; --in_progress: #c77800; --review: #8a4ad6; --merge: #0f8a8a; --done: #138f67; --cancel: #c2513b; --inbox: #b0447f;
+  --yard: #f3f8ff; --yard-line: #c9dcf5; --none: #fff7e8; --none-line: #e2b660; --none-ink: #8a5300;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --ground: #0c111c; --panel: #141b2b; --sunk: #101626; --ink: #e3e9f5; --muted: #8b96b0; --faint: #3d4862; --line: #232d44;
+  --backlog: #9ba1c9; --todo: #5fb2ff; --in_progress: #ffb547; --review: #c28cff; --merge: #4fd1d1; --done: #3fcf9d; --cancel: #e57a62; --inbox: #f08cc0;
+  --yard: #121d33; --yard-line: #26406b; --none: #2a2110; --none-line: #7a5a1c; --none-ink: #ffcf87;
+  color-scheme: dark } }
+* { box-sizing: border-box }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 14px/1.4 "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif }
+header { padding: 20px 24px 8px; max-width: 1100px }
+h1 { margin: 0 0 6px; font-size: 24px }
+header p { margin: 0 0 8px; color: var(--muted); font-size: 15px }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 4px 24px 14px; font-size: 13px; color: var(--muted) }
+.legend span { display: inline-flex; align-items: center; gap: 7px }
+.legend i { width: 26px; height: 14px; border-radius: 4px; border: 1.5px solid var(--line); background: var(--panel) }
+.legend i.y { background: var(--yard); border-color: var(--yard-line) }
+.legend i.n { background: var(--none); border: 1.5px dashed var(--none-line) }
+.legend i.t { background: var(--ink); border-color: var(--ink); border-radius: 999px; height: 4px }
+.scroll { overflow-x: auto; padding: 0 24px 8px }
+.flow { display: flex; align-items: stretch; gap: 0; min-width: max-content }
+.stage { width: 262px; flex: none; background: var(--panel); border: 1px solid var(--line); border-top: 5px solid var(--c); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px }
+.stage > h2 { margin: 0 0 2px; font-size: 16px; display: flex; align-items: baseline; gap: 8px; color: var(--c) }
+.stage > h2 small { font-weight: 400; font-size: 12px; color: var(--muted) }
+.arrow { width: 214px; flex: none; display: flex; flex-direction: column; justify-content: flex-start; padding: 44px 0 0; position: relative }
+.arrow::before { content: ""; position: absolute; left: 0; right: 10px; top: 24px; height: 3px; background: var(--ink); border-radius: 2px }
+.arrow::after { content: ""; position: absolute; right: 0; top: 16px; border: 9.5px solid transparent; border-left: 13px solid var(--ink); border-right: 0 }
+.arrow .card { margin: 0 12px }
+.card { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--panel) }
+.card .v { padding: 7px 9px; font-weight: 600 }
+.card .v small { display: block; font-weight: 400; color: var(--muted); font-size: 12.5px }
+.card .g { padding: 7px 9px; background: var(--yard); border-top: 1px solid var(--yard-line); font-size: 13.5px }
+.card .who { display: inline-block; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; padding: 0 7px; border-radius: 999px; background: var(--ink); color: var(--panel); margin: 0 4px 3px 0 }
+.card.none { border: 1.5px dashed var(--none-line) }
+.card.none .g { background: var(--none); border-top: 1.5px dashed var(--none-line); color: var(--none-ink) }
+.card.trans { border-color: var(--ink) }
+.card.trans .v { background: var(--ink); color: var(--panel) }
+.card.trans .v small { color: inherit; opacity: .75 }
+.loop { margin: 0; padding: 0 24px; min-width: max-content }
+.loop .bar { margin-left: calc(3 * 214px + 2 * 262px + 131px); width: calc(262px + 214px); border: 3px solid var(--cancel); border-top: 0; border-radius: 0 0 14px 14px; height: 26px; position: relative }
+.loop .bar::before { content: ""; position: absolute; left: -11px; top: -13px; border: 9.5px solid transparent; border-bottom: 13px solid var(--cancel); border-top: 0 }
+.loop .card { margin-left: calc(3 * 214px + 2 * 262px + 131px + 88px); width: 300px; margin-top: -1px; border-color: var(--cancel) }
+.loop .card .v { background: var(--cancel); color: #fff }
+.loop .card .v small { color: #fff; opacity: .85 }
+.flow { align-items: flex-start }
+.side { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; padding: 22px 24px 8px; max-width: 1500px }
+.side .stage { width: auto }
+.side .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px }
+footer { padding: 10px 24px 28px; color: var(--muted); font-size: 13px; max-width: 1000px }
+code { font: 12.5px ui-monospace, "SF Mono", Menlo, monospace }
+</style>
+</head>
+<body>
+<header>
+  <h1>Alur viewer kanban → galangan</h1>
+  <p>Setiap aktivitas yang tampil di viewer kanban (<code>k2 view</code>), mengikuti hidup satu tiket dari kiri ke kanan, dan apa yang terjadi di ruang 3D galangan (<code>/p/&lt;proyek&gt;/space</code>) pada saat yang sama. Versi 0.16.0, 13 November 2026.</p>
+</header>
+<div class="legend">
+  <span><i></i>yang terlihat di viewer kanban</span>
+  <span><i class="y"></i>padanannya di galangan</span>
+  <span><i class="n"></i>belum punya padanan di galangan</span>
+  <span><i class="t"></i>perpindahan status (ada cerita: karakter membawa tiketnya)</span>
+</div>
+<div class="scroll"><div class="flow" id="flow"></div></div>
+<div class="loop"><div class="bar"></div><div id="loop"></div></div>
+<div class="side" id="side"></div>
+<footer>
+  <p>Catatan: galangan boleh tertinggal dari papan, tidak pernah mendahuluinya. Bila papan tidak punya tiket yang berjalan, semua karakter hanya mengerjakan pekerjaan kecil pengisi waktu yang tidak menyebut tiket apa pun. Daftar yang sama dalam bentuk tabel: <code>docs/galangan-padanan.md</code>.</p>
+</footer>
+<script>
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+// v: di viewer, d: keterangan, w: karakter, g: di galangan (null = belum ada padanan, n: sebabnya)
+const card = (c, cls = '') => `<div class="card ${cls} ${c.g ? '' : 'none'}"><div class="v">${esc(c.v)}${c.d ? `<small>${esc(c.d)}</small>` : ''}</div><div class="g">${(c.w || []).map((w) => `<span class="who">${esc(w)}</span>`).join('')}${esc(c.g || `Belum ada padanan. ${c.n || ''}`)}</div></div>`;
+
+const FLOW = [
+  { t: { v: 'Tiket dibuat', d: 'kartu baru muncul selagi halaman terbuka', w: ['Courier'], g: 'Perahu pos merapat. Courier berjalan ke ujung dermaga, mengambil gulungan, membawanya ke rak ORDERS.' } },
+  { s: 'Backlog', c: 'backlog', sub: 'kolom 1', cards: [
+    { v: 'Kartu di kolom Backlog', g: 'Satu gulungan di rak ORDERS (muat 12).' },
+    { v: 'Planner sedang bekerja', d: 'menyiapkan antrean, bertanya ke pemilik', n: 'Papan tidak mencatat kapan planner berjalan, hanya hasilnya.' },
+  ] },
+  { t: { v: 'Planner memindahkan ke todo', d: 'backlog → todo', w: ['Draughtsman'], g: 'Mengambil gulungan dari rak, menggambar di meja DRAWINGS, lalu memasangnya di papan QUEUE.' } },
+  { s: 'Todo', c: 'todo', sub: 'kolom 2 · "Next up"', cards: [
+    { v: 'Kartu di kolom Todo, urut antrean', g: 'Gulungan di papan QUEUE, urutannya sama dengan antrean (muat 8).' },
+    { v: 'Alasan tertahan', d: '"starts after X lands", jeda (pause)', n: 'Gulungan yang tertahan tampil sama dengan yang siap.' },
+    { v: 'Tempat penuh (max_parallel)', d: 'places 3 / 3', g: 'Hanya ada empat dok: tiket berjalan kelima menunggu sebagai gulungan di papan QUEUE.' },
+  ] },
+  { t: { v: 'k2 start', d: 'todo → in_progress, worktree dibuat', w: ['Foreman'], g: 'Mengambil gulungan dari papan dan membawanya ke dok kosong. Lunas kapal muncul; ukuran kapal dari jumlah kriteria.' } },
+  { s: 'In progress', c: 'in_progress', sub: 'kolom 3 · Control room "Running"', cards: [
+    { v: 'Kartu agen worker', d: 'peran, langkah terakhir, lama', w: ['Shipwright'], g: 'Tukang dok itu memalu lambung. Keterangannya adalah langkah terakhir agen dari transkrip.' },
+    { v: 'Kriteria "Done when" tercentang', g: 'Lambung makin tinggi (juga merayap naik perlahan selama agen bekerja).' },
+    { v: 'Uji sedang berjalan', d: 'hijau · kuning setelah 1 menit · merah setelah 5', w: ['Shipwright'], g: 'Lampu di tiang dok menyala dengan warna yang sama; tukang "testing".' },
+    { v: 'Agen macet (stuck)', w: ['Shipwright'], g: 'Menggeleng dengan balon "?".' },
+    { v: 'Pertanyaan menunggu pemilik', d: 'lencana ? di kartu', w: ['Shipwright'], g: 'Duduk menunggu di dok dengan balon "?".' },
+    { v: 'Dimulai, belum ada agen', w: ['Shipwright'], g: 'Berdiri di dok, "waiting for word".' },
+    { v: 'Jalur, model, ronde ke berapa', n: 'Penolakan hanya terlihat di kartu tiket.' },
+    { v: 'Worktree, giliran uji (test turn)', n: '' },
+  ] },
+  { t: { v: 'submit', d: 'in_progress → review', g: 'Lambung berdiri penuh, masih tanpa layar. Tukang menunggu inspektur.' } },
+  { s: 'Review', c: 'review', sub: 'kolom 4', cards: [
+    { v: 'Kartu agen reviewer', d: 'menjalankan pemeriksaan sendiri', w: ['Inspector'], g: 'Berkeliling kapal itu sambil mencatat; bergiliran bila lebih dari satu kapal ditinjau.' },
+    { v: 'Lulus', d: 'lencana ⚠ lolos, belum di-merge', w: ['Inspector'], g: 'Memberi "✓". Layar dan bendera kapal dipasang.' },
+    { v: 'Reviewer macet', w: ['Inspector'], g: 'Menggeleng dengan balon "?".' },
+  ] },
+  { t: { v: 'Masuk antrean merge', d: 'lulus, menunggu giliran', g: 'Kapal tetap di doknya, sudah berlayar lengkap.' } },
+  { s: 'Antrean merge', c: 'merge', sub: 'Control room "Merge queue"', cards: [
+    { v: 'No. 1: memegang giliran', d: '"holds the turn · ready to land"', w: ['Crane operator'], g: 'Bersiap di derek untuk meluncurkan kapal itu.' },
+    { v: 'No. 2 dan seterusnya', d: '"lands after …"', n: 'Tidak dibedakan dari no. 1.' },
+    { v: 'Ditahan atau dihentikan', d: 'held, stopped: keluar dari antrean', n: 'Kapalnya tampil sama dengan yang menunggu giliran.' },
+    { v: 'Main dibawa masuk lagi', d: 'worker atau reviewer dipanggil setelah lulus', n: 'Tampil seperti kerja biasa.' },
+  ] },
+  { t: { v: 'k2 land', d: 'review → done, masuk main', w: ['Crane operator'], g: 'Kapal meluncur di landasan ke air, lalu berlayar ke tempat berlabuh. Tukangnya melepas kepergiannya.' } },
+  { s: 'Done', c: 'done', sub: 'kolom 5 · "landed today"', cards: [
+    { v: 'Kartu di kolom Done', g: 'Kapal berlabuh di teluk. Empat yang terbaru tinggal; yang tertua berlayar pergi.' },
+    { v: 'Tab History', d: 'lama pengerjaan, tingkat penolakan, sebaran jalur', n: '' },
+    { v: 'Cek tangan, follow-up, asumsi sesudah selesai', n: 'Hanya ikut dihitung sebagai bendera kotak masuk.' },
+  ] },
+];
+document.getElementById('flow').innerHTML = FLOW.map((x) => x.t
+  ? `<div class="arrow">${card(x.t, 'trans')}</div>`
+  : `<section class="stage" style="--c:var(--${x.c})"><h2>${esc(x.s)}<small>${esc(x.sub)}</small></h2>${x.cards.map((c) => card(c)).join('')}</section>`).join('');
+
+document.getElementById('loop').innerHTML = card({ v: 'Reviewer menolak', d: 'review → in_progress, ronde berikutnya', w: ['Inspector', 'Shipwright'], g: 'Inspector memberi "✗". Lambung turun lagi dan tukang kembali bekerja.' });
+
+const SIDE = [
+  { s: 'Cancel', c: 'cancel', sub: 'kolom 6 · bisa dari mana saja', cards: [
+    { v: 'Dibatalkan saat masih backlog atau todo', w: ['Courier'], g: 'Mengambil gulungannya dan membuangnya ke tumpukan TIMBER.' },
+    { v: 'Dibatalkan saat sudah di dok', w: ['Shipwright'], g: 'Membongkar lambungnya dan membawa kayunya kembali ke TIMBER. Dok kosong lagi.' },
+  ] },
+  { s: 'Waiting for you', c: 'inbox', sub: 'kotak masuk pemilik · bisa kapan saja', cards: [
+    { v: 'Ada N butir menunggu', d: 'angka "need you" di bilah atas', w: ['Keeper'], g: 'N bendera (paling banyak 5) di dekat mercusuar; Keeper memberi isyarat.' },
+    { v: 'Jenis butirnya', d: 'asumsi, cek tangan, follow-up, ditolak dua kali, kontrak berubah, not merged', n: 'Semua jenis hanya menjadi bendera yang sama.' },
+  ] },
+  { s: 'Kesehatan papan', c: 'backlog', sub: 'bilah atas dan Control room', cards: [
+    { v: 'Worktree yatim', n: '' },
+    { v: 'Berkas tiket rusak', n: 'Tiketnya tetap di tempat terakhir beberapa detik, lalu hilang dari galangan.' },
+    { v: 'Papan tidak terbaca, viewer mati', g: 'Pesan di kiri atas galangan; adegan menampilkan yang terakhir terlihat.' },
+    { v: 'Sesi utama (mandor) di luar k2 start', n: 'Foreman hanya bergerak saat tiket dimulai.' },
+  ] },
+];
+document.getElementById('side').innerHTML = SIDE.map((x) => `<section class="stage" style="--c:var(--${x.c})"><h2>${esc(x.s)}<small>${esc(x.sub)}</small></h2><div class="cards">${x.cards.map((c) => card(c)).join('')}</div></section>`).join('');
+</script>
+</body>
+</html>
