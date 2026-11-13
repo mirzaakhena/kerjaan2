@@ -9,11 +9,11 @@
 // surface is y = 0.
 import * as THREE from 'three';
 import { spawn, materialOf } from './kit.js';
-import { yardOf, STREET, ROW } from './plan.js';
+import { yardOf, STREET, ROW, BOATS, BUOY, courseOf } from './plan.js';
 
 export const KIT = [
   'pirate/barrel', 'pirate/crate', 'pirate/crate-bottles', 'pirate/chest', 'pirate/boat-row-small', 'pirate/flag-high', 'pirate/flag-pennant', 'pirate/palm-bend', 'pirate/palm-straight', 'pirate/palm-detailed-bend', 'pirate/palm-detailed-straight', 'pirate/patch-sand-foliage', 'pirate/platform-planks', 'pirate/rocks-a', 'pirate/rocks-b', 'pirate/rocks-c', 'pirate/ship-small', 'pirate/ship-medium', 'pirate/ship-large', 'pirate/ship-pirate-small', 'pirate/ship-pirate-medium', 'pirate/ship-pirate-large', 'pirate/structure', 'pirate/structure-roof', 'pirate/structure-fence', 'pirate/tower-complete-large', 'pirate/tower-watch', 'pirate/grass', 'pirate/grass-patch', 'pirate/grass-plant',
-  'watercraft/boat-fishing-small', 'watercraft/boat-tug-a', 'watercraft/boat-tow-a', 'watercraft/boat-sail-a', 'watercraft/cargo-pile-a', 'watercraft/cargo-container-a', 'watercraft/cargo-container-b', 'watercraft/buoy', 'watercraft/buoy-flag',
+  'watercraft/boat-fishing-small', 'watercraft/boat-tug-a', 'watercraft/boat-tug-b', 'watercraft/boat-tow-a', 'watercraft/boat-sail-a', 'watercraft/boat-sail-b', 'watercraft/cargo-pile-a', 'watercraft/cargo-container-a', 'watercraft/cargo-container-b', 'watercraft/buoy', 'watercraft/buoy-flag',
 ];
 
 export const BOUNDS = { x0: -32, x1: 32, z0: -30, z1: 26 };
@@ -397,7 +397,7 @@ export function buildWorld(scene) {
   for (const dx of [-1.3, 1.3]) for (const dz of [2, 6, 10]) cyl(west, 0.2, 3.4, C.woodDark, -28 + dx, -1.3, dz, 8);
   cyl(west, 0.08, 1.3, C.iron, -29.2, 0.65, 9.9, 6);
   box(west, 0.5, 0.6, 0.4, C.red, -29.2, 1.5, 9.9);
-  prop(west, 'watercraft/buoy-flag', -30, SEA + 0.25, 16);
+  prop(west, 'watercraft/buoy-flag', BUOY.x, SEA + 0.25, BUOY.z);
   prop(world, 'watercraft/buoy', -4, SEA + 0.25, 17.4);
 
   // ----- the crane -----
@@ -465,15 +465,18 @@ export function buildWorld(scene) {
     afloat.push({ o, y: SEA - draft, phase: rnd() * 6, sway });
     return o;
   };
-  // the order boat: in from the open edge of the sea, alongside the pier, out past the pier's end to the other side
-  const MAIL = { far: { x: -15, z: 25.4 }, in: { x: -25.4, z: 8.6, ry: 0.15 }, round: { x: -27.2, z: 13.2 }, off: { x: -31.7, z: 22.5 } };
-  const mailBoat = float('pirate/boat-row-small', MAIL.far.x, MAIL.far.z, { draft: 0.2, to: west });
+  // The order boat: one of five hulls (`BOATS`), in from the open edge of the sea, alongside the pier, out
+  // past the pier's end to the other side (`courseOf`). Those hulls are seen nowhere else in the bay.
+  const mailBoat = new THREE.Group();
   mailBoat.visible = false; // there is a boat only while it brings orders
-  const mailCrate = prop(mailBoat, 'pirate/crate', 0, 0.22, 0, { s: 0.45 });
+  west.add(mailBoat);
+  const mailHulls = new Map(BOATS.map((b) => [b.kind, prop(mailBoat, b.key, 0, 0, 0)]));
+  const mailCrate = prop(mailBoat, 'pirate/crate', 0, 0, 0, { s: 0.45 });
+  const mailFloat = { o: mailBoat, y: SEA, phase: rnd() * 6, sway: 1 };
+  afloat.push(mailFloat);
+  let mailCourse = null; // of the boat that is out now
   float('watercraft/boat-fishing-small', 28.5, 13.5, { ry: 2.2, draft: 0.3, to: east });
-  float('watercraft/boat-tow-a', 21.5, 4.6, { ry: Math.PI / 2, draft: 0.4, to: east });
   float('watercraft/boat-sail-a', 29, 23.5, { ry: 0.7, draft: 0.3, to: east });
-  const tug = float('watercraft/boat-tug-a', 0, 15, { draft: 0.32 });
   // where landed ships lie at anchor, newest four
   const anchors = [-21, -9, 3, 15].map((x) => ({ x, z: 21.6, ry: Math.PI / 2 }));
 
@@ -577,7 +580,6 @@ export function buildWorld(scene) {
     api.rev++;
   }
 
-  const towards = (a, b) => Math.atan2(b.x - a.x, b.z - a.z);
   const craneState = { aim: 0.5 };
   function update(t, dt) {
     const p = seaGeo.attributes.position.array;
@@ -592,11 +594,6 @@ export function buildWorld(scene) {
       f.o.rotation.z = Math.sin(t * 0.9 + f.phase) * 0.035 * f.sway;
       f.o.rotation.x = Math.sin(t * 0.7 + f.phase * 2) * 0.02 * f.sway;
     }
-    // the tug goes round the bay
-    const a = t * 0.09;
-    tug.position.x = 6 + Math.cos(a) * 13;
-    tug.position.z = 14.6 + Math.sin(a) * 2.2;
-    tug.rotation.y = Math.atan2(-Math.sin(a) * 13, Math.cos(a) * 2.2);
     for (let i = fades.length - 1; i >= 0; i--) {
       const f = fades[i];
       f.t = Math.min(1, f.t + dt / f.secs);
@@ -629,23 +626,23 @@ export function buildWorld(scene) {
     floatOff(o) { const i = afloat.findIndex((f) => f.o === o); if (i >= 0) afloat.splice(i, 1); },
     setFlags(n) { flags.forEach((f, k) => { f.visible = k < n; }); },
     // The order boat. `mailIn` resolves when it lies at the pier, `mailOut` when it is gone from
-    // sight; `mailTake` empties it. `pace` is how many times faster than usual it goes.
-    async mailIn(pace = 1) {
-      const { far, in: at } = MAIL;
-      mailBoat.position.x = far.x;
-      mailBoat.position.z = far.z;
-      mailBoat.rotation.y = towards(far, at);
-      mailBoat.scale.setScalar(0.02);
+    // sight; `mailTake` empties it. `pace` is how many times faster than usual it goes, `kind`
+    // which of the `BOATS` comes.
+    async mailIn(pace = 1, kind = BOATS[0].kind) {
+      const boat = BOATS.find((b) => b.kind === kind) || BOATS[0];
+      const course = mailCourse = courseOf(boat);
+      for (const [k, hull] of mailHulls) hull.visible = k === boat.kind;
+      mailCrate.position.set(...boat.crate);
+      mailFloat.y = SEA - boat.draft;
+      mailBoat.position.set(course.from.x, mailFloat.y, course.from.z);
+      mailBoat.rotation.y = course.from.ry;
+      mailBoat.scale.setScalar(course.from.s);
       mailBoat.visible = mailCrate.visible = true;
-      await move(mailBoat, { x: -23.6, z: 12.6, s: 1 }, 8 / pace);
-      await move(mailBoat, at, 3 / pace);
+      for (const { secs, ...to } of course.in) await move(mailBoat, to, secs / pace);
     },
     mailTake() { mailCrate.visible = false; },
     async mailOut(pace = 1) {
-      const { in: at, round, off } = MAIL;
-      await move(mailBoat, { ...round, ry: towards(at, round) }, 3.5 / pace);
-      await move(mailBoat, { ry: towards(round, off) }, 1.2 / pace);
-      await move(mailBoat, { ...off, s: 0.02 }, 7 / pace);
+      for (const { secs, ...to } of mailCourse?.out || []) await move(mailBoat, to, secs / pace);
       mailBoat.visible = false;
     },
   };
