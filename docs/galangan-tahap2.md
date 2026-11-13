@@ -78,6 +78,30 @@ Keputusan pemilik 14 November 2026:
 38. **Usul "kapal tunda sebagai tanda merge" dicoret.** Kapal tunda hanya
     perahu pesanan; antrean merge tidak digambarkan dengan kapal tunda.
 
+## Keputusan pemilik (14 November 2026): derek di tiap dok
+
+Diputuskan sesudah pemilik melihat mockup `docs/mockups/galangan/derek.html`
+(tiket 261113234801), dan dikerjakan di tiket 261114001801. Keputusan 34
+tetap berlaku untuk bentuknya: derek putar klasik.
+
+39. **Penempatan F4.** Tiap dok punya satu derek putar klasik dengan kaki
+    yang dikecilkan (tapak dari 2,4 menjadi 0,9), berdiri di sudut kepala
+    doknya sendiri. Hanya pilihan ini yang muat pada 4, 6, dan 10 dok (jarak
+    bebas terkecil 0,15).
+40. **Kapan derek bekerja.** Selama worker tiket itu bekerja, derek mengayun
+    muatan pelan-pelan ke lambung. Tiap kali satu kriteria terpenuhi, derek
+    mengantar satu potong dengan jelas, baru lambung naik. Derek diam saat
+    tidak ada agen, dan parkir saat kapal lulus.
+41. **Derek besar dihapus.** Derek putar tunggal di dekat mercusuar tidak ada
+    lagi. Crane operator tetap ada dan berdiri di dekat kapal yang mendapat
+    giliran merge, tanpa derek sendiri. Peran barunya belum diputuskan (kapal
+    tunda sudah dicoret: keputusan 38).
+
+Yang diketahui dari mockup dan dipegang saat membangun: tiang kapal jadi
+(9,0) lebih tinggi daripada lengan derek (7,6), jadi derek tidak boleh
+mengayun di atas kapal yang layarnya sudah dipasang. Rinciannya ada di
+`docs/galangan-padanan.md`, bagian "Derek di tiap dok".
+
 ## Ruang pamer
 
 `docs/mockups/galangan/` berisi semua calon bentuk, tiap benda dengan kode:
@@ -96,7 +120,8 @@ derek putar A1 di tiap dok, untuk dilihat sebelum ada yang dipasang: F1–F5
 (derek penuh atau berkaki ramping; di samping dok, di sudut kepala dok, atau
 satu untuk dua dok), dengan 4, 6, atau 10 dok. Dok dan jaraknya dihitung
 `plan.js` galangan sendiri; tempat derek, jarak bebasnya, dan geraknya ada di
-`derek-plan.js`. Keputusan 34 tetap berlaku sampai pemilik memilih.
+`derek-plan.js`. Pemilik memilih F4 (keputusan 39); mockup itu disimpan
+sebagai catatan, dan derek yang terpasang ada di `viewer/web/space/crane.js`.
 
 Yang sudah bisa diambil dari ruang pamer untuk alur: sepuluh kapal C1–C10
 (keputusan 32) dibuat dengan mewarnai layar dan bendera lewat bahan terpisah
@@ -105,8 +130,7 @@ kanvas, dan gerakan `jump` tersedia di semua karakter.
 
 ## Belum diputuskan pemilik (usul agen)
 
-- **Peran derek putar.** Belum punya peran dalam alur. Usul: ia mengangkat
-  tiang dan layar ke kapal saat lulus, atau tetap menjadi tanda antrean merge.
+- **Peran derek putar.** Sudah diputuskan: keputusan 39 sampai 41.
 - **Kapal tunda.** ~~Crane operator menjadi juru mudi kapal tunda: antrean
   merge adalah antrean tunda, `landed` berarti kapal ditarik dari landasan ke
   tempat berlabuh, `integrate` (main dibawa masuk) berarti kapal tunda

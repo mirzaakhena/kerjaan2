@@ -3,7 +3,7 @@
 Ditulis 13 November 2026, untuk versi 0.16.0; sepuluh macam kapal, pemutar
 linimasa, perahu rombongan, perencana (Naval Architect) dan meja todo,
 tukang yang menjemput tiketnya dan dok yang mengikuti `max_parallel`, lalu
-drama review (dengan jangkar saat ditahan)
+drama review (dengan jangkar saat ditahan), dan derek di tiap dok
 ditambahkan sesudahnya. Berkas ini mendaftar apa yang
 terjadi di viewer kanban (`k2 view`) dan apa padanannya di halaman galangan
 (`/p/<proyek>/space`), serta apa yang belum punya padanan. Keputusan dan batas
@@ -11,13 +11,14 @@ galangan ada di bagian "Galangan" pada akhir `docs/blueprint.md`.
 
 Sumber kebenaran padanan ini adalah kode: `viewer/web/space/plan.js` (arti
 papan dan arti tiap kejadian linimasa), `director.js` (pemutar adegan), dan
-`cast.js` (tugas tiap pemeran).
+`cast.js` (tugas tiap pemeran), dan `crane.js` (derek tiap dok).
 Bila kode berubah, berkas ini ikut diperbarui.
 
 ## Catatan saat membaca galangan
 
 - Bila papan tidak punya tiket yang berjalan, semua karakter hanya mengerjakan
-  pekerjaan kecil pengisi waktu (menyapu dok, menata rak, meminyaki derek).
+  pekerjaan kecil pengisi waktu (menyapu dok, menata rak, menggulung tali).
+  Derek di tiap dok diam, lengannya menghadap laut.
   Pekerjaan itu sengaja tidak menyebut tiket apa pun. Hubungan dengan papan
   baru terlihat saat ada tiket yang bergerak, atau di mode `?demo`.
 - Galangan boleh tertinggal dari papan, tidak pernah mendahuluinya.
@@ -62,7 +63,8 @@ tetap pada kecepatannya. Angkanya ada di `plan.js` (`CALM`,
 | `moved` ke todo | Naval Architect mengambil tiket dari papan pesanan dan menjejerkannya di meja todo; tiket yang pindah hampir bersamaan dibawa dalam satu jalan |
 | `started` | Dok kosong disiapkan untuk tiket itu: papan namanya dipasang, Foreman datang menyapa tukang dok itu. Gulungan tetap di meja todo; belum ada lambung |
 | `agent` (worker) | Tukang dok itu berjalan ke meja todo, mengambil gulungannya, membawanya ke doknya; sesudah ia tiba lunas diletakkan. Hanya sekali per tiket: worker kedua (setelah ditolak) tidak menjemput lagi |
-| `check`, `uncheck`, `void` | Lambung naik atau turun |
+| `check` | Derek dok itu mengantar satu potong ke lambung; sesudah potongan itu diletakkan, lambung naik (lihat "Derek di tiap dok") |
+| `uncheck`, `void` | Lambung turun atau naik, tanpa derek |
 | `submitted` | Shipwright dok itu meloncat senang (🥳). Di jalur light, yang lulus tanpa reviewer: layar langsung dipasang, tanpa Inspector |
 | `verdict` lulus | Inspector mendatangi Shipwright, bicara singkat (💬 lalu "✓"); layar dan bendera dipasang; Shipwright meloncat senang (😄). Kapal tetap di doknya |
 | `verdict` ditolak | Inspector memberi ❌; Shipwright sedih (😢) lalu kembali bekerja; kriteria yang disebut gagal dicabut, lambung turun |
@@ -77,8 +79,9 @@ tetap pada kecepatannya. Angkanya ada di `plan.js` (`CALM`,
 langkah terakhir agen, uji yang sedang berjalan (lampu dok), agen macet,
 reviewer yang sedang bekerja (Inspector berkeliling), ditahan atau dihentikan
 (jangkar), pertanyaan yang menunggu pemilik, bendera kotak masuk, urutan
-antrean, giliran merge, planner yang sedang bekerja, dan baris tiket di meja
-todo (siap atau menunggu tiket lain). Semua itu tampil seketika.
+antrean, giliran merge, planner yang sedang bekerja, baris tiket di meja
+todo (siap atau menunggu tiket lain), dan worker yang sedang bekerja (derek
+dok itu mengayun muatan). Semua itu tampil seketika.
 
 **Sambungan putus.** Halaman mengingat sampai titik mana linimasa sudah
 dibaca. Pembacaan yang gagal tidak menggeser titik itu, jadi setelah tersambung
@@ -241,7 +244,7 @@ Batas-batasnya:
 | Foreman | mandor (sesi utama): saat `k2 start` ia menyapa tukang di dok yang disiapkan; ia tidak membawa tiket |
 | Shipwright 1–10 | worker; satu tukang per dok, sebanyak dok yang ada. Tukang 5–10 memakai ulang empat model tukang yang ada dengan urutan lain; daftar pemeran bisa digulir |
 | Inspector | reviewer |
-| Crane operator | merge (`k2 land`) |
+| Crane operator | merge (`k2 land`). Ia tidak punya derek: derek besar di dekat mercusuar sudah dihapus, dan derek di tiap dok bekerja sendiri |
 | Keeper | kotak masuk pemilik |
 
 ## Yang sudah punya padanan
@@ -258,17 +261,19 @@ Batas-batasnya:
 | Tiket pindah todo → in_progress (`k2 start`) | Satu dok kosong disiapkan: papan nama tiket dipasang di kepala landasan, Foreman menyapa tukangnya. Gulungan pindah ke urutan depan baris depan meja todo |
 | Worker dikirim ke tiket itu | Tukang dok itu menjemput gulungannya dari meja todo dan kembali ke doknya; baru sesudah ia tiba lunas kapal muncul |
 | `max_parallel` papan | Jumlah dok (lihat "Dok mengikuti `max_parallel`") |
-| Kartu agen "worker" di Control room | Shipwright dok itu memalu lambung; keterangannya adalah langkah terakhir agen dari transkrip |
+| Kartu agen "worker" di Control room | Shipwright dok itu memalu lambung; keterangannya adalah langkah terakhir agen dari transkrip. Derek dok itu mengayun satu potong muatan ke atas lambung dan kembali, berulang-ulang, selama worker bekerja |
+| Tidak ada agen yang bekerja pada tiket itu (menunggu pemilik, macet, menunggu review, sedang direview) | Derek dok itu diam di tempatnya |
+| Kriteria "Done when" tercentang | Derek dok itu meletakkan satu potong di lambung, lalu lambung naik |
 | Kriteria "Done when" tercentang, dicabut, atau dibatalkan | Lambung naik atau turun: seperempat sejak lunas diletakkan, sisanya menurut bagian kriteria yang terpenuhi. Kriteria yang dibatalkan dan kriteria `(owner)` tidak dihitung, jadi lambung penuh saat semua bagian worker terpenuhi. Lambung tidak bergerak karena hal lain |
 | Uji sedang berjalan (hijau, kuning, merah) | Lampu di tiang dok menyala dengan warna yang sama; Shipwright "testing" |
 | Agen macet (stuck) | Shipwright atau Inspector menggeleng dengan balon "?" |
 | Pertanyaan menunggu pemilik pada tiket itu | Shipwright duduk menunggu dengan balon "?" |
 | Tiket pindah ke review, kartu agen "reviewer" | Shipwright meloncat senang (🥳). Lambung sudah penuh (semua kriteria worker terpenuhi sebelum diserahkan), belum berlayar; Inspector mengelilingi kapal itu (bergiliran bila lebih dari satu) |
 | Reviewer menolak | Inspector memberi ❌ kepada Shipwright; Shipwright sedih (😢) lalu kembali bekerja; lambung turun bila ada kriteria yang dicabut |
-| Reviewer meluluskan (lencana ⚠ belum di-merge) | Inspector mendekati Shipwright dan bicara singkat; layar dan bendera kapal dipasang; Shipwright senang (😄). Kapal tetap di doknya |
+| Reviewer meluluskan (lencana ⚠ belum di-merge) | Inspector mendekati Shipwright dan bicara singkat; layar dan bendera kapal dipasang; Shipwright senang (😄). Kapal tetap di doknya. Derek dok itu parkir menghadap laut sebelum layar dipasang, dan tetap parkir sampai kapal meluncur |
 | Lulus tanpa reviewer (jalur light, `k2 accept`) | Shipwright meloncat senang (🥳), layar dipasang, tanpa Inspector |
 | Lulus tetapi ditahan atau dihentikan (held, stopped) | Kapal menunggu di doknya dengan jangkar turun; jangkar naik lagi begitu dilepas |
-| Tiket nomor 1 di antrean merge | Crane operator bersiap meluncurkan kapal itu |
+| Tiket nomor 1 di antrean merge | Crane operator berdiri di dekat haluan kapal itu, di sisi laut doknya |
 | Tiket landed → done | Baru saat inilah kapal meluncur: setelah adegan sebelumnya selesai, kapal meluncur di landasan ke air dan berlabuh di teluk; empat kapal terbaru tinggal, yang tertua berlayar pergi |
 | Tiket cancel | Tak ada pemeran: tokennya memudar pelan lalu hilang (keputusan 31) |
 | "Waiting for you" berisi N butir | N bendera (paling banyak 5) di dekat mercusuar; Keeper memberi isyarat |
@@ -295,6 +300,55 @@ Keputusan 27 dan jawaban pemilik di tiket 261113190705.
 - Bila tukangnya sedang punya tiga pekerjaan antre, adegan jemput dilewati
   dan lunas langsung diletakkan.
 
+## Derek di tiap dok
+
+Keputusan 39 sampai 41 di `docs/galangan-tahap2.md` (tiket 261114001801).
+Tiap dok punya satu derek putar klasik berkaki sempit (tapak 0,9) di sudut
+timur kepala doknya, tepat di ujung perancah: pilihan F4 dari mockup
+`docs/mockups/galangan/derek.html`. Derek besar di dekat mercusuar tidak ada
+lagi. Tempat dan geraknya ada di `crane.js`; kapan ia bekerja ditentukan
+`craneGoal` (`plan.js`) dan dijalankan `director.js`.
+
+| Keadaan dok | Derek dok itu |
+|---|---|
+| Dok kosong, atau dok baru disiapkan dan belum ada lunas | parkir: lengan menghadap laut, kait di atas, kosong; tidak bergerak |
+| Worker tiket itu sedang bekerja, kapal belum lulus | bekerja: mengangkat satu potong dari tumpukan di atas perancah, mengayunnya pelan ke atas lambung, menahannya di sana, membawanya kembali, lalu mengulang |
+| Ada lambung tetapi tidak ada worker yang bekerja (menunggu pemilik, macet, sedang direview) | menyelesaikan gerak yang sedang dilakukan, lalu diam di tempatnya, juga bila masih menggantung muatan |
+| Kriteria terpenuhi (kejadian `check`) | mengantar satu potong: muatan diturunkan ke lambung dan diletakkan; baru sesudah itu lambung naik. Potongan itu lalu menyatu dengan lambung |
+| Kapal lulus (layar akan dipasang), atau `landed` | parkir: muatan dikembalikan ke tumpukan, lengan menghadap laut. Layar baru dipasang, dan kapal baru meluncur, sesudah derek parkir |
+
+- **Derek tidak pernah berputar lebih dari dari arah laut sampai ke buritan
+  kapalnya sendiri** (sekitar 22 derajat). Karena itu lengannya selalu di
+  atas doknya sendiri dan pemberatnya di atas jalan: tidak ada yang bisa
+  mengenai derek tetangga, layar kapal di dok sebelah, atau tiang kapalnya
+  sendiri. Tiang kapal (9,0) lebih tinggi daripada lengan derek (7,6), jadi
+  lengan tidak pernah lewat di atas kapal yang layarnya terpasang.
+- **Bahan diambil dari tumpukan di atas perancah**, tepat di bawah lengan saat
+  parkir, bukan dari tepi jalan seperti di mockup. Ayunan penuh dari tepi
+  jalan membuat pemberat derek lewat di atas dok tetangga pada 5 dan 6 dok,
+  dan lengannya lewat di atas tiang kapalnya sendiri.
+- Satu `check` satu potong, juga bila worker-nya sudah tidak tercatat bekerja
+  saat adegan itu diputar. `uncheck` dan `void` tidak memanggil derek. Lunas
+  yang baru diletakkan naik tanpa derek.
+- Potongan diletakkan di geladak, atau di tepi atas lambung bila lambung
+  belum setinggi geladak.
+- Bila galangan tertinggal dari papan, derek ikut dipercepat. Bila cerita
+  dilepas (tertinggal lebih dari 5 menit) atau halaman baru dibuka, derek di
+  dok yang kapalnya sudah lulus langsung parkir.
+- Bila jumlah dok berubah, tiap derek ikut doknya dan meneruskan geraknya;
+  dok baru mendapat derek yang parkir; derek dari dok yang dibongkar hilang
+  bersama doknya.
+- Di `?demo` semuanya terlihat: derek bekerja di dok yang worker-nya bekerja,
+  mengantar potongan tiap kriteria, diam saat worker bertanya atau macet, dan
+  parkir begitu kapal lulus.
+
+Batasnya:
+
+- Tukang yang berjalan ke tempat berdirinya di sisi timur dok lewat sangat
+  dekat dengan kaki derek (0,2 sampai 0,45). Tempat berdirinya sendiri bebas.
+- Muatan yang diangkat adalah peti dari paket model yang ada; tumpukan di
+  perancah selalu tampak berisi satu peti.
+
 ## Dok mengikuti `max_parallel`
 
 Keputusan 28. Jumlah dok sama dengan `max_parallel` di `settings.yml`, dan tiap
@@ -311,7 +365,7 @@ digambar oleh `setDocks` (`world.js`).
 - Pulau ikut membesar. Untuk dua baris deretan gudang dan teras mundur satu
   baris dok, dan di antara dua baris ada jalan kedua. Supaya kapal baris
   belakang bisa lewat di sela dok depan, dok depan direnggangkan, jadi pulau
-  melebar: dermaga pos bergeser ke barat, derek dan mercusuar ke timur. Pada
+  melebar: dermaga pos bergeser ke barat, mercusuar ke timur. Pada
   10 dok pulau kira-kira satu setengah kali lebar galangan 4 dok, dan kamera
   "Whole yard" mundur sebanyak itu.
 - Papan nama tiket sekarang berdiri di tengah kepala landasan (dulu di sisi

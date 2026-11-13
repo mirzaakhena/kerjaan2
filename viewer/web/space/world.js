@@ -1,6 +1,6 @@
-// The yard: a quay with its slips, a row of sheds behind them, a terrace, a
-// mail pier, a crane, a lighthouse and the bay. Built once; `update` moves
-// the water, the boats, the crane and the light. `setDocks(n)` lays the slips
+// The yard: a quay with its slips and a crane at the head of each, a row of
+// sheds behind them, a terrace, a mail pier, a lighthouse and the bay. Built
+// once; `update` moves the water, the boats, the cranes and the light. `setDocks(n)` lays the slips
 // out anew (`yardOf` in plan.js says where): the island grows wider, and
 // deeper for a second row, and what stands at its ends and at its back moves
 // out with it.
@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { spawn, materialOf } from './kit.js';
 import { yardOf, STREET, ROW, BOATS, BUOY, courseOf } from './plan.js';
+import { Crane, craneAt, FOOT, PIVOT, CRATE, PLANK, DECK } from './crane.js';
 
 export const KIT = [
   'pirate/barrel', 'pirate/crate', 'pirate/crate-bottles', 'pirate/chest', 'pirate/boat-row-small', 'pirate/flag-high', 'pirate/flag-pennant', 'pirate/palm-bend', 'pirate/palm-straight', 'pirate/palm-detailed-bend', 'pirate/palm-detailed-straight', 'pirate/patch-sand-foliage', 'pirate/platform-planks', 'pirate/rocks-a', 'pirate/rocks-b', 'pirate/rocks-c', 'pirate/ship-small', 'pirate/ship-medium', 'pirate/ship-large', 'pirate/ship-pirate-small', 'pirate/ship-pirate-medium', 'pirate/ship-pirate-large', 'pirate/structure', 'pirate/structure-roof', 'pirate/structure-fence', 'pirate/tower-complete-large', 'pirate/tower-watch', 'pirate/grass', 'pirate/grass-patch', 'pirate/grass-plant',
@@ -197,7 +198,8 @@ export function makeAnchor(slip) {
 // by the colour of sail and flag, and two pirate hulls, whose black sail is
 // drawn in the model and cannot be dyed, told apart by their flag.
 // `setBuild(0..1)` shows it from the keel up: the hull stands at 0.7, the masts
-// at 1. Sails and flags come with `setRigged`.
+// at 1. Sails and flags come with `setRigged`. `top()` is how high a piece comes
+// to lie that the slip's crane sets down in it: on the deck, or on what stands of the hull so far.
 const SHIPS = { small: ['small', 1], medium: ['medium', 1], large: ['large', 0.88] };
 const LIVERY = {
   white: { sail: 0xffffff }, red: { sail: 0xff6a5a }, teal: { sail: 0x5fe0d2 }, yellow: { sail: 0xffd75a },
@@ -234,6 +236,7 @@ export function makeShip(size, livery) {
     o,
     setBuild(b) { cut.constant = b >= 0.999 ? 1e3 : o.position.y + s * (b < 0.7 ? 0.25 + (b / 0.7) * 3.6 : 3.85 + ((b - 0.7) / 0.3) * 6.4); },
     setRigged(v) { for (const n of rig) n.visible = v; },
+    top() { return Math.min(cut.constant, o.position.y + s * DECK[hull]); },
     dispose() { for (const m of new Set([mHull, mSail, mFlag])) m.dispose(); },
   };
 }
@@ -334,12 +337,50 @@ export function buildWorld(scene) {
     lamp.userData.own = 2;
     docks.add(lamp);
     let lit = null;
+    // its crane: the classic slewing crane on a narrow foot, at the corner of the slip's head; what it
+    // lifts lies stacked on the scaffold beside it
+    const c = craneAt(d);
+    const crane = new THREE.Group();
+    crane.position.set(c.x, 0, c.z);
+    docks.add(crane);
+    box(crane, FOOT * 2, 0.7, FOOT * 2, C.stoneDark, 0, 0.35, 0);
+    cyl(crane, 0.32, 7.4, C.iron, 0, 4.4, 0, 8, 0.24);
+    const arm = new THREE.Group();
+    arm.position.y = PIVOT;
+    crane.add(arm);
+    box(arm, 0.4, 0.4, 7.6, 0xe2b23c, 0, 0, 1.6);
+    box(arm, 1.1, 1, 1.4, C.iron, 0, -0.2, -2.6);
+    box(arm, 1.2, 1.1, 1.3, 0xe2b23c, 0, 0.5, 0);
+    const trolley = new THREE.Group();
+    arm.add(trolley);
+    box(trolley, 0.5, 0.18, 0.5, C.iron, 0, -0.28, 0);
+    const cable = cyl(trolley, 0.035, 1, C.iron, 0, 0, 0, 5);
+    const hook = box(trolley, 0.22, 0.16, 0.22, C.iron, 0, 0, 0);
+    const load = prop(trolley, 'pirate/crate', 0, 0, 0, { s: 0.8 });
+    prop(docks, 'pirate/crate', c.stack.x, PLANK, c.stack.z, { s: 0.8 });
+    const piece = prop(docks, 'pirate/crate', c.drop.x, 0, c.drop.z, { s: 0.8 }); // the one just set down, as it is taken into the hull
+    piece.visible = false;
+    const drawCrane = (state) => {
+      const p = state.pose;
+      arm.rotation.y = p.a;
+      trolley.position.z = p.r;
+      const top = p.y + CRATE.h - PIVOT, len = -0.3 - top; // from the trolley down to the top of the piece
+      cable.scale.y = len;
+      cable.position.y = -0.3 - len / 2;
+      hook.position.y = top + 0.06;
+      load.visible = p.load;
+      load.position.y = p.y - PIVOT;
+      load.rotation.y = -p.a; // the hook swivels: the piece keeps its bearing
+      piece.visible = !!state.piece;
+      if (state.piece) { piece.position.y = state.piece.y; piece.scale.setScalar(0.8 * state.piece.k); }
+    };
     const spots = [];
     for (const s of [-1, 1]) for (const z of [-10, -7.5, -5, -2.5]) spots.push({ x: sx + s * side, z: dz + z, face: s < 0 ? Math.PI / 2 : -Math.PI / 2 });
     return {
       x: sx,
       z: dz - 6.4, // where a hull stands
       spots,
+      drawCrane,
       label: label.userData.write,
       lamp(state) {
         if (state === lit) return;
@@ -400,22 +441,6 @@ export function buildWorld(scene) {
   prop(west, 'watercraft/buoy-flag', BUOY.x, SEA + 0.25, BUOY.z);
   prop(world, 'watercraft/buoy', -4, SEA + 0.25, 17.4);
 
-  // ----- the crane -----
-  const crane = new THREE.Group();
-  crane.position.set(21.5, 0, -3); // its jib is short enough to swing clear of the lighthouse
-  east.add(crane);
-  box(crane, 2.4, 0.7, 2.4, C.stoneDark, 0, 0.35, 0);
-  cyl(crane, 0.32, 7.4, C.iron, 0, 4.4, 0, 8, 0.24);
-  const arm = new THREE.Group();
-  arm.position.y = 7.8;
-  crane.add(arm);
-  box(arm, 0.4, 0.4, 7.6, 0xe2b23c, 0, 0, 1.6);
-  box(arm, 1.1, 1, 1.4, C.iron, 0, -0.2, -2.6);
-  box(arm, 1.2, 1.1, 1.3, 0xe2b23c, 0, 0.5, 0);
-  cyl(arm, 0.035, 4, C.iron, 0, -2, 5, 5);
-  const load = prop(arm, 'pirate/crate', 0, -4.7, 5, { s: 0.8 });
-  arm.rotation.y = 0.5;
-
   // ----- the lighthouse -----
   cyl(east, 3.6, 3.3, C.stoneDark, 28, -1.35, 3.4, 12, 3.3);
   prop(east, 'pirate/tower-complete-large', 28, 0.3, 3.4, { s: 1.2 });
@@ -432,7 +457,7 @@ export function buildWorld(scene) {
   const flags = [0, 1, 2, 3, 4].map((k) => { const f = prop(east, 'pirate/flag-high', 24.6 + k * 1.5, 0, -6.6, { s: 1.05, ry: -0.3 }); f.visible = false; return f; });
 
   // ----- things along the quay (the lamps, the bollards and what lies between the slips come with the slips) -----
-  const clutter = [[east, 'pirate/barrel', 23.6, -10.6], [back, 'pirate/chest', -19.6, -16.2], [west, 'pirate/crate', -29.6, -3], [west, 'pirate/barrel', -30.2, -4.4], [west, 'watercraft/cargo-container-a', -30, -9.5], [west, 'watercraft/cargo-container-b', -30, -9.5, 1.1], [back, 'pirate/crate', 17.6, -18.6], [back, 'pirate/barrel', 8.6, -19.6]];
+  const clutter = [[east, 'pirate/barrel', 23.6, -10.6], [east, 'pirate/crate', 21.1, -2.6], [east, 'pirate/barrel', 22.2, -2.1], [back, 'pirate/chest', -19.6, -16.2], [west, 'pirate/crate', -29.6, -3], [west, 'pirate/barrel', -30.2, -4.4], [west, 'watercraft/cargo-container-a', -30, -9.5], [west, 'watercraft/cargo-container-b', -30, -9.5, 1.1], [back, 'pirate/crate', 17.6, -18.6], [back, 'pirate/barrel', 8.6, -19.6]];
   for (const [to, key, x, z, y = 0] of clutter) prop(to, key, x, y, z, { s: key.includes('cargo') ? 1 : 0.75, ry: rnd() * 6 });
   // a bench that looks out to sea
   box(east, 2.2, 0.12, 0.6, C.woodLight, 27.6, 0.62, -9.4);
@@ -526,7 +551,7 @@ export function buildWorld(scene) {
     queue: [-3, -17.05, Math.PI, back],
     inspection: [12, -16.3, Math.PI, back],
     timber: [22, -16.2, Math.PI, back],
-    crane: [21.5, -5.3, 0, east],
+    mooring: [21.5, -5.3, 0, east], // on the quay by the lighthouse: where the crane operator is when no ship is due to land
     lighthouse: [27.6, -1.4, 0, east],
     bench: [27.6, -9.3, 0, east],
     edge: [0, -1.6, 0, null], // beside the first slip: set by `setDocks`
@@ -551,6 +576,10 @@ export function buildWorld(scene) {
     raze(docks);
     slips.length = 0;
     Y.docks.forEach((d, k) => slips.push(slipAt(k, d, Y.side)));
+    // every slip has its crane; one that was there keeps doing what it did, wherever its slip now stands
+    while (cranes.length < slips.length) cranes.push(new Crane());
+    while (cranes.length > slips.length) cranes.pop().retire();
+    slips.forEach((s, k) => s.drawCrane(cranes[k]));
     // lamps at the ends of the front row, and between its slips where there is room (in two rows a slipway runs there)
     const lampAt = (lx) => {
       cyl(docks, 0.09, 3.4, C.iron, lx, 1.7, -12.4, 6);
@@ -580,7 +609,7 @@ export function buildWorld(scene) {
     api.rev++;
   }
 
-  const craneState = { aim: 0.5 };
+  const cranes = []; // one for each slip, in their order (crane.js); the director says what each is to do
   function update(t, dt) {
     const p = seaGeo.attributes.position.array;
     for (let i = 0; i < p.length; i += 3) {
@@ -611,13 +640,12 @@ export function buildWorld(scene) {
       m.o.scale.setScalar(mix('s'));
       if (m.t >= 1) { moves.splice(i, 1); m.done(); }
     }
-    arm.rotation.y += (craneState.aim - arm.rotation.y) * Math.min(1, dt * 0.8);
-    load.rotation.y = -arm.rotation.y;
+    cranes.forEach((c, k) => { c.step(dt); slips[k].drawCrane(c); });
     lamp.rotation.y = t * 0.5;
   }
 
   const api = {
-    stations, slips, shelfSlots, queueSlots, waitSlots, anchors, crane: craneState, update, move, fade, setDocks,
+    stations, slips, shelfSlots, queueSlots, waitSlots, anchors, cranes, update, move, fade, setDocks,
     yard: null, // how it is laid out now (`yardOf`)
     rev: 0, // goes up with every new layout
     make: { scroll, plank, crate: () => { const o = spawn('pirate/crate'); o.scale.setScalar(0.5); return o; }, ship: makeShip, anchor: makeAnchor },

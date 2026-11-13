@@ -4,7 +4,7 @@
 // and claims nothing about any ticket.
 import { Actor } from './actor.js';
 import { plank } from './world.js';
-import { short, plannerDuty, LAP } from './director.js';
+import { short, plannerDuty, craneDuty, LAP } from './director.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -56,8 +56,9 @@ const chores = {
     async (a, w) => { a.doing = 'walking the quay'; await a.goTo(near(w.stations.walk, 8)); await a.wait(rnd(2, 4)); },
   ],
   crane: [
-    async (a, w) => { a.doing = 'oiling the crane'; await a.goTo(w.stations.crane); w.crane.aim = rnd(-0.9, 1.3); await a.act('interact-left', rnd(3, 5), { repeat: true }); },
-    async (a, w) => { a.doing = 'moving a load'; await a.goTo(w.stations.crane); w.crane.aim = rnd(-0.9, 1.3); await a.act('interact-right', rnd(3, 5), { repeat: true }); },
+    // (the cranes at the slips work by themselves, with the shipwrights: none of them is this person's)
+    async (a, w) => { a.doing = 'coiling rope on the quay'; await a.goTo(w.stations.mooring); await a.act('interact-left', rnd(3, 5), { repeat: true }); },
+    async (a, w) => { a.doing = 'looking over the launch ramps'; await a.goTo(w.stations.edge); await a.wait(rnd(3, 5)); },
     async (a, w) => { a.doing = 'fetching rope'; await a.goTo(near(w.stations.timber, 3)); await a.act('pick-up', 1.2); },
   ],
   keeper: [
@@ -136,17 +137,6 @@ async function inspectorDuty(a, w, dir) {
   return true;
 }
 
-// The crane operator makes ready for the ship that holds the turn to land.
-async function craneDuty(a, w, dir) {
-  const next = dir.pic && dir.pic.launchNext && dir.pic.byId.get(dir.pic.launchNext);
-  if (!next) return false;
-  a.doing = `making ready to launch “${short(next.title)}”`;
-  await a.goTo(w.stations.crane);
-  w.crane.aim = rnd(-0.4, 0.6);
-  await a.act('interact-left', rnd(3, 5), { repeat: true });
-  return true;
-}
-
 // The keeper signals the owner while something waits for them.
 async function keeperDuty(a, w, dir) {
   const n = dir.pic ? dir.pic.needs : 0;
@@ -164,7 +154,7 @@ const CAST = [
   { key: 1, name: 'Naval Architect', role: 'planner', at: 'drafting', chores: chores.planner, duty: plannerDuty },
   { key: 2, name: 'Foreman', role: 'foreman', at: 'queue', chores: chores.foreman },
   { key: 7, name: 'Inspector', role: 'inspector', at: 'inspection', chores: chores.inspector, duty: inspectorDuty },
-  { key: 8, name: 'Crane operator', role: 'crane', at: 'crane', chores: chores.crane, duty: craneDuty },
+  { key: 8, name: 'Crane operator', role: 'crane', at: 'mooring', chores: chores.crane, duty: craneDuty },
   { key: 9, name: 'Keeper', role: 'keeper', at: 'bench', chores: chores.keeper, duty: keeperDuty },
 ];
 // One shipwright for each slip. There are four of them to look at: from the fifth slip on they come again, in another order.
