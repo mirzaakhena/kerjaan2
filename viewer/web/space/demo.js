@@ -2,15 +2,21 @@
 // whole life, in the shape `viewer/snapshot.mjs` gives. For looking at the
 // yard when the real board is quiet. The page says plainly that it is a demo.
 const TITLES = ['Save button on the invoice form', 'Rounding of tax per line', 'Export the ledger as CSV', 'Login expires too soon', 'Search by customer name', 'Monthly closing report', 'Currency on the summary', 'Undo for a deleted entry', 'Print layout of receipts', 'Import bank statements', 'Faster trial balance', 'Dark theme for the journal', 'Attach a scan to an entry', 'Audit trail of edits'];
+import { LIVERIES, liveryOf } from './plan.js';
+
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 export function startDemo(onState) {
   let n = 0;
+  let serial = 0;
   let clock = 0;
   const tickets = [];
   const make = (status) => {
     const size = [2, 3, 5, 6, 8][Math.floor(rnd(0, 5))];
-    const t = { id: `2611130${String(10000 + n).slice(1)}0`.slice(0, 12), title: TITLES[n % TITLES.length], status, fm: { lane: 'standard' }, criteria: Array.from({ length: size }, () => ({ done: false })), state: {}, rejected: 0, landed: 0, wait: rnd(14, 30), ask: 0, stuck: 0, test: 0, lastOut: 0 };
+    // the ID decides the ship, as on a real board; the demo picks IDs so that all ten ships come by, a pirate among the first
+    let id;
+    do id = `26111${String(10000000 + serial++).slice(1)}`; while (liveryOf(id) !== LIVERIES[(8 + n * 3) % LIVERIES.length]);
+    const t = { id, title: TITLES[n % TITLES.length], status, fm: { lane: 'standard' }, criteria: Array.from({ length: size }, () => ({ done: false })), state: {}, rejected: 0, landed: 0, wait: rnd(14, 30), ask: 0, stuck: 0, test: 0, lastOut: 0 };
     n++;
     tickets.push(t);
     return t;

@@ -25,6 +25,18 @@ export function sizeOf(t) {
   return n <= 3 ? 'small' : n <= 6 ? 'medium' : 'large';
 }
 
+// Which of the ten ships a ticket gets, for good: a small hash of its ID. Not
+// the ID's own digits: an ID is a timestamp, and tickets written in one sitting
+// would come out as neighbours. Eight plain hulls named for their sail (the
+// flag has the sail's colour), two pirates named for their flag.
+export const LIVERIES = ['white', 'red', 'teal', 'yellow', 'blue', 'green', 'orange', 'purple', 'pirate-red', 'pirate-white'];
+export function liveryOf(id) {
+  let h = 0x811c9dc5;
+  for (const c of String(id)) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193);
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+  return LIVERIES[(h >>> 0) % LIVERIES.length];
+}
+
 export function picture(D) {
   const inbox = D.inbox || [];
   const live = D.live || {};
@@ -43,6 +55,7 @@ export function picture(D) {
       status: t.status,
       place: PLACE[t.status] || 'shelf',
       size: sizeOf(t),
+      livery: liveryOf(t.id),
       // how much of the hull stands: a quarter once started, the rest by criteria met; all of it in review
       build: t.status === 'review' ? 1 : t.status === 'in_progress' ? 0.25 + 0.6 * (crit.length ? crit.filter((c) => c.done).length / crit.length : 0) : 0,
       rigged: !!t.state?.passed,
