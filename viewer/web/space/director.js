@@ -4,20 +4,23 @@
 // ticket, with a clock of its own. The yard may lag behind the board, it never
 // runs ahead; behind by much, it plays faster; behind by too much, it is put
 // as the board is now, with no story (the limits are in plan.js).
-import { picture, nextStep, FLEET, PLACE, seen, sameSeen, play, buildOf, paceOf } from './plan.js';
+import { picture, nextStep, FLEET, placeOf, seen, sameSeen, play, buildOf, paceOf } from './plan.js';
 // (What is drawn comes through `world.make`, so this module runs without a scene: tests/viewer.test.mjs.)
 
 const BERTH_Y = 0.28;
 const DRAFT = 0.75;
 const LEVEL = 0.02; // a hull this near to its height has stopped moving
 const BUSY = 3; // with this many jobs waiting, a person is not asked for more: the token is just put in place
+const PINNED = { shelf: 'shelf', queue: 'queue', ready: 'queue' }; // where the drawing of a ticket lies
 export const short = (s, n = 36) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : String(s));
 
 export class Director {
   constructor(scene, world, cast) {
     this.scene = scene;
     this.w = world;
-    this.cast = cast; // { courier, planner, foreman, wrights: [4], inspector, crane, keeper }
+    this.cast = cast; // { courier, planner, foreman, wrights: [one for each slip], inspector, crane, keeper }
+    this.crew = () => {}; // set by the page: have this many shipwrights, one for each slip
+    this.want = world.slips.length; // how many slips the board has places for; a slip beyond them takes no new hull
     this.tokens = new Map();
     this.slipOf = world.slips.map(() => null);
     this.anchorOf = world.anchors.map(() => null);
@@ -51,6 +54,7 @@ export class Director {
   update(D, trail = null) {
     const first = !this.pic;
     const pic = this.pic = picture(D);
+    this.fit();
     // A ticket missing from one look may be a file caught half-written: it is kept, and forgotten
     // only when it has stayed away (see `frame`).
     for (const [id, tok] of this.tokens) {
@@ -71,7 +75,7 @@ export class Director {
   }
 
   token(p, see) {
-    const tok = { id: p.id, board: p, see, pic: null, place: null, obj: null, ship: null, slip: -1, anchor: -1, busy: false, gone: 0, shown: 0, breaking: false, todo: [], playing: null, run: 0, odd: false, risen: null };
+    const tok = { id: p.id, board: p, see: { ...see }, pic: null, place: null, obj: null, ship: null, slip: -1, anchor: -1, busy: false, gone: 0, shown: 0, breaking: false, todo: [], playing: null, run: 0, odd: false, risen: null };
     this.look(tok);
     tok.shown = tok.pic.build;
     this.tokens.set(p.id, tok);
@@ -83,7 +87,35 @@ export class Director {
   // where it is and how far it is built.
   look(tok) {
     const { status, rigged, rejected, crit } = tok.see;
-    tok.pic = { ...tok.board, status, place: PLACE[status] || 'shelf', rigged, rejected, crit, build: buildOf(status, crit) };
+    const place = placeOf(tok.see);
+    tok.pic = { ...tok.board, status, place, rigged, rejected, crit, build: place === 'ready' ? 0 : buildOf(status, crit) };
+  }
+
+  // ----- the slips: as many as the board has places -----
+
+  // The first slip free for a new hull; -1 when every one is taken.
+  freeSlip() {
+    for (let k = 0; k < Math.min(this.want, this.slipOf.length); k++) if (!this.slipOf[k]) return k;
+    return -1;
+  }
+
+  // As many slips as `max_parallel`, and a shipwright for each. A slip that is to go stays while a ticket holds
+  // it (and so do those before it: slips are taken away from the end); it takes no new one. Nothing is laid out
+  // anew while a hull is on its way down a slipway.
+  fit() {
+    if (!this.pic) return;
+    this.want = this.pic.docks;
+    let n = this.want;
+    this.slipOf.forEach((tok, k) => { if (tok) n = Math.max(n, k + 1); });
+    if (n === this.slipOf.length && n === this.w.slips.length) return;
+    for (const tok of this.tokens.values()) if (tok.adrift) return;
+    if (this.w.setDocks) this.w.setDocks(n);
+    this.crew(n);
+    while (this.slipOf.length < n) this.slipOf.push(null);
+    this.slipOf.length = n;
+    // every hull goes with its slip
+    this.slipOf.forEach((tok, k) => { if (tok && tok.ship && tok.place === 'slip') { tok.ship.o.position.x = this.w.slips[k].x; tok.ship.o.position.z = this.w.slips[k].z; } });
+    this.layout();
   }
 
   // ----- the trail -----
@@ -199,7 +231,7 @@ export class Director {
     this.slipOf[k] = tok;
     tok.slip = k;
     const ship = this.launchShip(tok);
-    ship.o.position.set(this.w.slips[k].x, BERTH_Y, -6.4);
+    ship.o.position.set(this.w.slips[k].x, BERTH_Y, this.w.slips[k].z);
     tok.shown = 0.04;
     ship.setBuild(tok.shown);
     ship.setRigged(false);
@@ -208,18 +240,19 @@ export class Director {
 
   // Put a token where it belongs, with no story.
   put(tok, place) {
-    const reserved = tok.place === 'queue' ? tok.slip : -1;
+    const mine = tok.slip; // a slip it holds already is kept
     this.clear(tok);
-    if (place === 'slip') {
-      const k = reserved >= 0 ? reserved : this.slipOf.indexOf(null);
-      if (k >= 0) {
+    if (place === 'slip' || place === 'ready') {
+      const k = mine >= 0 ? mine : this.freeSlip();
+      if (k >= 0 && place === 'slip') {
         this.berth(tok, k);
         tok.shown = tok.pic.build;
         return;
       }
-      place = 'queue'; // every slip is taken: its drawing waits on the board until one is free
+      if (k >= 0) { this.slipOf[k] = tok; tok.slip = k; } // its name is up; its drawing still lies with the queue
+      else place = 'queue'; // every slip is taken: its drawing waits on the board until one is free
     }
-    if (place === 'shelf' || place === 'queue') {
+    if (place === 'shelf' || place === 'queue' || place === 'ready') {
       tok.obj = this.w.make.scroll();
       tok.obj.userData.ticket = tok.id;
       tok.obj.visible = false; // until `layout` gives it a slot
@@ -246,7 +279,7 @@ export class Director {
   // Drawings on the shelf and on the queue board take the slots in order.
   layout() {
     const fill = (place, slots, by) => {
-      const list = [...this.tokens.values()].filter((t) => t.place === place && t.obj).sort(by);
+      const list = [...this.tokens.values()].filter((t) => PINNED[t.place] === place && t.obj).sort(by);
       list.forEach((t, i) => {
         const s = slots[i];
         t.obj.visible = !!s;
@@ -254,7 +287,8 @@ export class Director {
       });
     };
     fill('shelf', this.w.shelfSlots, (a, b) => (a.id < b.id ? -1 : 1));
-    fill('queue', this.w.queueSlots, (a, b) => a.pic.order - b.pic.order || (a.id < b.id ? -1 : 1));
+    // those whose slip is ready come first: they are the next to be fetched
+    fill('queue', this.w.queueSlots, (a, b) => (b.place === 'ready') - (a.place === 'ready') || a.pic.order - b.pic.order || (a.id < b.id ? -1 : 1));
   }
 
   // ----- playing the trail: one event of a ticket at a time, each to its end -----
@@ -265,7 +299,7 @@ export class Director {
     const step = nextStep(tok.place, tok.pic.place);
     // landed before it ever had a slip: it takes none from those at work
     if (step && tok.pic.place === 'bay' && tok.place !== 'slip') return 'reset';
-    if (step === 'start' && tok.slip < 0 && this.slipOf.indexOf(null) < 0) return null; // waits for a slip, as a drawing
+    if (step === 'prepare' && tok.slip < 0 && this.freeSlip() < 0) return null; // waits for a slip, as a drawing
     return step;
   }
 
@@ -321,9 +355,9 @@ export class Director {
   // Carry the token to where the event left it, step by step; then the verdict, if the event was one.
   async story(tok, verdict, live) {
     for (let step; live() && (step = this.stepFor(tok));) {
-      if (step === 'start' && tok.slip < 0) {
+      if (step === 'prepare' && tok.slip < 0) {
         // the slip is taken here and now, so two that start in one look never get the same one
-        const k = this.slipOf.indexOf(null);
+        const k = this.freeSlip();
         this.slipOf[k] = tok;
         tok.slip = k;
       }
@@ -385,26 +419,44 @@ export class Director {
     if (live()) this.put(tok, 'queue');
   }
 
-  // queue -> slip: the foreman takes the drawing to a free slip and the keel is laid
-  async start(tok, live) {
+  // queue -> ready (`k2 start`): a slip is made ready for the ticket and its name put up. The foreman looks in
+  // and greets the slip's shipwright; he carries nothing. The drawing stays with the queue.
+  async prepare(tok) {
     const { foreman, wrights } = this.cast;
-    const k = tok.slip; // taken for it in `story`, kept while the foreman walks
+    const k = tok.slip; // taken for it in `story`
     if (k < 0) return this.put(tok, tok.pic.place);
-    if (foreman.jobs.length < BUSY) {
-      await this.job(foreman, async (a) => {
-        a.doing = `taking “${short(tok.pic.title)}” off the queue`;
+    tok.place = 'ready';
+    this.layout();
+    if (foreman.jobs.length >= BUSY) return;
+    await this.job(foreman, async (a) => {
+      a.doing = `having slip ${k + 1} made ready for “${short(tok.pic.title)}”`;
+      if (this.w.slips[k]) await a.goTo(this.w.slips[k].spots[4]);
+      a.say('!', 2);
+      if (wrights[k]) wrights[k].say('!', 2);
+      await a.act('emote-yes', 1.6);
+    });
+  }
+
+  // ready -> slip (a worker is sent): the slip's own shipwright walks to the queue, takes the drawing and
+  // carries it back; the keel is laid when he is there, not before.
+  async fetch(tok, live) {
+    const k = tok.slip;
+    if (k < 0) return this.put(tok, tok.pic.place);
+    const wright = this.cast.wrights[k];
+    if (wright && wright.jobs.length < BUSY) {
+      await this.job(wright, async (a) => {
+        a.doing = `fetching the drawing of “${short(tok.pic.title)}”`;
         await a.goTo({ ...this.w.stations.queue, x: this.w.stations.queue.x + 1 });
         await a.act('interact-left', 1.2);
         if (live() && tok.obj) { this.scene.remove(tok.obj); tok.obj = null; }
         a.hold(this.w.make.scroll());
-        a.doing = `taking “${short(tok.pic.title)}” to slip ${k + 1}`;
-        await a.goTo(this.w.slips[k].spots[0]);
+        a.doing = `carrying “${short(tok.pic.title)}” to slip ${k + 1}`;
+        if (this.w.slips[k]) await a.goTo(this.w.slips[k].spots[0]);
         await a.act('interact-right', 1);
         a.hold(null);
-        wrights[k].say('!', 2);
       });
     }
-    if (!live()) return;
+    if (!live() || tok.slip !== k) return;
     this.clear(tok);
     this.berth(tok, k);
   }
@@ -425,9 +477,9 @@ export class Director {
       tok.shown = 1;
       ship.setBuild(1);
       ship.setRigged(true);
-      wrights[k].say('✓', 3);
+      if (wrights[k]) wrights[k].say('✓', 3);
       inspector.say('✓', 3);
-      await this.move(ship.o, { z: 0.5 }, 2.6);
+      await this.move(ship.o, { z: 0.5 }, 2.6 * Math.max(1, (0.5 - ship.o.position.z) / 6.9)); // further from the back row
       await this.move(ship.o, { z: 10.5, y: this.w.sea - DRAFT }, 4.2);
       a.say('✓', 2.5);
       await a.act('emote-yes', 1.8);
@@ -470,7 +522,7 @@ export class Director {
   async scrap(tok, live) {
     const { courier, wrights } = this.cast;
     const title = short(tok.pic.title);
-    if (tok.ship && tok.slip >= 0 && wrights[tok.slip].jobs.length < BUSY) {
+    if (tok.ship && tok.slip >= 0 && wrights[tok.slip] && wrights[tok.slip].jobs.length < BUSY) {
       const k = tok.slip;
       await this.job(wrights[k], async (a) => {
         a.doing = `breaking up “${title}”`;
@@ -485,7 +537,7 @@ export class Director {
         a.hold(null);
       });
     } else if (tok.obj && courier.jobs.length < BUSY) {
-      const from = tok.place === 'queue' ? this.w.stations.queue : this.w.stations.shelf;
+      const from = PINNED[tok.place] === 'queue' ? this.w.stations.queue : this.w.stations.shelf;
       await this.job(courier, async (a) => {
         a.doing = `taking the cancelled order “${title}” away`;
         await a.goTo(from);
@@ -515,7 +567,7 @@ export class Director {
       if (!there()) return;
       await a.act('interact-right', 1.2);
       a.say(pass ? '✓' : '✗', 3);
-      wrights[k].say(pass ? '✓' : '?', 3);
+      if (wrights[k]) wrights[k].say(pass ? '✓' : '?', 3);
       await a.act(pass ? 'emote-yes' : 'emote-no', 2);
     });
   }
@@ -539,6 +591,7 @@ export class Director {
     // once a second: forget the tickets that have been off the board for a while
     this.sweep += dt;
     if (this.sweep >= 1) {
+      this.fit(); // a slip that was to go has lost its ship, or a hull has reached the water
       for (const tok of [...this.tokens.values()]) {
         if (!tok.gone) continue;
         tok.gone += this.sweep;
@@ -548,6 +601,7 @@ export class Director {
     }
     this.slipOf.forEach((tok, k) => {
       const slip = this.w.slips[k];
+      if (!slip) return;
       if (!tok || !tok.ship || tok.place !== 'slip') { slip.lamp(null); slip.label(tok ? `${tok.id.slice(8)} ${tok.pic.title}` : ''); return; }
       const p = tok.pic;
       const landed = p.status === 'done'; // on its way down the ramp

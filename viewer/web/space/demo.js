@@ -9,8 +9,10 @@ import { LIVERIES, liveryOf } from './plan.js';
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 // `onState(state, trail)` is called once a second. The function returned stops
-// the demo; its `step()` moves the made-up board on by one second at once.
-export function startDemo(onState) {
+// the demo; its `step()` moves the made-up board on by one second at once, and
+// its `setDocks(n)` gives the made-up board another `max_parallel`.
+// `docks` is the board's `max_parallel`: that many tickets are worked at once.
+export function startDemo(onState, { docks = 4 } = {}) {
   let events = []; // what happened since the last state was given
   const log = (t, event, more = {}) => events.push({ ticket: t.id, at: Date.now(), event, ...more });
   let n = 0;
@@ -31,15 +33,20 @@ export function startDemo(onState) {
   make('backlog'); make('todo');
   { const t = make('in_progress'); t.run = { role: 'worker', agent: 'demo', since: Date.now() }; t.criteria.slice(0, 2).forEach((c) => { c.done = true; }); t.wait = 8; }
   { const t = make('review'); t.run = { role: 'reviewer', agent: 'demo', since: Date.now() }; t.criteria.forEach((c) => { c.done = true; }); t.wait = 25; }
+  // a board with more places opens with more hulls on its slips
+  for (let i = 4; i < docks; i++) { const t = make('in_progress'); t.run = { role: 'worker', agent: 'demo', since: Date.now() }; t.criteria[0].done = true; t.wait = rnd(5, 40); }
 
   function tick(dt) {
     clock += dt;
     const flying = tickets.filter((t) => ['in_progress', 'review'].includes(t.status)).length;
-    if (tickets.filter((t) => t.status === 'backlog').length < 2 && Math.random() < dt / 35) log(make('backlog'), 'created', { status: 'backlog' });
+    const busy = Math.max(1, docks / 4); // a board with more places takes more orders
+    if (tickets.filter((t) => t.status === 'backlog').length < 2 * busy && Math.random() < (dt / 35) * busy) log(make('backlog'), 'created', { status: 'backlog' });
     for (const t of tickets) {
       t.wait -= dt;
       if (t.status === 'backlog' && t.wait <= 0) { t.status = Math.random() < 0.08 ? 'cancel' : 'todo'; t.wait = rnd(30, 45); log(t, 'moved', { to: t.status }); }
-      else if (t.status === 'todo' && t.wait <= 0 && flying < 3) { t.status = 'in_progress'; t.run = { role: 'worker', agent: 'demo', since: Date.now() }; t.wait = rnd(25, 35); log(t, 'started'); return; }
+      // `k2 start`, and a few seconds later the worker is sent
+      else if (t.status === 'todo' && t.wait <= 0 && flying < Math.max(1, docks - 1)) { t.status = 'in_progress'; t.run = null; t.sent = rnd(3, 6); t.wait = rnd(25, 35); log(t, 'started'); return; }
+      else if (t.status === 'in_progress' && t.sent > 0) { t.sent -= dt; if (t.sent <= 0) { t.run = { role: 'worker', agent: 'demo', since: Date.now() }; log(t, 'agent', { role: 'worker', agent: 'demo' }); } }
       else if (t.status === 'in_progress') {
         if (t.ask > 0) { t.ask -= dt; if (t.ask <= 0) t.run = { role: 'worker', agent: 'demo', since: Date.now() }; continue; }
         if (t.stuck > 0) { t.stuck -= dt; continue; }
@@ -76,7 +83,8 @@ export function startDemo(onState) {
     }
     return {
       project: 'demo', now, demo: true,
-      tickets: tickets.map((t) => ({ id: t.id, title: t.title, status: t.status, fm: t.fm, criteria: t.criteria.map((c) => ({ ...c })), state: { passed: !!t.state.passed }, rejected: t.rejected, landed: t.landed, run: ['in_progress', 'review'].includes(t.status) ? t.run || undefined : undefined })),
+      settings: { max_parallel: docks },
+      tickets: tickets.map((t) => ({ id: t.id, title: t.title, status: t.status, fm: t.fm, criteria: t.criteria.map((c) => ({ ...c })), state: { passed: !!t.state.passed }, rejected: t.rejected, landed: t.landed, last: t.sent > 0 ? { event: 'started' } : undefined, run: ['in_progress', 'review'].includes(t.status) ? t.run || undefined : undefined })),
       queue: { order: tickets.filter((t) => t.status === 'todo').map((t) => t.id) },
       mergeQueue: tickets.filter((t) => t.status === 'review' && t.state.passed).map((t) => t.id),
       inbox, live,
@@ -92,5 +100,6 @@ export function startDemo(onState) {
   const timer = setInterval(step, 1000);
   const stop = () => clearInterval(timer);
   stop.step = step;
+  stop.setDocks = (n) => { docks = n; };
   return stop;
 }

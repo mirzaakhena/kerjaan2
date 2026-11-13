@@ -1,11 +1,15 @@
-// The yard: a quay with four slips, a row of sheds behind them, a terrace, a
+// The yard: a quay with its slips, a row of sheds behind them, a terrace, a
 // mail pier, a crane, a lighthouse and the bay. Built once; `update` moves
-// the water, the boats, the crane and the light.
+// the water, the boats, the crane and the light. `setDocks(n)` lays the slips
+// out anew (`yardOf` in plan.js says where): the island grows wider, and
+// deeper for a second row, and what stands at its ends and at its back moves
+// out with it.
 //
 // Axes: x runs west to east along the quay, +z is out to sea, the quay's
 // surface is y = 0.
 import * as THREE from 'three';
 import { spawn, materialOf } from './kit.js';
+import { yardOf, STREET, ROW } from './plan.js';
 
 export const KIT = [
   'pirate/barrel', 'pirate/crate', 'pirate/crate-bottles', 'pirate/chest', 'pirate/boat-row-small', 'pirate/flag-high', 'pirate/flag-pennant', 'pirate/palm-bend', 'pirate/palm-straight', 'pirate/palm-detailed-bend', 'pirate/palm-detailed-straight', 'pirate/patch-sand-foliage', 'pirate/platform-planks', 'pirate/rocks-a', 'pirate/rocks-b', 'pirate/rocks-c', 'pirate/ship-small', 'pirate/ship-medium', 'pirate/ship-large', 'pirate/ship-pirate-small', 'pirate/ship-pirate-medium', 'pirate/ship-pirate-large', 'pirate/structure', 'pirate/structure-roof', 'pirate/structure-fence', 'pirate/tower-complete-large', 'pirate/tower-watch', 'pirate/grass', 'pirate/grass-patch', 'pirate/grass-plant',
@@ -13,8 +17,10 @@ export const KIT = [
 ];
 
 export const BOUNDS = { x0: -32, x1: 32, z0: -30, z1: 26 };
-export const STREET = -13.6; // the walkway between the sheds and the slips
-export const SLIP_X = [-16.5, -6, 4.5, 15];
+export { STREET };
+// How people cross the yard as it is laid out now (`route`): the street behind the last row, and where one
+// gets from it to the street between the rows.
+const WAYS = { back: STREET, cross: [] };
 const SEA = -0.72;
 
 const C = {
@@ -43,6 +49,7 @@ function box(parent, w, h, d, color, x, y, z, opts) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), typeof color === 'number' ? mat(color, opts) : color);
   m.position.set(x, y, z);
   m.castShadow = m.receiveShadow = true;
+  m.userData.own = 1; // its geometry is its own
   parent.add(m);
   return m;
 }
@@ -50,6 +57,7 @@ function cyl(parent, r, h, color, x, y, z, seg = 10, r2 = r) {
   const m = new THREE.Mesh(new THREE.CylinderGeometry(r2, r, h, seg), mat(color));
   m.position.set(x, y, z);
   m.castShadow = m.receiveShadow = true;
+  m.userData.own = 1;
   parent.add(m);
   return m;
 }
@@ -105,8 +113,18 @@ function sign(parent, text, x, y, z, { w = 3.2, ry = 0 } = {}) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshStandardMaterial({ map: t, roughness: 0.9, side: THREE.DoubleSide }));
   m.position.set(x, y, z);
   m.rotation.y = ry;
+  m.userData.own = 2; // its material and picture too
   parent.add(m);
   return m;
+}
+// Take down what was built for a layout that is no more.
+function raze(group) {
+  group.traverse((o) => {
+    if (!o.isMesh || !o.userData.own) return;
+    o.geometry.dispose();
+    if (o.userData.own === 2) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+  });
+  group.clear();
 }
 
 // A rolled drawing: what a ticket is while it is still paper.
@@ -199,6 +217,7 @@ function plate(w, h, px = 512, py = 96) {
     t.needsUpdate = true;
   };
   m.visible = false;
+  m.userData.own = 2;
   return m;
 }
 
@@ -207,24 +226,26 @@ export function buildWorld(scene) {
   const world = new THREE.Group();
   scene.add(world);
   const paving = pavingTexture();
+  // What moves when the slips are laid out anew: `back` and `terrace` go inland to make room for a second row,
+  // `east` and `west` go out with the ends of the island, `docks` is built again.
+  const group = () => { const g = new THREE.Group(); world.add(g); return g; };
+  const back = group(), terrace = group(), east = group(), west = group(), docks = group();
 
   // ----- the ground -----
-  box(world, 64, 5, 30, C.rock, 0, -2.5, -15);
+  const rock = box(world, 64, 5, 30, C.rock, 0, -2.5, -15);
   const quay = new THREE.Mesh(new THREE.PlaneGeometry(64, 30), new THREE.MeshStandardMaterial({ map: paving, roughness: 0.95 }));
-  paving.repeat.set(8, 3.75);
   quay.rotation.x = -Math.PI / 2;
   quay.position.set(0, 0.004, -15);
   quay.receiveShadow = true;
   world.add(quay);
-  box(world, 64, 0.5, 0.7, C.stone, 0, -0.2, 0.05); // the edge of the quay
-  box(world, 64, 2, 26, C.sand, 0, -4, 13); // the sea bed
+  const wide = [box(world, 64, 0.5, 0.7, C.stone, 0, -0.2, 0.05), box(world, 64, 2, 26, C.sand, 0, -4, 13)]; // the edge of the quay, the sea bed
 
   // the terrace behind the sheds, with its stairs
-  box(world, 64, 1.6, 9, C.stoneDark, 0, 0.8, -25.5);
-  box(world, 64, 0.12, 8.6, C.grass, 0, 1.6, -25.7);
-  box(world, 64, 0.22, 0.5, C.stone, 0, 1.62, -21.2);
-  for (let i = 0; i < 5; i++) box(world, 4, 0.32, 0.62, C.stone, 5, 0.16 + i * 0.32, -18.3 - i * 0.6);
-  for (const sx of [2.75, 7.25]) box(world, 0.5, 2, 3.2, C.stoneDark, sx, 1, -19.5);
+  box(terrace, 64, 1.6, 9, C.stoneDark, 0, 0.8, -25.5);
+  box(terrace, 64, 0.12, 8.6, C.grass, 0, 1.6, -25.7);
+  box(terrace, 64, 0.22, 0.5, C.stone, 0, 1.62, -21.2);
+  for (let i = 0; i < 5; i++) box(back, 4, 0.32, 0.62, C.stone, 5, 0.16 + i * 0.32, -18.3 - i * 0.6);
+  for (const sx of [2.75, 7.25]) box(back, 0.5, 2, 3.2, C.stoneDark, sx, 1, -19.5);
 
   // ----- the sea -----
   const sides = new THREE.Mesh(new THREE.BoxGeometry(63.9, 2.28, 25.95), new THREE.MeshStandardMaterial({ color: C.deep, transparent: true, opacity: 0.5, roughness: 0.3, depthWrite: false }));
@@ -236,36 +257,43 @@ export function buildWorld(scene) {
   sea.position.set(0, SEA, 13);
   sea.receiveShadow = true;
   world.add(sea);
+  wide.push(sides, sea);
   const seaBase = seaGeo.attributes.position.array.slice();
 
-  // ----- the slips -----
-  const slips = SLIP_X.map((sx, i) => {
-    box(world, 6.4, 0.06, 12.4, C.pad, sx, 0.03, -6.3);
-    for (const dx of [-1.2, 1.2]) box(world, 0.28, 0.2, 12.4, C.woodDark, sx + dx, 0.16, -6.3);
-    for (const dz of [-10.5, -7.5, -4.5, -1.5]) box(world, 3.4, 0.26, 0.5, C.wood, sx, 0.16, dz);
-    const ramp = box(world, 5.2, 0.22, 7.4, C.wood, sx, -1.02, 3.5);
+  // ----- the slips: as many as the board has places, built by `setDocks` -----
+  const slips = [];
+  const LAMP = { fresh: 0x3fcf9d, slow: 0xffb547, silent: 0xff5a4e };
+  function slipAt(k, d, side) {
+    const sx = d.x, dz = d.z;
+    box(docks, 6.4, 0.06, 12.4, C.pad, sx, 0.03, dz - 6.3);
+    for (const dx of [-1.2, 1.2]) box(docks, 0.28, 0.2, 12.4, C.woodDark, sx + dx, 0.16, dz - 6.3);
+    for (const z of [-10.5, -7.5, -4.5, -1.5]) box(docks, 3.4, 0.26, 0.5, C.wood, sx, 0.16, dz + z);
+    // a slip of the back row: its slipway runs to the water between two slips of the front row
+    if (dz) for (const dx of [-1.2, 1.2]) box(docks, 0.28, 0.1, -dz, C.woodDark, sx + dx, 0.05, dz / 2);
+    const ramp = box(docks, 5.2, 0.22, 7.4, C.wood, sx, -1.02, 3.5);
     ramp.rotation.x = 0.29;
-    for (const side of [-1, 1]) {
-      for (const dz of [-11, -8, -5, -2]) cyl(world, 0.09, 3.5, C.woodDark, sx + side * 3.05, 1.75, dz, 6);
-      for (const y of [1.7, 3.3]) box(world, 0.7, 0.08, 9.8, C.woodLight, sx + side * 3.05, y, -6.5);
+    for (const s of [-1, 1]) {
+      for (const z of [-11, -8, -5, -2]) cyl(docks, 0.09, 3.5, C.woodDark, sx + s * 3.05, 1.75, dz + z, 6);
+      for (const y of [1.7, 3.3]) box(docks, 0.7, 0.08, 9.8, C.woodLight, sx + s * 3.05, y, dz - 6.5);
     }
-    cyl(world, 0.07, 1.5, C.iron, sx - 3.1, 0.75, -12.3, 6);
-    sign(world, `SLIP ${i + 1}`, sx - 3.1, 1.75, -12.3, { w: 1.9 });
+    cyl(docks, 0.07, 1.5, C.iron, sx - 3.1, 0.75, dz - 12.3, 6);
+    sign(docks, `SLIP ${k + 1}`, sx - 3.1, 1.75, dz - 12.3, { w: 1.9 });
     // the name of the ticket on the slip, and a lamp that burns while its tests run
     const label = plate(3.4, 0.64);
-    label.position.set(sx - 4.1, 0.62, -0.95); // at the head of the ramp, facing the bay
+    label.position.set(sx, 0.36, dz + 0.12); // on the ground at the head of the slipway, facing the bay
     label.rotation.x = -0.45;
-    world.add(label);
+    docks.add(label);
     const lampMat = new THREE.MeshStandardMaterial({ color: 0x3a3f5c, roughness: 0.6, emissive: 0x000000 });
     const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 8), lampMat);
-    lamp.position.set(sx - 3.1, 2.25, -12.3);
-    world.add(lamp);
-    const LAMP = { fresh: 0x3fcf9d, slow: 0xffb547, silent: 0xff5a4e };
+    lamp.position.set(sx - 3.1, 2.25, dz - 12.3);
+    lamp.userData.own = 2;
+    docks.add(lamp);
     let lit = null;
     const spots = [];
-    for (const side of [-1, 1]) for (const dz of [-10, -7.5, -5, -2.5]) spots.push({ x: sx + side * 3.95, z: dz, face: side < 0 ? Math.PI / 2 : -Math.PI / 2 });
+    for (const s of [-1, 1]) for (const z of [-10, -7.5, -5, -2.5]) spots.push({ x: sx + s * side, z: dz + z, face: s < 0 ? Math.PI / 2 : -Math.PI / 2 });
     return {
       x: sx,
+      z: dz - 6.4, // where a hull stands
       spots,
       label: label.userData.write,
       lamp(state) {
@@ -276,58 +304,58 @@ export function buildWorld(scene) {
         lampMat.color.setHex(state ? LAMP[state] : 0x3a3f5c);
       },
     };
-  });
+  }
 
   // ----- the row of sheds -----
   const S = 1.6;
   // orders: where a ticket arrives and waits (backlog)
-  for (const dx of [-2, 2]) prop(world, 'pirate/structure', -24 + dx, 0, -17.6, { s: S });
-  box(world, 3.4, 0.9, 1, C.wood, -24.6, 0.45, -16.6);
-  box(world, 3.6, 0.1, 1.2, C.woodLight, -24.6, 0.95, -16.6);
-  box(world, 2.6, 2.4, 0.5, C.woodDark, -21.6, 1.2, -19);
+  for (const dx of [-2, 2]) prop(back, 'pirate/structure', -24 + dx, 0, -17.6, { s: S });
+  box(back, 3.4, 0.9, 1, C.wood, -24.6, 0.45, -16.6);
+  box(back, 3.6, 0.1, 1.2, C.woodLight, -24.6, 0.95, -16.6);
+  box(back, 2.6, 2.4, 0.5, C.woodDark, -21.6, 1.2, -19);
   const shelfSlots = [];
-  for (let r = 2; r >= 0; r--) for (let k = 0; k < 4; k++) shelfSlots.push({ x: -22.5 + k * 0.6, y: 0.62 + r * 0.72, z: -18.72, ry: Math.PI / 2 });
-  sign(world, 'ORDERS', -24, 3.9, -15.55);
+  for (let r = 2; r >= 0; r--) for (let k = 0; k < 4; k++) shelfSlots.push({ x: -22.5 + k * 0.6, y: 0.62 + r * 0.72, z: -18.72, z0: -18.72, ry: Math.PI / 2 });
+  sign(back, 'ORDERS', -24, 3.9, -15.55);
   // drawings: where the planner works
-  prop(world, 'pirate/structure-roof', -13, 0, -17.6, { s: S });
-  const desk = box(world, 2.2, 0.08, 1.4, C.woodLight, -13, 1.02, -17.3);
+  prop(back, 'pirate/structure-roof', -13, 0, -17.6, { s: S });
+  const desk = box(back, 2.2, 0.08, 1.4, C.woodLight, -13, 1.02, -17.3);
   desk.rotation.x = 0.35;
-  const sheet = box(world, 1.7, 0.02, 1.05, C.paper, -13, 1.08, -17.28);
+  const sheet = box(back, 1.7, 0.02, 1.05, C.paper, -13, 1.08, -17.28);
   sheet.rotation.x = 0.35;
-  for (const dx of [-0.9, 0.9]) box(world, 0.12, 0.95, 1, C.woodDark, -13 + dx, 0.47, -17.4);
-  prop(world, 'pirate/barrel', -15.2, 0, -18.6, { s: 0.7 });
-  for (let k = 0; k < 3; k++) { const s = scroll(); s.position.set(-15.2 + (k - 1) * 0.16, 1.05, -18.6); s.rotation.z = Math.PI / 2 - 0.2 * (k - 1); world.add(s); }
-  sign(world, 'DRAWINGS', -13, 0.5, -15.3, { w: 2.6 });
+  for (const dx of [-0.9, 0.9]) box(back, 0.12, 0.95, 1, C.woodDark, -13 + dx, 0.47, -17.4);
+  prop(back, 'pirate/barrel', -15.2, 0, -18.6, { s: 0.7 });
+  for (let k = 0; k < 3; k++) { const s = scroll(); s.position.set(-15.2 + (k - 1) * 0.16, 1.05, -18.6); s.rotation.z = Math.PI / 2 - 0.2 * (k - 1); back.add(s); }
+  sign(back, 'DRAWINGS', -13, 0.5, -15.3, { w: 2.6 });
   // the queue: drawings pinned in the order they will be built (todo)
-  box(world, 5.2, 2.6, 0.16, C.woodDark, -3, 1.9, -20.85);
-  box(world, 4.8, 2.2, 0.06, 0xdcc9a0, -3, 1.9, -20.75);
-  for (const dx of [-2.4, 2.4]) cyl(world, 0.1, 3.3, C.woodDark, -3 + dx, 1.65, -20.85, 6);
+  box(back, 5.2, 2.6, 0.16, C.woodDark, -3, 1.9, -20.85);
+  box(back, 4.8, 2.2, 0.06, 0xdcc9a0, -3, 1.9, -20.75);
+  for (const dx of [-2.4, 2.4]) cyl(back, 0.1, 3.3, C.woodDark, -3 + dx, 1.65, -20.85, 6);
   const queueSlots = [];
-  for (let k = 0; k < 8; k++) queueSlots.push({ x: -4.7 + (k % 4) * 1.13, y: 2.45 - Math.floor(k / 4) * 1.05, z: -20.62, ry: 0 });
-  sign(world, 'QUEUE', -3, 3.75, -20.8, { w: 2.4 });
+  for (let k = 0; k < 8; k++) queueSlots.push({ x: -4.7 + (k % 4) * 1.13, y: 2.45 - Math.floor(k / 4) * 1.05, z: -20.62, z0: -20.62, ry: 0 });
+  sign(back, 'QUEUE', -3, 3.75, -20.8, { w: 2.4 });
   // inspection: where the reviewer keeps the stamps
-  prop(world, 'pirate/structure-fence', 12, 0, -17.6, { s: S });
-  box(world, 2, 0.9, 0.9, C.wood, 12, 0.45, -17.6);
-  prop(world, 'pirate/flag-high', 14.6, 0, -16, { s: 1.1 });
-  sign(world, 'INSPECTION', 12, 3.9, -15.55, { w: 3.4 });
+  prop(back, 'pirate/structure-fence', 12, 0, -17.6, { s: S });
+  box(back, 2, 0.9, 0.9, C.wood, 12, 0.45, -17.6);
+  prop(back, 'pirate/flag-high', 14.6, 0, -16, { s: 1.1 });
+  sign(back, 'INSPECTION', 12, 3.9, -15.55, { w: 3.4 });
   // timber: what the shipwrights fetch, and where a cancelled hull ends
-  for (const [dx, dz, ry, n] of [[0, 0, 0, 4], [2.6, -0.6, 0.4, 3], [-2.5, -0.8, -0.2, 2]]) for (let k = 0; k < n; k++) prop(world, 'pirate/platform-planks', 22 + dx, k * 0.4, -18 + dz, { ry: ry + k * 0.08 });
-  prop(world, 'watercraft/cargo-pile-a', 26.5, 0, -18.5);
-  sign(world, 'TIMBER', 22, 0.5, -15.6, { w: 2.2 });
+  for (const [dx, dz, ry, n] of [[0, 0, 0, 4], [2.6, -0.6, 0.4, 3], [-2.5, -0.8, -0.2, 2]]) for (let k = 0; k < n; k++) prop(back, 'pirate/platform-planks', 22 + dx, k * 0.4, -18 + dz, { ry: ry + k * 0.08 });
+  prop(back, 'watercraft/cargo-pile-a', 26.5, 0, -18.5);
+  sign(back, 'TIMBER', 22, 0.5, -15.6, { w: 2.2 });
 
   // ----- the mail pier -----
-  box(world, 3, 0.22, 10.4, C.wood, -28, -0.11, 5.2);
-  for (let k = 0; k < 9; k++) box(world, 3.1, 0.03, 0.06, C.woodDark, -28, 0.01, 0.6 + k * 1.15);
-  for (const dx of [-1.3, 1.3]) for (const dz of [2, 6, 10]) cyl(world, 0.2, 3.4, C.woodDark, -28 + dx, -1.3, dz, 8);
-  cyl(world, 0.08, 1.3, C.iron, -29.2, 0.65, 9.9, 6);
-  box(world, 0.5, 0.6, 0.4, C.red, -29.2, 1.5, 9.9);
-  prop(world, 'watercraft/buoy-flag', -30, SEA + 0.25, 16);
+  box(west, 3, 0.22, 10.4, C.wood, -28, -0.11, 5.2);
+  for (let k = 0; k < 9; k++) box(west, 3.1, 0.03, 0.06, C.woodDark, -28, 0.01, 0.6 + k * 1.15);
+  for (const dx of [-1.3, 1.3]) for (const dz of [2, 6, 10]) cyl(west, 0.2, 3.4, C.woodDark, -28 + dx, -1.3, dz, 8);
+  cyl(west, 0.08, 1.3, C.iron, -29.2, 0.65, 9.9, 6);
+  box(west, 0.5, 0.6, 0.4, C.red, -29.2, 1.5, 9.9);
+  prop(west, 'watercraft/buoy-flag', -30, SEA + 0.25, 16);
   prop(world, 'watercraft/buoy', -4, SEA + 0.25, 17.4);
 
   // ----- the crane -----
   const crane = new THREE.Group();
   crane.position.set(21.5, 0, -3); // its jib is short enough to swing clear of the lighthouse
-  world.add(crane);
+  east.add(crane);
   box(crane, 2.4, 0.7, 2.4, C.stoneDark, 0, 0.35, 0);
   cyl(crane, 0.32, 7.4, C.iron, 0, 4.4, 0, 8, 0.24);
   const arm = new THREE.Group();
@@ -341,58 +369,59 @@ export function buildWorld(scene) {
   arm.rotation.y = 0.5;
 
   // ----- the lighthouse -----
-  cyl(world, 3.6, 3.3, C.stoneDark, 28, -1.35, 3.4, 12, 3.3);
-  prop(world, 'pirate/tower-complete-large', 28, 0.3, 3.4, { s: 1.2 });
-  prop(world, 'pirate/rocks-a', 30.2, -2.2, 7.5, { s: 0.75, ry: 1 });
-  prop(world, 'pirate/rocks-c', 24.6, -2.2, 6.3, { s: 0.7, ry: 2.2 });
+  cyl(east, 3.6, 3.3, C.stoneDark, 28, -1.35, 3.4, 12, 3.3);
+  prop(east, 'pirate/tower-complete-large', 28, 0.3, 3.4, { s: 1.2 });
+  prop(east, 'pirate/rocks-a', 30.2, -2.2, 7.5, { s: 0.75, ry: 1 });
+  prop(east, 'pirate/rocks-c', 24.6, -2.2, 6.3, { s: 0.7, ry: 2.2 });
   const beam = new THREE.Mesh(new THREE.ConeGeometry(2.6, 16, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xfff0a8, transparent: true, opacity: 0.13, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
   beam.geometry.translate(0, -8, 0);
   beam.geometry.rotateX(-Math.PI / 2);
   const lamp = new THREE.Group();
   lamp.position.set(28, 9.4, 3.4);
   lamp.add(beam);
-  world.add(lamp);
+  east.add(lamp);
   // one flag for each thing that waits for the owner, five at most
-  const flags = [0, 1, 2, 3, 4].map((k) => { const f = prop(world, 'pirate/flag-high', 24.6 + k * 1.5, 0, -6.6, { s: 1.05, ry: -0.3 }); f.visible = false; return f; });
+  const flags = [0, 1, 2, 3, 4].map((k) => { const f = prop(east, 'pirate/flag-high', 24.6 + k * 1.5, 0, -6.6, { s: 1.05, ry: -0.3 }); f.visible = false; return f; });
 
-  // ----- things along the quay -----
-  for (const lx of [-11.25, -0.75, 9.75, 19.6, -21.5]) { // between the lanes people walk
-    cyl(world, 0.09, 3.4, C.iron, lx, 1.7, -12.4, 6);
-    box(world, 0.34, 0.4, 0.34, 0xffe2a0, lx, 3.55, -12.4, { emissive: 0xffc860, emissiveIntensity: 0.9 });
-    box(world, 0.5, 0.08, 0.5, C.iron, lx, 3.8, -12.4);
-  }
-  for (let bx = -30; bx <= 30; bx += 4) if (!SLIP_X.some((sx) => Math.abs(bx - sx) < 3.2) && Math.abs(bx + 28) > 2) cyl(world, 0.22, 0.55, C.iron, bx, 0.27, -0.7, 8, 0.16);
-  const clutter = [['pirate/barrel', -11.6, -11.4], ['pirate/crate', -11, -10.3], ['pirate/crate-bottles', -0.9, -11.2], ['pirate/barrel', 9.4, -11.4], ['pirate/crate', 10, -10.3], ['pirate/barrel', 23.6, -10.6], ['pirate/chest', -19.6, -16.2], ['pirate/crate', -29.6, -3], ['pirate/barrel', -30.2, -4.4], ['watercraft/cargo-container-a', -30, -9.5], ['watercraft/cargo-container-b', -30, -9.5, 1.1], ['pirate/crate', 17.6, -18.6], ['pirate/barrel', 8.6, -19.6]];
-  for (const [key, x, z, y = 0] of clutter) prop(world, key, x, y, z, { s: key.includes('cargo') ? 1 : 0.75, ry: rnd() * 6 });
+  // ----- things along the quay (the lamps, the bollards and what lies between the slips come with the slips) -----
+  const clutter = [[east, 'pirate/barrel', 23.6, -10.6], [back, 'pirate/chest', -19.6, -16.2], [west, 'pirate/crate', -29.6, -3], [west, 'pirate/barrel', -30.2, -4.4], [west, 'watercraft/cargo-container-a', -30, -9.5], [west, 'watercraft/cargo-container-b', -30, -9.5, 1.1], [back, 'pirate/crate', 17.6, -18.6], [back, 'pirate/barrel', 8.6, -19.6]];
+  for (const [to, key, x, z, y = 0] of clutter) prop(to, key, x, y, z, { s: key.includes('cargo') ? 1 : 0.75, ry: rnd() * 6 });
   // a bench that looks out to sea
-  box(world, 2.2, 0.12, 0.6, C.woodLight, 27.6, 0.62, -9.4);
-  for (const dx of [-0.9, 0.9]) box(world, 0.14, 0.6, 0.5, C.woodDark, 27.6 + dx, 0.3, -9.4);
+  box(east, 2.2, 0.12, 0.6, C.woodLight, 27.6, 0.62, -9.4);
+  for (const dx of [-0.9, 0.9]) box(east, 0.14, 0.6, 0.5, C.woodDark, 27.6 + dx, 0.3, -9.4);
 
   // ----- the terrace -----
   const palms = ['palm-bend', 'palm-straight', 'palm-detailed-bend', 'palm-detailed-straight'];
   for (let k = 0; k < 15; k++) {
     const x = -30 + k * 4.2 + rnd() * 1.6;
     if (x > 1.5 && x < 8.5) continue;
-    prop(world, `pirate/${palms[Math.floor(rnd() * 4)]}`, x, 1.66, -23.4 - rnd() * 4.6, { s: 1.15 + rnd() * 0.55, ry: rnd() * 6 });
+    prop(back, `pirate/${palms[Math.floor(rnd() * 4)]}`, x, 1.66, -23.4 - rnd() * 4.6, { s: 1.15 + rnd() * 0.55, ry: rnd() * 6 });
   }
-  for (let k = 0; k < 26; k++) prop(world, `pirate/${['grass', 'grass-patch', 'grass-plant'][Math.floor(rnd() * 3)]}`, -31 + rnd() * 62, 1.66, -22.2 - rnd() * 7, { s: 0.9 + rnd() * 0.8, ry: rnd() * 6 });
-  for (const [key, x, z, s] of [['rocks-b', -29, -27.5, 0.8], ['rocks-c', -8, -28, 0.7], ['rocks-a', 18, -27.6, 0.75], ['rocks-c', 30, -24, 0.6]]) prop(world, `pirate/${key}`, x, 1.6, z, { s, ry: rnd() * 6 });
-  prop(world, 'pirate/tower-watch', -19, 1.66, -26, { s: 1.2 });
-  prop(world, 'pirate/flag-pennant', -19, 5, -26, { s: 1.2 });
-  prop(world, 'pirate/patch-sand-foliage', 12, 1.62, -26, { s: 0.9 });
+  for (let k = 0; k < 26; k++) prop(back, `pirate/${['grass', 'grass-patch', 'grass-plant'][Math.floor(rnd() * 3)]}`, -31 + rnd() * 62, 1.66, -22.2 - rnd() * 7, { s: 0.9 + rnd() * 0.8, ry: rnd() * 6 });
+  for (const [key, x, z, s] of [['rocks-b', -29, -27.5, 0.8], ['rocks-c', -8, -28, 0.7], ['rocks-a', 18, -27.6, 0.75], ['rocks-c', 30, -24, 0.6]]) prop(back, `pirate/${key}`, x, 1.6, z, { s, ry: rnd() * 6 });
+  prop(back, 'pirate/tower-watch', -19, 1.66, -26, { s: 1.2 });
+  prop(back, 'pirate/flag-pennant', -19, 5, -26, { s: 1.2 });
+  prop(back, 'pirate/patch-sand-foliage', 12, 1.62, -26, { s: 0.9 });
+
+  // what grows on the ends of a wider island: seen when the island reaches that far
+  const far = [];
+  for (const side of [-1, 1]) for (let k = 0; k < 4; k++) {
+    far.push(prop(back, `pirate/${palms[Math.floor(rnd() * 4)]}`, side * (33.5 + k * 4.1 + rnd() * 1.4), 1.66, -23.4 - rnd() * 4.6, { s: 1.15 + rnd() * 0.55, ry: rnd() * 6 }));
+    for (let g = 0; g < 2; g++) far.push(prop(back, `pirate/${['grass', 'grass-patch', 'grass-plant'][Math.floor(rnd() * 3)]}`, side * (32.5 + k * 4 + rnd() * 3), 1.66, -22.2 - rnd() * 7, { s: 0.9 + rnd() * 0.8, ry: rnd() * 6 }));
+  }
 
   // ----- what floats -----
   const afloat = [];
-  const float = (key, x, z, { ry = 0, s = 1, draft = 0.42, sway = 1 } = {}) => {
-    const o = prop(world, key, x, SEA - draft, z, { ry, s });
+  const float = (key, x, z, { ry = 0, s = 1, draft = 0.42, sway = 1, to = world } = {}) => {
+    const o = prop(to, key, x, SEA - draft, z, { ry, s });
     afloat.push({ o, y: SEA - draft, phase: rnd() * 6, sway });
     return o;
   };
   const MAIL_AWAY = { x: -21, z: 15.5, ry: -2.2 }, MAIL_IN = { x: -25.4, z: 8.6, ry: 0.15 };
-  const mailBoat = float('pirate/boat-row-small', MAIL_AWAY.x, MAIL_AWAY.z, { ry: MAIL_AWAY.ry, draft: 0.2 });
-  float('watercraft/boat-fishing-small', 28.5, 13.5, { ry: 2.2, draft: 0.3 });
-  float('watercraft/boat-tow-a', 21.5, 4.6, { ry: Math.PI / 2, draft: 0.4 });
-  float('watercraft/boat-sail-a', 29, 23.5, { ry: 0.7, draft: 0.3 });
+  const mailBoat = float('pirate/boat-row-small', MAIL_AWAY.x, MAIL_AWAY.z, { ry: MAIL_AWAY.ry, draft: 0.2, to: west });
+  float('watercraft/boat-fishing-small', 28.5, 13.5, { ry: 2.2, draft: 0.3, to: east });
+  float('watercraft/boat-tow-a', 21.5, 4.6, { ry: Math.PI / 2, draft: 0.4, to: east });
+  float('watercraft/boat-sail-a', 29, 23.5, { ry: 0.7, draft: 0.3, to: east });
   const tug = float('watercraft/boat-tug-a', 0, 15, { draft: 0.32 });
   // where landed ships lie at anchor, newest four
   const anchors = [-21, -9, 3, 15].map((x) => ({ x, z: 21.6, ry: Math.PI / 2 }));
@@ -412,20 +441,68 @@ export function buildWorld(scene) {
     });
   }
 
-  const stations = {
-    pierEnd: { x: -28, z: 8.8, face: 0 },
-    orders: { x: -24.6, z: -15.4, face: Math.PI },
-    shelf: { x: -21.6, z: -17.6, face: Math.PI },
-    drafting: { x: -13, z: -16.1, face: Math.PI },
-    queue: { x: -3, z: -19.4, face: Math.PI },
-    inspection: { x: 12, z: -16.3, face: Math.PI },
-    timber: { x: 22, z: -16.2, face: Math.PI },
-    crane: { x: 21.5, z: -5.3, face: 0 },
-    lighthouse: { x: 27.6, z: -1.4, face: 0 },
-    bench: { x: 27.6, z: -9.3, face: 0 },
-    edge: { x: -2.05, z: -1.6, face: 0 },
-    walk: { x: 0, z: -13.6, face: 0 },
+  // Where people stand: [x, z, the way they face, what they move with] in the yard of four slips.
+  const HOME = {
+    pierEnd: [-28, 8.8, 0, west],
+    orders: [-24.6, -15.4, Math.PI, back],
+    shelf: [-21.6, -17.6, Math.PI, back],
+    drafting: [-13, -16.1, Math.PI, back],
+    queue: [-3, -19.4, Math.PI, back],
+    inspection: [12, -16.3, Math.PI, back],
+    timber: [22, -16.2, Math.PI, back],
+    crane: [21.5, -5.3, 0, east],
+    lighthouse: [27.6, -1.4, 0, east],
+    bench: [27.6, -9.3, 0, east],
+    edge: [0, -1.6, 0, null], // beside the first slip: set by `setDocks`
+    walk: [0, STREET, 0, null],
   };
+  const stations = Object.fromEntries(Object.entries(HOME).map(([key, [x, z, face]]) => [key, { x, z, face }]));
+
+  // Lay the yard out for `n` slips. Everything keeps its place in its own part of the yard; the parts move.
+  function setDocks(n) {
+    const Y = yardOf(n);
+    const wx = Y.half / 32, wz = (30 + Y.deep) / 30;
+    back.position.z = terrace.position.z = -Y.deep;
+    east.position.x = Y.east;
+    west.position.x = -Y.east;
+    terrace.scale.x = wx;
+    for (const m of wide) m.scale.x = wx;
+    rock.scale.set(wx, 1, wz);
+    quay.scale.set(wx, wz, 1);
+    rock.position.z = quay.position.z = -15 * wz;
+    paving.repeat.set(8 * wx, 3.75 * wz);
+    for (const o of far) o.visible = Math.abs(o.position.x) < Y.half - 1.2;
+    raze(docks);
+    slips.length = 0;
+    Y.docks.forEach((d, k) => slips.push(slipAt(k, d, Y.side)));
+    // lamps at the ends of the front row, and between its slips where there is room (in two rows a slipway runs there)
+    const lampAt = (lx) => {
+      cyl(docks, 0.09, 3.4, C.iron, lx, 1.7, -12.4, 6);
+      box(docks, 0.34, 0.4, 0.34, 0xffe2a0, lx, 3.55, -12.4, { emissive: 0xffc860, emissiveIntensity: 0.9 });
+      box(docks, 0.5, 0.08, 0.5, C.iron, lx, 3.8, -12.4);
+    };
+    const row = Y.docks.slice(0, Y.front);
+    lampAt(row[0].x - 5);
+    lampAt(row[row.length - 1].x + 4.6);
+    if (!Y.back && Y.pitch >= 9.3) row.slice(1).forEach((d, k) => {
+      const mx = d.x - Y.pitch / 2;
+      lampAt(mx);
+      prop(docks, k % 2 ? 'pirate/crate-bottles' : 'pirate/barrel', mx - 0.35, 0, -11.3, { s: 0.75, ry: k * 2.1 });
+      if (!(k % 2)) prop(docks, 'pirate/crate', mx + 0.25, 0, -10.3, { s: 0.75, ry: k * 1.3 + 0.5 });
+    });
+    for (let bx = 2 - Math.floor(Y.half); bx <= Y.half - 2; bx += 4) if (!Y.docks.some((d) => Math.abs(bx - d.x) < 3.2) && Math.abs(bx - Y.pier.x) > 2) cyl(docks, 0.22, 0.55, C.iron, bx, 0.27, -0.7, 8, 0.16);
+    for (const [key, [x, z, , part]] of Object.entries(HOME)) {
+      stations[key].x = x + (part === east ? Y.east : part === west ? -Y.east : 0);
+      stations[key].z = z - (part === back ? Y.deep : 0);
+    }
+    stations.edge.x = row[0].x - 4.6;
+    for (const slot of [...shelfSlots, ...queueSlots]) slot.z = slot.z0 - Y.deep;
+    WAYS.back = STREET - Y.deep;
+    WAYS.cross = Y.cross;
+    Object.assign(BOUNDS, { x0: -Y.half, x1: Y.half, z0: -30 - Y.deep });
+    api.yard = Y;
+    api.rev++;
+  }
 
   const craneState = { aim: 0.5 };
   function update(t, dt) {
@@ -462,8 +539,10 @@ export function buildWorld(scene) {
     lamp.rotation.y = t * 0.5;
   }
 
-  return {
-    stations, slips, shelfSlots, queueSlots, anchors, crane: craneState, update, move,
+  const api = {
+    stations, slips, shelfSlots, queueSlots, anchors, crane: craneState, update, move, setDocks,
+    yard: null, // how it is laid out now (`yardOf`)
+    rev: 0, // goes up with every new layout
     make: { scroll, plank, ship: makeShip },
     sea: SEA,
     floatOn(o, draft, sway = 0.5) { afloat.push({ o, y: SEA - draft, phase: rnd() * 6, sway }); },
@@ -473,15 +552,27 @@ export function buildWorld(scene) {
     mailIn: () => move(mailBoat, MAIL_IN, 5),
     mailOut: () => move(mailBoat, MAIL_AWAY, 7),
   };
+  setDocks(4);
+  return api;
 }
 
-// From one place on the quay to another: straight along a lane, across by the street.
+// From one place on the quay to another: straight along a lane, across by the street. With two rows of slips
+// there are two streets, one behind each row; from one to the other one walks between the slips of the back row.
+const streetOf = (p) => (WAYS.back !== STREET && p.z < STREET - 1 ? WAYS.back : STREET);
 export function route(from, to, lane = 0) {
-  const sz = STREET + lane;
-  if (Math.abs(from.x - to.x) < 0.5) return [to];
+  const a = streetOf(from) + lane, b = streetOf(to) + lane;
   const pts = [];
-  if (Math.abs(from.z - sz) > 0.7) pts.push({ x: from.x, z: sz });
-  if (Math.abs(to.z - sz) > 0.7) pts.push({ x: to.x, z: sz });
+  if (a === b) {
+    if (Math.abs(from.x - to.x) < 0.5) return [to];
+    if (Math.abs(from.z - a) > 0.7) pts.push({ x: from.x, z: a });
+    if (Math.abs(to.z - a) > 0.7) pts.push({ x: to.x, z: a });
+  } else {
+    const cost = (x) => Math.abs(from.x - x) + Math.abs(to.x - x);
+    const cx = WAYS.cross.reduce((best, x) => (cost(x) < cost(best) ? x : best), WAYS.cross[0]) + lane;
+    if (Math.abs(from.z - a) > 0.7) pts.push({ x: from.x, z: a });
+    pts.push({ x: cx, z: a }, { x: cx, z: b });
+    if (Math.abs(to.z - b) > 0.7) pts.push({ x: to.x, z: b });
+  }
   pts.push(to);
   return pts;
 }

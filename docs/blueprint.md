@@ -965,3 +965,22 @@ bagian "Galangan" di atas:
 Kejadian yang belum punya adegan di 0.16.0 dilewati, dan tiket yang mundur
 tetap langsung diletakkan (Q2 dan Q4). Rinciannya, beserta batasnya, ada di
 `docs/galangan-padanan.md` bagian "Linimasa".
+
+## Galangan: tukang menjemput tiketnya, dok mengikuti `max_parallel` (tiket 261113190705)
+
+Keputusan pemilik 27 dan 28 (`docs/galangan-tahap2.md`) dan jawaban pemilik di
+tiket itu mengganti dua hal dari bagian "Galangan" di atas:
+
+- Foreman tidak lagi mengantar gulungan ke dok. `k2 start` hanya menyiapkan
+  dok (papan nama dipasang, Foreman menyapa tukangnya). Saat worker tercatat
+  dikirim, tukang dok itu sendiri menjemput gulungannya dari papan QUEUE, dan
+  lunas baru diletakkan sesudah ia kembali.
+- Dok tidak lagi selalu empat. Jumlahnya sama dengan `max_parallel`: satu
+  sampai enam dalam satu baris, tujuh sampai sepuluh dalam dua baris dengan
+  baris belakang digeser setengah langkah, paling banyak sepuluh. Pulau ikut
+  membesar. Bila semua dok terisi, tiket berikutnya menunggu sebagai gulungan.
+  Bila `max_parallel` diturunkan, dok yang masih berisi kapal tinggal sampai
+  kapalnya pergi.
+
+Rinciannya, beserta batasnya, ada di `docs/galangan-padanan.md` bagian "Tukang
+menjemput tiketnya" dan "Dok mengikuti `max_parallel`".
