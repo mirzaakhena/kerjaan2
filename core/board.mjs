@@ -316,6 +316,34 @@ export function dropState(board, id) {
   fs.rmSync(stateFile(board, id), { force: true });
 }
 
+// The planner belongs to no ticket: the board keeps one record of it, beside
+// the tickets' own. { agent, at, transcript?, ended?, stopped? }; a planner
+// sent later replaces the one before it.
+const plannerFile = (board) => path.join(board.state, 'planner.json');
+
+export function getPlanner(board) {
+  try {
+    const p = JSON.parse(fs.readFileSync(plannerFile(board), 'utf8'));
+    return p && typeof p === 'object' && typeof p.agent === 'string' ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+// `change` gets the record as it is (or null) and answers the new one, or
+// nothing to leave it alone.
+export function setPlanner(board, change, { waitMs = 20000 } = {}) {
+  return withLock(board, 'state', () => {
+    const next = change(getPlanner(board));
+    if (!next) return null;
+    const file = plannerFile(board);
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 1));
+    fs.renameSync(tmp, file);
+    return next;
+  }, { waitMs });
+}
+
 // ----- queue -----
 
 export function readQueue(board) {
