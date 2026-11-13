@@ -4,7 +4,7 @@
 // ticket, with a clock of its own. The yard may lag behind the board, it never
 // runs ahead; behind by much, it plays faster; behind by too much, it is put
 // as the board is now, with no story (the limits are in plan.js).
-import { picture, nextStep, FLEET, PLACE, seen, sameSeen, play, buildOf, paceOf } from './plan.js';
+import { picture, nextStep, FLEET, PLACE, seen, sameSeen, play, buildOf, paceOf, joins } from './plan.js';
 // (What is drawn comes through `world.make`, so this module runs without a scene: tests/viewer.test.mjs.)
 
 const BERTH_Y = 0.28;
@@ -30,7 +30,7 @@ export class Director {
     this.clock = () => Date.now();
     this.ask = null; // set by the page: read the board again soon
     this.turn = 0; // whose hull the inspector goes to next
-    this.mails = 0; // orders the courier has still to fetch from the mail boat
+    this.party = null; // the order boat that has not left yet, and the orders it brings
     this.sweep = 0;
   }
 
@@ -104,9 +104,10 @@ export class Director {
           continue;
         }
         if (e.event === 'created') {
-          // it comes by the mail boat, as blank as it was written
+          // it comes by the order boat, as blank as it was written
           tok = this.token(p, { status: 'backlog', crit: p.crit.map((c) => ({ ...c, done: false, void: false })), rigged: false, rejected: 0 });
           tok.place = 'mail';
+          tok.born = e.at;
         } else {
           tok = this.token(p, seen(p));
           this.put(tok, tok.pic.place);
@@ -336,26 +337,53 @@ export class Director {
 
   reset(tok) { this.put(tok, tok.pic.place); }
 
-  // mail -> shelf: the courier meets the mail boat and files the order
+  // mail -> shelf: the order comes with its party by the order boat, and the courier files them all
   async deliver(tok, live) {
-    const { courier } = this.cast;
-    if (courier.jobs.length < BUSY) {
-      this.mails++;
-      this.w.mailIn();
-      await this.job(courier, async (a) => {
-        a.doing = 'walking out to the mail boat';
-        await a.goTo(this.w.stations.pierEnd);
-        await a.act('pick-up', 1.2);
-        a.hold(this.w.make.scroll());
-        a.say('!', 2);
-        a.doing = `carrying the order “${short(tok.pic.title)}” to the office`;
-        await a.goTo(this.w.stations.shelf);
-        await a.act('interact-right', 1);
-        a.hold(null);
-      });
-      if (!--this.mails) this.w.mailOut();
-    }
+    // a boat that has left, or whose last order is too old, is not joined: the next one comes when it is gone
+    while (this.party && !joins(this.party, tok.born)) await this.party.gone;
+    const party = this.party || this.sail();
+    party.last = tok.born;
+    party.titles.push(tok.pic.title);
+    await party.filed;
     if (live()) this.put(tok, 'shelf');
+  }
+
+  // One boat and one walk of the courier for a whole party. In from the open sea; the courier goes
+  // out only once it lies at the pier, takes the one crate, and the boat leaves by the other side.
+  sail() {
+    const { courier } = this.cast;
+    const party = this.party = { last: 0, open: true, titles: [], filed: null, gone: null };
+    let left;
+    party.gone = new Promise((done) => { left = done; });
+    const leave = async () => {
+      party.open = false;
+      try { await this.w.mailOut(this.speed); } finally {
+        if (this.party === party) this.party = null;
+        left();
+      }
+    };
+    party.filed = (async () => {
+      try {
+        await this.w.mailIn(this.speed);
+        await this.job(courier, async (a) => {
+          a.doing = 'walking out to the order boat';
+          await a.goTo(this.w.stations.pierEnd);
+          await a.act('pick-up', 1.2);
+          this.w.mailTake();
+          a.hold(this.w.make.crate());
+          a.say('!', 2);
+          leave();
+          const n = party.titles.length;
+          a.doing = n > 1 ? `carrying ${n} new orders to the office` : `carrying the order “${short(party.titles[0])}” to the office`;
+          await a.goTo(this.w.stations.shelf);
+          await a.act('interact-right', 1);
+          a.hold(null);
+        });
+      } finally {
+        if (party.open) leave(); // nobody came for it
+      }
+    })().catch((e) => console.error('order boat:', e));
+    return party;
   }
 
   // shelf -> queue: the draughtsman draws it up and pins it on the board
