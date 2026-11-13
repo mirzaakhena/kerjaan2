@@ -45,8 +45,10 @@ driven by one CLI, `k2`. A from-scratch rewrite of
   the board's `language`. Talk to the owner in Indonesian.
 - Every release: bump `version` in `.claude-plugin/plugin.json`, one commit,
   never push. The owner runs `/plugin update kerjaan2` and opens a new session.
-- kerjaan2 has no board of its own yet: work here is done directly, not
-  through tickets.
+- kerjaan2 has a board of its own (`.kerjaan2/`, tickets in Indonesian): work
+  here goes through tickets. The plugin that runs is the installed copy in the
+  cache, not this source: a change takes effect after `/plugin update kerjaan2`
+  and a new session.
 - The owner's standing preferences: decisions are put as a multiple-choice
   question with the recommendation first; nothing is claimed as working that
   was not run; after a larger change an independent reviewer subagent checks
