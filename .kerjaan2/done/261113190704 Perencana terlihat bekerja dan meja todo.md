@@ -60,15 +60,18 @@ ruang pamer, pilihan lain ditunda.
   → Pemilik: "Semua ikut saran (Recommended)". Jadi (a): 8 di baris depan dan 8 di baris belakang, sisanya tidak digambar; batas ini dicatat di dokumen. (owner, 2026-11-13)
 
 ## Assumptions
-- A1 [unseen] Pertanyaan planner adalah pertanyaan yang belum terjawab dan dicatat oleh planner (kejadian 'question' dengan 'by' berawalan 'planner:').
+- A1 [confirmed] Pertanyaan planner adalah pertanyaan yang belum terjawab dan dicatat oleh planner (kejadian 'question' dengan 'by' berawalan 'planner:').
   Why: Linimasa sudah mencatat siapa yang menjalankan tiap langkah (field 'by' dari role guard); tidak perlu catatan baru.
   If wrong: Ganti dengan: semua pertanyaan belum terjawab pada tiket di backlog.
-- A2 [unseen] Tiket solo ikut aturan baris belakang dengan hitungan sederhana: semua tiket todo ke belakang selama ada tiket solo berstatus in_progress atau review; tiket solo sendiri ke belakang selama ada tiket yang mengisi tempat. Tiket di belakang tiket solo yang menunggu tetap di depan.
+  Confirmed by owner, 2026-11-13
+- A2 [confirmed] Tiket solo ikut aturan baris belakang dengan hitungan sederhana: semua tiket todo ke belakang selama ada tiket solo berstatus in_progress atau review; tiket solo sendiri ke belakang selama ada tiket yang mengisi tempat. Tiket di belakang tiket solo yang menunggu tetap di depan.
   Why: Jawaban Q2 menyebut tiket solo yang harus selesai dulu; k2 next punya rincian lebih halus yang tidak ada di snapshot.
   If wrong: Ubah waitsOnAnother di viewer/web/space/plan.js.
-- A3 [unseen] docs/blueprint.md diberi satu bagian pendek di akhir tentang perencana dan meja todo, seperti yang dilakukan tiket pemutar linimasa; docs/galangan-alur.html (alur 0.16.0) tidak diubah.
+  Confirmed by owner, 2026-11-13
+- A3 [confirmed] docs/blueprint.md diberi satu bagian pendek di akhir tentang perencana dan meja todo, seperti yang dilakukan tiket pemutar linimasa; docs/galangan-alur.html (alur 0.16.0) tidak diubah.
   Why: Blueprint mencatat tiap keputusan pemilik; tiket hanya meminta galangan-padanan.md.
   If wrong: Hapus bagian terakhir docs/blueprint.md.
+  Confirmed by owner, 2026-11-13
 
 ## Decisions
 - Lane standard: adegan dan benda baru di galangan. Menunggu 261113190702 (antrean adegan) dan 261113191201 (catatan planner di papan).
@@ -98,4 +101,5 @@ Draughtsman menjadi Naval Architect dengan tugas baru (plannerDuty di director.j
   note: Tidak ada AGENTS.md; CLAUDE.md tidak menawarkan pemeriksaan selain perintah uji. Versi plugin tetap 0.17.0: urusan rilis. Tindak lanjut F1: k2 test memecah argumen berisi spasi atau |.
 
 ## Follow-ups
-- F1 [open] k2 test menjalankan perintah sesudah -- lewat sh tanpa menjaga kutipan argumen: 'k2 test <id> -- node --test --test-name-pattern="the architect reads|tickets that become todo" tests/viewer.test.mjs' gagal dengan 'sh: the: command not found' dan 'sh: tickets: command not found', exit 127, karena spasi dan | di dalam satu argumen dipecah oleh shell. Yang diharapkan: tiap argumen sesudah -- sampai ke perintah persis seperti diberikan (spasi, |, tanda kutip), dengan uji yang memakai pola nama uji berisi spasi dan |.
+- F1 [ticketed] k2 test menjalankan perintah sesudah -- lewat sh tanpa menjaga kutipan argumen: 'k2 test <id> -- node --test --test-name-pattern="the architect reads|tickets that become todo" tests/viewer.test.mjs' gagal dengan 'sh: the: command not found' dan 'sh: tickets: command not found', exit 127, karena spasi dan | di dalam satu argumen dipecah oleh shell. Yang diharapkan: tiap argumen sesudah -- sampai ke perintah persis seperti diberikan (spasi, |, tanda kutip), dengan uji yang memakai pola nama uji berisi spasi dan |.
+  → 261113205401

@@ -55,18 +55,22 @@ masuk sebelum merge (belum diputuskan pemilik).
   → Pemilik: "Semua ikut saran (Recommended)". Jadi (a): Inspector mendatangi kapal satu per satu menurut urutan kejadian; adegan tiket lain menunggu gilirannya. (owner, 2026-11-13)
 
 ## Assumptions
-- A1 [unseen] Jangkar mengikuti keadaan papan (state held atau stopped), bukan hanya kejadian 'held': papan tidak menulis kejadian saat penahanan dilepas.
+- A1 [confirmed] Jangkar mengikuti keadaan papan (state held atau stopped), bukan hanya kejadian 'held': papan tidak menulis kejadian saat penahanan dilepas.
   Why: core hanya menulis kejadian 'held'; pelepasan hanya mengubah state, dan tiket pemutar tetap membaca yang tidak ada di linimasa dari keadaan.
   If wrong: Tambah kejadian pelepasan di core lewat tiket tersendiri.
-- A2 [unseen] Kapal yang dihentikan (stopped) sebelum lulus tidak berjangkar; jangkar hanya untuk kapal yang sudah lulus dan ditahan atau dihentikan.
+  Confirmed by owner, 2026-11-13
+- A2 [confirmed] Kapal yang dihentikan (stopped) sebelum lulus tidak berjangkar; jangkar hanya untuk kapal yang sudah lulus dan ditahan atau dihentikan.
   Why: Kriteria menyebut 'kapal lulus yang ditahan atau dihentikan'; tiket yang berhenti di tengah pengerjaan sudah punya tanda sendiri (tukang menunggu).
   If wrong: Di plan.js, hilangkan syarat lulus pada 'moored'.
-- A3 [unseen] Putaran keliling Inspector mengikuti keadaan papan (ada reviewer di tiket itu), bukan kejadian 'agent'; bila vonis tiba sebelum ia sempat berkeliling, ia berkeliling satu putaran dulu sebelum memberi vonis.
+  Confirmed by owner, 2026-11-13
+- A3 [confirmed] Putaran keliling Inspector mengikuti keadaan papan (ada reviewer di tiket itu), bukan kejadian 'agent'; bila vonis tiba sebelum ia sempat berkeliling, ia berkeliling satu putaran dulu sebelum memberi vonis.
   Why: Reviewer bekerja selama rentang waktu, bukan sesaat; keadaan papan yang tahu kapan ia selesai.
   If wrong: Jadikan putaran itu adegan dari kejadian 'agent' reviewer di director.js.
-- A4 [unseen] Jangkar dan rantainya dibuat dari bentuk dasar di world.js, bukan model dari ruang pamer; balon perasaan dan ❌ digambar kira-kira tiga kali lebih besar dari balon tanda.
+  Confirmed by owner, 2026-11-13
+- A4 [confirmed] Jangkar dan rantainya dibuat dari bentuk dasar di world.js, bukan model dari ruang pamer; balon perasaan dan ❌ digambar kira-kira tiga kali lebih besar dari balon tanda.
   Why: Tidak ada model jangkar di paket yang dipakai; ukuran dipilih dari tangkapan layar kamera seluruh galangan.
   If wrong: Ganti makeAnchor di world.js atau angka ukuran balon di actor.js.
+  Confirmed by owner, 2026-11-13
 
 ## Decisions
 - Lane standard: adegan baru di banyak berkas galangan. Menunggu 261113190702.

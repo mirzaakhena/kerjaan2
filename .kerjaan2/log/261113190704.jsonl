@@ -29,3 +29,6 @@
 {"t":"2026-11-13 21:53:03","event":"agent","role":"reviewer","agent":"a8d8b56a2d17fa74b","step":"review:1:0:0","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
 {"t":"2026-11-13 22:03:22","event":"verdict","result":"pass","round":1,"commit":"f49b0a9","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e","by":"reviewer:a8d8b56a2d17fa74b"}
 {"t":"2026-11-13 22:03:35","event":"landed","branch":"k2/261113190704-perencana-terlihat-bekerja-dan","files":["docs/blueprint.md","docs/galangan-padanan.md","tests/viewer.test.mjs","viewer/snapshot.mjs","viewer/web/space/actor.js","viewer/web/space/cast.js","viewer/web/space/demo.js","viewer/web/space/director.js","viewer/web/space/main.js","viewer/web/space/plan.js","viewer/web/space/world.js"],"session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:07:15","event":"assumption-confirmed","key":"A1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:07:15","event":"assumption-confirmed","key":"A2","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:08:15","event":"assumption-confirmed","key":"A3","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}

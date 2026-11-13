@@ -32,7 +32,7 @@ menaruh semuanya di papan pesanan.
 - [x] Tiket baru tidak terlihat di papan pesanan sebelum Courier menaruhnya.
 - [x] Tiket yang lahir sebagai usulan sesudah tiket lain selesai datang dengan cara yang sama.
 - [x] Mode `?demo` memperlihatkan satu rombongan berisi lebih dari satu tiket. `docs/galangan-padanan.md` diperbarui.
-- [ ] (owner) Kedatangan dan kepergian perahu serta kerja Courier enak ditonton.
+- [x] (owner) Kedatangan dan kepergian perahu serta kerja Courier enak ditonton.
 
 ## Out of scope
 
@@ -51,24 +51,27 @@ diputuskan pemilik).
   → Pemilik: "Semua ikut saran (Recommended)". Jadi (a): Courier sekali jalan membawa satu peti; semua tiket rombongan muncul di papan pesanan saat ia tiba. (owner, 2026-11-13)
 
 ## Assumptions
-- A1 [unseen] Perahu tidak lagi tampak di laut bila tidak sedang membawa tiket (dulu selalu mengapung dekat dermaga).
+- A1 [confirmed] Perahu tidak lagi tampak di laut bila tidak sedang membawa tiket (dulu selalu mengapung dekat dermaga).
   Why: Permintaan menyebut perahu datang dari ujung laut lalu menghilang.
   If wrong: Hapus mailBoat.visible = false di world.js dan beri perahu tempat tunggu.
-- A2 [unseen] Courier selalu dipanggil untuk tiap perahu, juga bila antreannya sudah 3 pekerjaan; perahu menunggu di dermaga.
+  Confirmed by owner, 2026-11-13
+- A2 [confirmed] Courier selalu dipanggil untuk tiap perahu, juga bila antreannya sudah 3 pekerjaan; perahu menunggu di dermaga.
   Why: Satu perahu hanya satu pekerjaan, dan tiket tidak boleh muncul di rak sebelum Courier menaruhnya.
   If wrong: Kembalikan batas BUSY di Director.sail: bila Courier sibuk, perahu langsung pergi dan tiket diletakkan.
+  Confirmed by owner, 2026-11-13
 
 ## Decisions
 - Lane standard: adegan baru di beberapa berkas galangan. Menunggu 261113190702 (antrean adegan per tiket).
 - Rombongan tertutup dan perahu pergi pada saat Courier mengangkat peti, bukan saat ia tiba di rak: itu saat 'perahu pergi' pada jawaban Q2, dan tiket yang lahir sesudahnya tidak bisa lagi masuk peti yang sudah dibawa.
 
 ## Manual checks
-- M1 [waiting] (item 7) 1. Jalankan k2 view di repo ini dan buka /p/kerjaan2/space?demo.
+- M1 [ok] (item 7) 1. Jalankan k2 view di repo ini dan buka /p/kerjaan2/space?demo.
   2. Putar kamera ke dermaga kayu di kiri depan.
   3. Dalam kira-kira 10 detik sebuah perahu dayung muncul kecil dari tepi luar laut, membesar, dan berlabuh di sisi dermaga.
   4. Courier berjalan ke ujung dermaga, mengangkat peti (balon '!'), dan berjalan ke rak ORDERS; keterangannya 'carrying 3 new orders to the office'.
   5. Saat peti diangkat perahu memutari ujung dermaga, pergi ke sisi kiri, mengecil dan hilang.
   6. Tiga gulungan muncul di rak ORDERS saat Courier tiba. Yang dinilai: enak ditonton atau tidak (kecepatan perahu, jalur pergi, ukuran peti).
+  Checked by owner, 2026-11-13
 
 ## Handoff
 Tiket baru (created) kini datang serombongan: Director.deliver menggabungkan tiket ke this.party bila joins() di plan.js benar (dibuat paling lama GROUP = 60 detik sesudah tiket sebelumnya dan perahu belum pergi), selain itu menunggu party.gone lalu memanggil perahu baru lewat sail(). Satu perahu berarti satu pekerjaan Courier; rombongan tertutup saat peti diangkat, dan semua tiketnya ditaruh di rak ketika Courier tiba. world.js: mailIn/mailOut kini janji yang selesai saat perahu berlabuh/hilang dan menerima kecepatan; ada mailTake dan make.crate. Jangan rusak: tiket tetap di 'mail' sampai Courier tiba; Courier tidak punya pekerjaan pengisi waktu di dermaga; hanya satu perahu pada satu waktu.

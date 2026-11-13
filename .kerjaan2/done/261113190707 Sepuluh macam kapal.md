@@ -32,7 +32,7 @@ selalu mendapat kapal yang sama, ditentukan dari ID-nya.
 - [x] Ukuran kapal tetap mengikuti jumlah kriteria tiket (kecil, sedang, besar); hash kecil atas ID (bukan angka ID langsung) memilih satu dari sepuluh corak: delapan lambung biasa (layar putih, merah, toska, kuning, biru, hijau, jingga, ungu; bendera sewarna layar) dan dua bajak laut (layar hitam tengkorak; bendera merah atau putih).
 - [x] Hanya model yang benar-benar dimuat yang ikut disimpan di viewer.
 - [x] Mode `?demo` memperlihatkan beberapa macam kapal sekaligus. `docs/galangan-padanan.md` diperbarui.
-- [ ] (owner) Kesepuluh macam kapal mudah dibedakan dan enak dilihat, di dok dan saat berlabuh.
+- [x] (owner) Kesepuluh macam kapal mudah dibedakan dan enak dilihat, di dok dan saat berlabuh.
 
 ## Out of scope
 
@@ -48,18 +48,22 @@ selain C1–C10 (ditunda).
   → Pemilik: "Semua ikut saran (Recommended)". Jadi (a): warna bendera sama dengan warna layarnya, kecuali bajak laut. (owner, 2026-11-13)
 
 ## Assumptions
-- A1 [unseen] Model lambung bajak laut disalin dari docs/mockups/galangan/kits ke viewer/web/space/kits, hanya berkas yang dimuat; tiga ukuran bajak laut semuanya ikut karena ukuran mengikuti jumlah kriteria.
+- A1 [confirmed] Model lambung bajak laut disalin dari docs/mockups/galangan/kits ke viewer/web/space/kits, hanya berkas yang dimuat; tiga ukuran bajak laut semuanya ikut karena ukuran mengikuti jumlah kriteria.
   Why: Uji menolak model yang ada tetapi tidak dimuat; pemilik memutuskan ukuran tetap dari kriteria.
   If wrong: Hapus berkas model yang tidak dipakai dan daftar muatnya.
-- A2 [unseen] Dua bajak laut dibedakan hanya dari bendera (merah tua atau putih); bendera diberi warna rata tanpa tekstur model.
+  Confirmed by owner, 2026-11-13
+- A2 [confirmed] Dua bajak laut dibedakan hanya dari bendera (merah tua atau putih); bendera diberi warna rata tanpa tekstur model.
   Why: Layar hitam tengkorak digambar di model dan tidak bisa diwarnai; jawaban Q1 menyebut bendera merah atau putih.
   If wrong: Ubah warna di LIVERY (viewer/web/space/world.js).
-- A3 [unseen] Di dok, sebelum lulus, corak hanya terlihat dari bentuk lambung (biasa atau bajak laut); warna baru tampak saat layar dan bendera dipasang sesudah lulus.
+  Confirmed by owner, 2026-11-13
+- A3 [confirmed] Di dok, sebelum lulus, corak hanya terlihat dari bentuk lambung (biasa atau bajak laut); warna baru tampak saat layar dan bendera dipasang sesudah lulus.
   Why: Aturan lama: layar dan bendera dipasang saat reviewer meluluskan; tiket ini tidak mengubahnya.
   If wrong: Tambahkan tanda warna pada lambung yang belum berlayar di makeShip.
-- A4 [unseen] Demo memilih ID buatannya supaya kesepuluh corak muncul bergiliran, dengan satu bajak laut di antara tiga kapal pertama yang berlabuh.
+  Confirmed by owner, 2026-11-13
+- A4 [confirmed] Demo memilih ID buatannya supaya kesepuluh corak muncul bergiliran, dengan satu bajak laut di antara tiga kapal pertama yang berlabuh.
   Why: Kriteria meminta demo memperlihatkan beberapa macam sekaligus; ID acak bisa kebetulan serupa.
   If wrong: Kembalikan pembuatan ID di viewer/web/space/demo.js ke nomor urut biasa.
+  Confirmed by owner, 2026-11-13
 
 ## Decisions
 - Lane standard: rupa saja, tetapi menyentuh model, world.js, director.js dan uji daftar model; lebih dari perubahan kecil. Tidak menunggu apa pun; dijalankan sebelum 261113190702 karena 261113190702 solo.
@@ -67,11 +71,12 @@ selain C1–C10 (ditunda).
 - Nama corak dan aturan hash ada di plan.js (murni, diuji di Node); warna ada di world.js. Uji mengunci hasil hash untuk empat ID, karena mengubah aturan mengganti kapal semua tiket di semua papan.
 
 ## Manual checks
-- M1 [waiting] (item 7) 1. Jalankan k2 view dari sumber tiket ini (atau setelah di-merge dan /plugin update kerjaan2), buka sebuah proyek, lalu halaman Shipyard.
+- M1 [ok] (item 7) 1. Jalankan k2 view dari sumber tiket ini (atau setelah di-merge dan /plugin update kerjaan2), buka sebuah proyek, lalu halaman Shipyard.
   2. Klik Demo.
   3. Lihat tiga kapal yang berlabuh di teluk: corak mereka berbeda, salah satunya bajak laut berlayar hitam.
   4. Biarkan demo berjalan beberapa menit: tiap kapal baru yang lulus mendapat layar dan bendera dengan corak berikutnya, sampai kesepuluh corak lewat (putih, merah, toska, kuning, biru, hijau, jingga, ungu, bajak laut bendera merah, bajak laut bendera putih).
   5. Perhatikan di dok: sebelum lulus kapal belum berlayar, jadi yang terlihat hanya lambung biasa atau lambung bajak laut yang lebih gelap. Yang seharusnya terlihat: kesepuluh corak mudah dibedakan dan enak dilihat, di dok dan saat berlabuh.
+  Checked by owner, 2026-11-13
 
 ## Handoff
 Kapal galangan kini sepuluh corak. plan.js: LIVERIES dan liveryOf(id) (hash FNV kecil atas ID, lalu mod 10); picture() membawa livery. world.js: makeShip(size, livery) memilih lambung biasa atau bajak laut menurut ukuran, dengan bahan terpisah untuk layar dan bendera; tiga model ship-pirate-* ditambahkan ke kits dan ke KIT. director.js meneruskan livery. demo.js memilih ID agar semua corak muncul. Jangan rusak: urutan LIVERIES dan rumus liveryOf (mengubahnya mengganti kapal semua tiket); daftar KIT harus sama dengan isi folder kits; ukuran tetap dari jumlah kriteria.

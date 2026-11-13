@@ -27,3 +27,7 @@
 {"t":"2026-11-13 20:52:45","event":"agent","role":"reviewer","agent":"a83dd2c299fbd2c97","step":"review:1:0:0","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
 {"t":"2026-11-13 21:05:54","event":"verdict","result":"pass","round":1,"commit":"0f8cc8e","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e","by":"reviewer:a83dd2c299fbd2c97"}
 {"t":"2026-11-13 21:06:08","event":"landed","branch":"k2/261113190702-galangan-memutar-linimasa-tiket","files":["docs/blueprint.md","docs/galangan-padanan.md","tests/viewer.test.mjs","viewer/web/space/demo.js","viewer/web/space/director.js","viewer/web/space/main.js","viewer/web/space/plan.js"],"session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 22:51:18","event":"manual-ok","key":"M1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:05:11","event":"assumption-confirmed","key":"A1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:05:11","event":"assumption-confirmed","key":"A2","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:05:11","event":"assumption-confirmed","key":"A3","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}

@@ -23,3 +23,8 @@
 {"t":"2026-11-13 19:47:00","event":"verdict","result":"pass","round":1,"commit":"1ccc9c1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e","by":"reviewer:a8197e03de1e1fc02"}
 {"t":"2026-11-13 19:52:15","event":"test","by":"land","exit":0,"seconds":296,"fingerprint":"545675f5f526006f718d55996a83e4ac822b9b0c","command":"node --test tests/*.test.mjs","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
 {"t":"2026-11-13 19:52:15","event":"landed","branch":"k2/261113190707-sepuluh-macam-kapal","files":["docs/galangan-padanan.md","tests/viewer.test.mjs","viewer/web/space/demo.js","viewer/web/space/director.js","viewer/web/space/kits/pirate/ship-pirate-large.glb","viewer/web/space/kits/pirate/ship-pirate-medium.glb","viewer/web/space/kits/pirate/ship-pirate-small.glb","viewer/web/space/plan.js","viewer/web/space/world.js"],"session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 22:48:41","event":"manual-ok","key":"M1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:10:09","event":"assumption-confirmed","key":"A1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:10:47","event":"assumption-confirmed","key":"A2","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:10:47","event":"assumption-confirmed","key":"A3","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:10:47","event":"assumption-confirmed","key":"A4","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}

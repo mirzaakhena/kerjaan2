@@ -58,12 +58,14 @@ untuk tukang tambahan: pakai karakter yang sudah ada.
   → Pemilik: "Semua ikut saran (Recommended)". Jadi (a): tukang tambahan bernama Shipwright 5 sampai Shipwright 10, memakai ulang model karakter tukang yang ada; daftar pemeran bisa digulir. (owner, 2026-11-13)
 
 ## Assumptions
-- A1 [unseen] Mode demo memilih jumlah dok lewat parameter alamat (misalnya ?demo&docks=6); tanpa parameter memakai 4.
+- A1 [confirmed] Mode demo memilih jumlah dok lewat parameter alamat (misalnya ?demo&docks=6); tanpa parameter memakai 4.
   Why: Demo sudah dipilih lewat parameter alamat; tidak ada tempat lain untuk mengaturnya.
   If wrong: Ganti nama parameter atau nilai bawaannya di demo.js.
-- A2 [unseen] Pekerjaan tanpa worker tercatat (check, uncheck, void, submitted, verdict) dianggap tiketnya sudah dijemput: tukang menjemput dulu, lalu lambung bergerak. Halaman yang baru dibuka menganggap tiket belum dijemput hanya bila kejadian terakhirnya masih 'started'.
+  Confirmed by owner, 2026-11-13
+- A2 [confirmed] Pekerjaan tanpa worker tercatat (check, uncheck, void, submitted, verdict) dianggap tiketnya sudah dijemput: tukang menjemput dulu, lalu lambung bergerak. Halaman yang baru dibuka menganggap tiket belum dijemput hanya bila kejadian terakhirnya masih 'started'.
   Why: Hook tidak selalu mencatat worker; tanpa ini kapal tidak pernah muncul.
   If wrong: Ubah play() dan begun di viewer/web/space/plan.js.
+  Confirmed by owner, 2026-11-13
 
 ## Decisions
 - Lane standard: tata letak dok dan pemeran berubah di banyak berkas. Menunggu 261113190702.

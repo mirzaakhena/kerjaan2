@@ -42,7 +42,7 @@ sungguhan.
 - [x] Yang tidak ada di linimasa tetap tampil dari keadaan papan: langkah terakhir agen, uji yang sedang berjalan, agen macet.
 - [x] Sambungan yang putus lalu tersambung lagi tidak menghilangkan dan tidak mengulang adegan.
 - [x] Mode `?demo` memutar linimasa karangan: satu tiket bisa ditonton dari pesanan sampai berlabuh. `docs/galangan-padanan.md` diperbarui mengikuti cara kerja baru.
-- [ ] (owner) Di mode `?demo`, hidup satu tiket terlihat berurutan dan tidak ada loncatan yang janggal.
+- [x] (owner) Di mode `?demo`, hidup satu tiket terlihat berurutan dan tidak ada loncatan yang janggal.
 
 ## Out of scope
 
@@ -62,15 +62,18 @@ menara, malam (belum diputuskan pemilik).
   → Pemilik: "Semua ikut saran (Recommended)". Jadi (a): tiket yang mundur tetap langsung diletakkan tanpa cerita. (owner, 2026-11-13)
 
 ## Assumptions
-- A1 [unseen] Tinggi lambung dihitung dari kriteria bagian worker saja: seperempat sejak lunas, sisanya menurut bagian kriteria yang terpenuhi; kriteria (owner) dan yang dibatalkan tidak dihitung. Tiket yang diserahkan tidak lagi otomatis menaikkan lambung ke penuh.
+- A1 [confirmed] Tinggi lambung dihitung dari kriteria bagian worker saja: seperempat sejak lunas, sisanya menurut bagian kriteria yang terpenuhi; kriteria (owner) dan yang dibatalkan tidak dihitung. Tiket yang diserahkan tidak lagi otomatis menaikkan lambung ke penuh.
   Why: Baris Done when ke-4 meminta lambung bergerak hanya saat kriteria terpenuhi, dicabut, atau dibatalkan. Di 0.16.0 lambung berhenti di 85% lalu meloncat ke penuh saat diserahkan; submit sudah mewajibkan semua kriteria worker terpenuhi, jadi dengan hitungan ini lambung sudah penuh sebelum diserahkan.
   If wrong: Ubah buildOf di viewer/web/space/plan.js (satu fungsi) dan angka di uji 'the yard reads the board'.
-- A2 [unseen] Bila viewer (k2 view) dinyalakan ulang atau halaman terputus lebih dari 10 menit, galangan diletakkan di keadaan sekarang tanpa cerita; adegan yang terlewat selama itu tidak diputar.
+  Confirmed by owner, 2026-11-13
+- A2 [confirmed] Bila viewer (k2 view) dinyalakan ulang atau halaman terputus lebih dari 10 menit, galangan diletakkan di keadaan sekarang tanpa cerita; adegan yang terlewat selama itu tidak diputar.
   Why: Titik baca linimasa dari tiket 261113190701 hanya hidup di ingatan server dan berlaku 10 menit; server menjawab 'baca ulang' tanpa sejarah. Ini sejalan dengan batas 5 menit dari Q1. Putus sambungan biasa (server tetap hidup, di bawah 10 menit) tidak kehilangan dan tidak mengulang adegan.
   If wrong: Perlu titik baca yang bertahan di server (perubahan pada jalan linimasa, tiket tersendiri).
-- A3 [unseen] Mode demo membuat tiket baru rata-rata tiap 35 detik (sebelumnya 20 detik).
+  Confirmed by owner, 2026-11-13
+- A3 [confirmed] Mode demo membuat tiket baru rata-rata tiap 35 detik (sebelumnya 20 detik).
   Why: Tiap pesanan baru kini satu adegan Courier sekitar 30 detik yang tidak lagi dilompati; dengan laju lama galangan demo terus tertinggal dan sering dipercepat.
   If wrong: Ubah satu angka di viewer/web/space/demo.js (dt / 35).
+  Confirmed by owner, 2026-11-13
 
 ## Decisions
 - Lane standard: mesin galangan dirombak, mudah dibatalkan tetapi bukan perubahan kecil.
@@ -80,12 +83,13 @@ menara, malam (belum diputuskan pemilik).
 - Yang dipercepat saat mengejar hanya pemeran yang sedang menjalankan adegan, gerak kapal, dan lambung; pekerjaan pengisi waktu dan laut tetap, supaya galangan tidak tampak seperti video yang dipercepat.
 
 ## Manual checks
-- M1 [waiting] (item 8) 1. Sesudah tiket ini masuk main, di terminal jalankan viewer dari sumbernya (bukan plugin terpasang): /Users/mirza/Workspace/kerjaan2/bin/k2 view --root /Users/mirza/Workspace --port 4400
+- M1 [ok] (item 8) 1. Sesudah tiket ini masuk main, di terminal jalankan viewer dari sumbernya (bukan plugin terpasang): /Users/mirza/Workspace/kerjaan2/bin/k2 view --root /Users/mirza/Workspace --port 4400
   2. Buka http://127.0.0.1:4400/p/k2-akunting/space?demo di peramban dan biarkan tab tetap terlihat.
   3. Di daftar kiri klik Courier, tunggu sampai keterangannya 'carrying the order ...', lalu klik gulungan yang ia taruh di rak ORDERS untuk melihat judul tiketnya. Ingat judul itu.
   4. Ikuti tiket itu sekitar 4 sampai 6 menit: Draughtsman memasangnya di papan QUEUE, Foreman membawanya ke dok, lambung naik setingkat demi setingkat, Inspector memberi tanda centang dan layar dipasang, lalu kapal meluncur dan berlabuh.
   5. Yang seharusnya terlihat: urutan itu tidak pernah terbalik, tidak ada token yang tiba-tiba berpindah tempat, dan lambung hanya naik sesaat sesudah satu langkah selesai (tidak merayap terus). Tiket yang ditolak: Inspector memberi tanda silang, lambung turun satu tingkat, lalu naik lagi.
   6. Pindah ke tab lain 2 menit lalu kembali: adegan berjalan lebih cepat sampai terkejar. Pindah lebih dari 5 menit lalu kembali: semua langsung berada di tempat terbarunya.
+  Checked by owner, 2026-11-13
 
 ## Handoff
 Galangan kini memutar linimasa: main.js membaca state lalu timeline (titik baca disimpan), director.update(D, trail) mengantrekan kejadian per tiket, plan.js play() mengubah catatan 'yang sudah diperlihatkan' (tok.see) dan director menjalankan adegan 0.16.0 satu per satu. tok.pic adalah gabungan: hal hidup dari papan, status/lambung/layar dari tok.see; cast.js membaca itu. Jangan dirusak: urutan baca state-dulu-baru-timeline (dasar aturan 'beda tanpa kejadian diletakkan pada pembacaan kedua'), pemeriksaan live() di tiap adegan (adegan bisa dipotong saat mengejar), paceOf (30 detik, 4 kali, 5 menit), dan buildOf (lambung hanya dari kriteria worker). Adegan baru cukup menambah cabang di play() dan satu langkah di story().

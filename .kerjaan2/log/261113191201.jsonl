@@ -24,3 +24,5 @@
 {"t":"2026-11-13 19:47:44","event":"verdict","result":"pass","round":1,"commit":"d5b8dc8","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e","by":"reviewer:a2132ae4fda6affc2"}
 {"t":"2026-11-13 20:00:47","event":"test","by":"land","exit":0,"seconds":495,"fingerprint":"40bb1f52cc608bb4650795e0dcdf79ad50e61114","command":"node --test tests/*.test.mjs","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
 {"t":"2026-11-13 20:00:47","event":"landed","branch":"k2/261113191201-papan-mencatat-kapan-planner","files":["core/board.mjs","core/cmd-hook.mjs","docs/blueprint.md","hooks/hooks.json","tests/k2.test.mjs","tests/viewer.test.mjs","viewer/snapshot.mjs","viewer/web/app.js"],"session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:10:47","event":"assumption-confirmed","key":"A1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-13 23:11:11","event":"assumption-confirmed","key":"A2","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}

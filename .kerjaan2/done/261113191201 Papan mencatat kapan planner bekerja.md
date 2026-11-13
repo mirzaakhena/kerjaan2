@@ -61,12 +61,14 @@ kegiatan mandor (sesi utama).
   → Pemilik: "Semua ikut saran (Recommended)". Jadi (a): planner terbaru menggantikan yang lama; viewer hanya memperlihatkan satu planner. (owner, 2026-11-13)
 
 ## Assumptions
-- A1 [unseen] Planner yang tidak tercatat selesai dianggap berhenti bekerja setelah stuck_after_minutes tanpa tanda hidup: dihitung dari yang paling baru di antara saat ia dikirim/dilanjutkan dan langkah terakhir di transkripnya, bukan dari saat dikirim saja.
+- A1 [confirmed] Planner yang tidak tercatat selesai dianggap berhenti bekerja setelah stuck_after_minutes tanpa tanda hidup: dihitung dari yang paling baru di antara saat ia dikirim/dilanjutkan dan langkah terakhir di transkripnya, bukan dari saat dikirim saja.
   Why: Sesi yang ditutup di tengah jalan tidak lagi menambah langkah, jadi ia tetap hilang; tetapi planning panjang yang masih berjalan tidak ikut hilang dari viewer.
   If wrong: Di plannerAtWork (viewer/snapshot.mjs) pakai p.at saja sebagai titik hitung.
-- A2 [unseen] Kartu planner ikut dihitung di angka 'running' dan 'at work' Control room, tetapi tidak memakan tempat (places) dan tidak masuk hitungan kartu proyek di halaman daftar.
+  Confirmed by owner, 2026-11-13
+- A2 [confirmed] Kartu planner ikut dihitung di angka 'running' dan 'at work' Control room, tetapi tidak memakan tempat (places) dan tidak masuk hitungan kartu proyek di halaman daftar.
   Why: Planner memang agen yang sedang bekerja, tetapi max_parallel hanya tentang tiket.
   If wrong: Hapus tambahan satu di dua tempat di viewer/web/app.js.
+  Confirmed by owner, 2026-11-13
 
 ## Decisions
 - Lane standard: mengubah hook dan inti (catatan baru di papan), dengan uji; tidak menyangkut izin atau data yang tak bisa dipulihkan. Tidak menunggu apa pun: tidak menyentuh galangan.

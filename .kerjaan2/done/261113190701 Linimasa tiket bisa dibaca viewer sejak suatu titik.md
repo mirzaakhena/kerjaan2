@@ -50,9 +50,10 @@ Mengubah halaman galangan supaya memakai jalan ini (tiket pemutar linimasa).
   → Pemilik: "Semua ikut saran (Recommended)". Jadi (a): paling lama 10 menit ke belakang; lebih dari itu dianggap titik terlalu lama. (owner, 2026-11-13)
 
 ## Assumptions
-- A1 [unseen] Batas 10 menit dihitung dari saat titik terakhir kali masih 'sekarang' (saat diberikan atau diberikan ulang karena belum ada tulisan baru), bukan dari waktu kejadian
+- A1 [confirmed] Batas 10 menit dihitung dari saat titik terakhir kali masih 'sekarang' (saat diberikan atau diberikan ulang karena belum ada tulisan baru), bukan dari waktu kejadian
   Why: Halaman yang terus bertanya di papan yang sepi tidak boleh dipaksa membaca ulang tiap 10 menit; halaman yang tertidur tetap kedaluwarsa
   If wrong: Di timeline() viewer/server.mjs, jangan segarkan seen saat titik dibagikan ulang
+  Confirmed by owner, 2026-11-13
 
 ## Decisions
 - Lane standard: jalan baca baru di server viewer, dengan uji; bukan uang atau data yang tak bisa dipulihkan.
