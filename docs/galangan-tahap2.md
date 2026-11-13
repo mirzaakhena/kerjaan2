@@ -101,6 +101,8 @@ kanvas, dan gerakan `jump` tersedia di semua karakter.
 - **Malam.** Papan yang lama tidak bergerak membuat hari menjadi senja dan
   lampu-lampu menyala.
 - **Putar ulang.** Tombol di kartu tiket untuk memutar ulang hidup satu tiket.
+  **Diputuskan pemilik 13 November 2026: tidak perlu.** Pemutar linimasa
+  adalah mesin di belakang layar, tanpa kendali di halaman.
 - **Pilihan bentuk** dari ruang pamer: karakter untuk si perencana, kapal
   mana yang masuk, perahu pesanan E1 atau E2, kapal tunda.
 
