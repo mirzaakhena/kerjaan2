@@ -507,6 +507,181 @@ test('an order proposed after another ticket landed is created as any other, and
   assert.deepEqual(errors, []);
 });
 
+test('five boats bring the orders: which one comes follows from the party\'s first order, as good as random, and the same on every page', async () => {
+  const { BOATS, boatOf, liveryOf } = await import('../viewer/web/space/plan.js');
+  assert.deepEqual(BOATS.map((b) => b.key), ['pirate/boat-row-small', 'watercraft/boat-sail-b', 'watercraft/boat-tug-a', 'watercraft/boat-tug-b', 'watercraft/boat-tow-a'], 'E1, E2 and the three of E5');
+  assert.equal(new Set(BOATS.map((b) => b.kind)).size, 5);
+  // IDs as a board writes them: a timestamp to the minute and a counter; tickets of one sitting are neighbours
+  const ids = [];
+  for (let day = 10; day < 20; day++) for (let min = 10; min < 30; min++) ids.push(`2611${day}09${min}01`, `2611${day}09${min}02`);
+  const kinds = ids.map((id) => boatOf(id).kind);
+  for (const b of BOATS) {
+    const share = kinds.filter((k) => k === b.kind).length / kinds.length;
+    assert.ok(share > 0.12 && share < 0.28, `${b.kind}: ${share} of the parties`);
+  }
+  // any twenty parties in a row see all five; the boat is not the same as the one before more often than chance
+  for (let i = 0; i + 40 <= kinds.length; i += 40) assert.equal(new Set(kinds.slice(i, i + 40)).size, 5, `all five among the forty from ${i}`);
+  const repeats = kinds.filter((k, i) => i && k === kinds[i - 1]).length / (kinds.length - 1);
+  assert.ok(repeats > 0.1 && repeats < 0.3, `two in a row alike: ${repeats}`);
+  assert.equal(boatOf('261114002101'), boatOf('261114002101'), 'the same boat every time it is asked');
+  // the boat does not follow from the ship: every boat comes with many liveries
+  for (const b of BOATS) assert.ok(new Set(ids.filter((id) => boatOf(id) === b).map(liveryOf)).size >= 8, b.kind);
+
+  // two pages on one board: each party comes by the same boat on both, and that boat is the one of its first order
+  const first = ['261114091001', '261114093001', '261114095001', '261114101001', '261114103001', '261114105001', '261114111001', '261114113001'];
+  const pages = [];
+  for (let page = 0; page < 2; page++) {
+    const yard = await stagedYard();
+    const { dir, settle, T, board, E, trailOf, clock, errors, world } = yard;
+    const came = [];
+    world.mailIn = (pace, kind) => { came.push(kind); };
+    dir.update(board([]), trailOf([]));
+    const all = [];
+    for (const id of first) {
+      // a party of two: the second order rides with the first, and has no say in the boat
+      const mate = String(Number(id) + 1);
+      all.push(T(id, 'backlog'), T(mate, 'backlog'));
+      clock.t += 600000;
+      dir.update(board(all), trailOf([E(id, 'created', { status: 'backlog' }), E(mate, 'created', { status: 'backlog' })]));
+      await settle();
+    }
+    assert.deepEqual(errors, []);
+    assert.deepEqual(came, first.map((id) => boatOf(id).kind), `page ${page + 1}`);
+    pages.push(came);
+  }
+  assert.deepEqual(pages[0], pages[1]);
+  assert.ok(new Set(pages[0]).size >= 3, `these eight parties: ${pages[0].join(' ')}`);
+  assert.ok(pages[0].some((k, i) => i && k !== pages[0][i - 1]), 'one party and the next do not always share a boat');
+});
+
+test('each of the five boats lies close alongside the pier, faces the way it goes, and strikes neither the pier nor the land on its way in or out', async () => {
+  const { BOATS, PIER, BUOY, courseOf, yardOf, footprints, DOCKS_MAX } = await import('../viewer/web/space/plan.js');
+  // the hull as its outline on the water: points round a box of its beam and length, turned and scaled as the boat is
+  const outline = (b, at) => {
+    const pts = [];
+    const sin = Math.sin(at.ry), cos = Math.cos(at.ry);
+    const put = (lx, lz) => pts.push({ x: at.x + (lx * cos + lz * sin) * at.s, z: at.z + (-lx * sin + lz * cos) * at.s });
+    for (let k = 0; k <= 20; k++) {
+      const lz = -b.stern + (b.bow + b.stern) * (k / 20), lx = -b.beam + 2 * b.beam * (k / 20);
+      put(-b.beam, lz); put(b.beam, lz); put(lx, -b.stern); put(lx, b.bow);
+    }
+    return pts;
+  };
+  const inside = (b, at, p) => {
+    const dx = (p.x - at.x) / at.s, dz = (p.z - at.z) / at.s, sin = Math.sin(at.ry), cos = Math.cos(at.ry);
+    const lx = dx * cos - dz * sin, lz = dx * sin + dz * cos;
+    return Math.abs(lx) < b.beam && lz > -b.stern && lz < b.bow;
+  };
+  const corners = [{ x: PIER.x0, z: PIER.z1 }, { x: PIER.x1, z: PIER.z1 }, { x: PIER.x0, z: 0 }, { x: PIER.x1, z: 0 }];
+  // the land, the pier, and the buoy off its end (half a step round its middle)
+  const strikes = (b, at) => outline(b, at).some((p) => p.z < 0.3 || (p.x > PIER.x0 && p.x < PIER.x1 && p.z < PIER.z1) || Math.hypot(p.x - BUOY.x, p.z - BUOY.z) < 0.5)
+    || [...corners, BUOY].some((c) => inside(b, at, c));
+  assert.deepEqual(BUOY, { x: -30, z: 16 });
+  // a leg as the yard plays it: place, turn (the short way round) and size change together
+  const along = (from, to, k) => {
+    const turn = Math.atan2(Math.sin(to.ry - from.ry), Math.cos(to.ry - from.ry));
+    return { x: from.x + (to.x - from.x) * k, z: from.z + (to.z - from.z) * k, ry: from.ry + turn * k, s: from.s + (to.s - from.s) * k };
+  };
+  const course = (dx, dz) => Math.atan2(dx, dz);
+  const near = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  assert.equal(BOATS.length, 5);
+  for (const b of BOATS) {
+    const C = courseOf(b);
+    // at the pier: beside it and not in it, nearer than a step, between the quay and the pier's end, bow to the sea,
+    // its crate where the courier stands
+    const side = C.berth.x - b.beam - PIER.x1;
+    assert.ok(side > 0.1 && side <= 0.3, `${b.kind}: ${side} off the pier`);
+    assert.ok(C.berth.z - b.stern > 1 && C.berth.z + b.bow < PIER.z1, `${b.kind}: lies along the pier`);
+    assert.equal(C.berth.ry, 0, b.kind);
+    assert.ok(Math.abs(C.berth.z + b.crate[2] - 8.8) < 0.3, `${b.kind}: the crate is abreast of the pier's end, where the courier takes it`);
+    assert.ok(Math.abs(b.crate[0]) < b.beam && b.crate[2] > -b.stern && b.crate[2] < b.bow && b.crate[1] > 0, `${b.kind}: the crate stands on the boat`);
+    assert.deepEqual({ ...C.in[C.in.length - 1], secs: 0 }, { ...C.berth, secs: 0 }, `${b.kind}: the way in ends at the berth`);
+    // every moment of the way in and of the way out
+    let at = C.from;
+    const legs = [...C.in.map((leg) => ['in', leg]), ...C.out.map((leg) => ['out', leg])];
+    legs.forEach(([way, leg], n) => {
+      assert.ok(leg.secs > 0, `${b.kind} ${way} ${n}`);
+      for (let k = 0; k <= 200; k++) assert.equal(strikes(b, along(at, leg, k / 200)), false, `${b.kind} ${way}, leg ${n} at ${k / 200}`);
+      at = leg;
+    });
+    // bow first: in from the sea, straight out past the pier's end, and away on the other side
+    assert.ok(near(C.from.ry, course(C.in[0].x - C.from.x, C.in[0].z - C.from.z)) < 0.01 && near(C.in[0].ry, C.from.ry) < 0.01, `${b.kind}: comes in bow first`);
+    const [clear, round, turned, off] = C.out;
+    assert.ok(clear.x === C.berth.x && clear.z - b.stern > PIER.z1 && clear.ry === 0, `${b.kind}: straight ahead until its stern is clear of the pier`);
+    assert.ok(near(round.ry, course(round.x - clear.x, round.z - clear.z)) < 0.01, `${b.kind}: turns into its way round the pier's end`);
+    assert.ok(round.x < PIER.x1 && round.x - clear.x < -1, `${b.kind}: round the end`);
+    assert.ok(turned.x === round.x && turned.z === round.z, `${b.kind}: turns where it is`);
+    assert.ok(near(off.ry, course(off.x - round.x, off.z - round.z)) < 0.01 && near(turned.ry, off.ry) < 0.01, `${b.kind}: leaves bow first`);
+    assert.ok(off.x < PIER.x0 - b.beam && off.z > PIER.z1, `${b.kind}: gone on the other side of the pier`);
+    assert.ok(C.from.s < 0.05 && off.s < 0.05, `${b.kind}: comes out of nothing and goes into nothing`);
+    // a boat that lay a little nearer would be caught: the check is not blind
+    assert.equal(strikes(b, { ...C.berth, x: C.berth.x - side - 0.05 }), true, b.kind);
+  }
+  // the water a hull takes on its way down a slip is never the boat's, with any number of slips (the course moves with the pier)
+  for (let n = 1; n <= DOCKS_MAX; n++) {
+    const Y = yardOf(n);
+    const ways = footprints(Y).filter((f) => f.kind === 'slipway');
+    assert.equal(ways.length, n);
+    for (const b of BOATS) {
+      const C = courseOf(b);
+      let at = C.from;
+      for (const leg of [...C.in, ...C.out]) {
+        for (let k = 0; k <= 100; k++) {
+          const hit = outline(b, along(at, leg, k / 100)).find((p) => ways.some((w) => p.x + Y.pier.x + 28 > w.x0 && p.x + Y.pier.x + 28 < w.x1 && p.z < w.z1));
+          assert.equal(hit, undefined, `${n} slips, ${b.kind}`);
+        }
+        at = leg;
+      }
+    }
+  }
+  // the widest of them alongside is part of what the pier takes of the waterfront, with any number of slips
+  const widest = Math.max(...BOATS.map((b) => courseOf(b).berth.x + b.beam)) - (PIER.x0 + PIER.x1) / 2;
+  for (let n = 1; n <= DOCKS_MAX; n++) {
+    const Y = yardOf(n);
+    const pier = footprints(Y).find((f) => f.kind === 'pier');
+    assert.ok(pier.x1 > Y.pier.x + widest - 1e-9 && pier.x0 <= Y.pier.x - 1.5 && pier.z1 === PIER.z1, `${n} slips`);
+  }
+});
+
+test('the tug and the tow boat are order boats only: none floats in the bay for show, and the other boats stay', () => {
+  const web = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'viewer', 'web', 'space');
+  const src = fs.readFileSync(path.join(web, 'world.js'), 'utf8');
+  const afloat = [...src.matchAll(/\bfloat\('([a-z/-]+)'/g)].map((m) => m[1]);
+  assert.deepEqual(afloat.sort(), ['watercraft/boat-fishing-small', 'watercraft/boat-sail-a'], 'what floats in the bay for show');
+  // outside the list of models to load, a hull of the order boats is named nowhere: they are placed from `BOATS` alone
+  const body = src.replace(/export const KIT = \[[^\]]*\];/, '');
+  assert.notEqual(body, src);
+  for (const key of ['boat-row-small', 'boat-sail-b', 'boat-tug-a', 'boat-tug-b', 'boat-tow-a']) assert.equal(body.includes(key), false, key);
+  assert.match(body, /BOATS\.map\(\(b\) => \[b\.kind, prop\(mailBoat, b\.key/);
+  assert.equal(/\btug\b/.test(body), false, 'nothing goes round the bay');
+});
+
+test('the demo sends the five order boats in turn', async () => {
+  const { startDemo } = await import('../viewer/web/space/demo.js');
+  const { BOATS, boatOf } = await import('../viewer/web/space/plan.js');
+  const { dir, settle, errors, world } = await stagedYard();
+  const came = [];
+  world.mailIn = (pace, kind) => { came.push(kind); };
+  const reads = [];
+  const stop = startDemo((D, trail) => reads.push([D, trail]));
+  stop();
+  const sittings = []; // the first order of each
+  for (let i = 0; i < 4000 && came.length < 7; i++) {
+    if (i) stop.step();
+    for (const [D, trail] of reads.splice(0)) {
+      const made = trail.events.filter((e) => e.event === 'created');
+      if (made.length) sittings.push(made[0].ticket);
+      dir.update(D, trail);
+      await settle();
+    }
+  }
+  assert.deepEqual(errors, []);
+  assert.ok(came.length >= 7, `${came.length} boats came`);
+  assert.deepEqual(sittings.slice(0, 5).map((id) => boatOf(id).kind), ['sail', 'tug-a', 'tug-b', 'tow', 'row'], 'what the demo orders: each sitting calls the next boat');
+  assert.equal(new Set(came).size, BOATS.length, `the boats that came: ${came.join(' ')}`);
+  came.forEach((k, i) => { if (i) assert.notEqual(k, came[i - 1], `boat ${i + 1} is not the one before it: ${came.join(' ')}`); });
+});
+
 // `cranes`: the yard has a crane at every slip (the real ones of crane.js), moved on with every frame as the page does
 async function stagedYard({ cranes = false } = {}) {
   const { Director } = await import('../viewer/web/space/director.js');

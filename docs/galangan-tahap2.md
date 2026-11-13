@@ -65,24 +65,37 @@ diubah adalah sumbernya di repo ini. Perubahan baru berlaku setelah
     (derek, karakter, kapal, komponen) ditunda; semua calonnya disimpan di
     ruang pamer.
 
+Keputusan pemilik 14 November 2026:
+
+36. **Lima macam perahu pesanan, bergilir acak.** Rombongan tiket baru datang
+    dengan salah satu dari E1 (perahu dayung), E2 (perahu layar), atau ketiga
+    perahu E5 (dua kapal tunda dan satu kapal tarik), dipilih acak untuk tiap
+    rombongan. Alurnya tetap seperti keputusan 25.
+37. **Kapal tunda dan kapal tarik hiasan dihapus.** Kapal tunda yang
+    berkeliling teluk dan kapal tarik di dekat mercusuar tidak ada lagi:
+    bentuk itu hanya terlihat saat membawa pesanan. Perahu hiasan lainnya
+    (perahu nelayan, perahu layar di timur) tetap.
+38. **Usul "kapal tunda sebagai tanda merge" dicoret.** Kapal tunda hanya
+    perahu pesanan; antrean merge tidak digambarkan dengan kapal tunda.
+
 ## Keputusan pemilik (14 November 2026): derek di tiap dok
 
 Diputuskan sesudah pemilik melihat mockup `docs/mockups/galangan/derek.html`
 (tiket 261113234801), dan dikerjakan di tiket 261114001801. Keputusan 34
 tetap berlaku untuk bentuknya: derek putar klasik.
 
-36. **Penempatan F4.** Tiap dok punya satu derek putar klasik dengan kaki
+39. **Penempatan F4.** Tiap dok punya satu derek putar klasik dengan kaki
     yang dikecilkan (tapak dari 2,4 menjadi 0,9), berdiri di sudut kepala
     doknya sendiri. Hanya pilihan ini yang muat pada 4, 6, dan 10 dok (jarak
     bebas terkecil 0,15).
-37. **Kapan derek bekerja.** Selama worker tiket itu bekerja, derek mengayun
+40. **Kapan derek bekerja.** Selama worker tiket itu bekerja, derek mengayun
     muatan pelan-pelan ke lambung. Tiap kali satu kriteria terpenuhi, derek
     mengantar satu potong dengan jelas, baru lambung naik. Derek diam saat
     tidak ada agen, dan parkir saat kapal lulus.
-38. **Derek besar dihapus.** Derek putar tunggal di dekat mercusuar tidak ada
+41. **Derek besar dihapus.** Derek putar tunggal di dekat mercusuar tidak ada
     lagi. Crane operator tetap ada dan berdiri di dekat kapal yang mendapat
-    giliran merge, tanpa derek sendiri. Peran barunya (misalnya kapal tunda)
-    belum diputuskan.
+    giliran merge, tanpa derek sendiri. Peran barunya belum diputuskan (kapal
+    tunda sudah dicoret: keputusan 38).
 
 Yang diketahui dari mockup dan dipegang saat membangun: tiang kapal jadi
 (9,0) lebih tinggi daripada lengan derek (7,6), jadi derek tidak boleh
@@ -107,7 +120,7 @@ derek putar A1 di tiap dok, untuk dilihat sebelum ada yang dipasang: F1–F5
 (derek penuh atau berkaki ramping; di samping dok, di sudut kepala dok, atau
 satu untuk dua dok), dengan 4, 6, atau 10 dok. Dok dan jaraknya dihitung
 `plan.js` galangan sendiri; tempat derek, jarak bebasnya, dan geraknya ada di
-`derek-plan.js`. Pemilik memilih F4 (keputusan 36); mockup itu disimpan
+`derek-plan.js`. Pemilik memilih F4 (keputusan 39); mockup itu disimpan
 sebagai catatan, dan derek yang terpasang ada di `viewer/web/space/crane.js`.
 
 Yang sudah bisa diambil dari ruang pamer untuk alur: sepuluh kapal C1–C10
@@ -117,11 +130,12 @@ kanvas, dan gerakan `jump` tersedia di semua karakter.
 
 ## Belum diputuskan pemilik (usul agen)
 
-- **Peran derek putar.** Sudah diputuskan: keputusan 36 sampai 38.
-- **Kapal tunda.** Crane operator menjadi juru mudi kapal tunda: antrean merge
-  adalah antrean tunda, `landed` berarti kapal ditarik dari landasan ke tempat
-  berlabuh, `integrate` (main dibawa masuk) berarti kapal tunda mengantar
-  muatan ke kapal itu dulu.
+- **Peran derek putar.** Sudah diputuskan: keputusan 39 sampai 41.
+- **Kapal tunda.** ~~Crane operator menjadi juru mudi kapal tunda: antrean
+  merge adalah antrean tunda, `landed` berarti kapal ditarik dari landasan ke
+  tempat berlabuh, `integrate` (main dibawa masuk) berarti kapal tunda
+  mengantar muatan ke kapal itu dulu.~~ **Dicoret pemilik 14 November 2026**
+  (keputusan 38): kapal tunda hanya perahu pesanan.
 - **Menara.** Menara adalah saluran ke pemilik, yang tinggal di negeri
   seberang (tempat perahu pesanan datang). Lampu putih tenang bila tidak ada
   yang menunggu, kuning bila ada, merah cepat bila ada pertanyaan yang
@@ -135,7 +149,8 @@ kanvas, dan gerakan `jump` tersedia di semua karakter.
   **Diputuskan pemilik 13 November 2026: tidak perlu.** Pemutar linimasa
   adalah mesin di belakang layar, tanpa kendali di halaman.
 - **Pilihan bentuk** dari ruang pamer: karakter untuk si perencana, kapal
-  mana yang masuk, perahu pesanan E1 atau E2, kapal tunda.
+  mana yang masuk. Perahu pesanan dan kapal tunda sudah diputuskan (keputusan
+  36 sampai 38).
 
 ## Pemetaan linimasa ke adegan (usul awal)
 
@@ -186,7 +201,8 @@ agen (transkrip), uji yang sedang berjalan, agen macet.
 5. Tukang menjemput tiketnya; dok mengikuti `max_parallel`.
 6. Drama review, lulus tanpa meluncur, jangkar saat ditahan.
 7. Sepuluh macam kapal.
-8. Peran derek putar, kapal tunda, menara (setelah diputuskan pemilik).
+8. Peran derek putar dan menara (setelah diputuskan pemilik). Kapal tunda
+   sudah diputuskan: lihat keputusan 36 sampai 38.
 
 Tiket 2 bergantung pada 1; tiket 3–6 bergantung pada 2; tiket 7 berdiri
 sendiri. Banyak kriterianya soal rupa, jadi akan berupa cek tangan pemilik.

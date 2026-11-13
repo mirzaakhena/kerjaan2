@@ -29,8 +29,8 @@ const spawn = (key) => (key.startsWith('people/') ? cloneSkinned(loaded.get(key)
 const USED = ['male-c', 'male-e', 'worker', 'male-b', 'male-f', 'female-c', 'male-a', 'female-d', 'female-b', 'male-g'];
 const ROLE = ['Courier', 'Draughtsman', 'Foreman', 'Shipwright 1', 'Shipwright 2', 'Shipwright 3', 'Shipwright 4', 'Inspector', 'Crane operator', 'Keeper'];
 const SPARE = ['male-d', 'female-a', 'female-e', 'female-f', 'soldier', 'raider', 'knight', 'robot', 'alien', 'zombie'];
-const FROM_YARD = [...USED.map((n) => `people/character-${n}`), 'pirate/ship-small', 'pirate/ship-medium', 'pirate/ship-large', 'pirate/crate', 'pirate/barrel', 'pirate/boat-row-small', 'pirate/tower-complete-large', 'pirate/flag-high', 'pirate/flag-pennant', 'pirate/structure', 'pirate/platform-planks', 'watercraft/boat-tug-a', 'watercraft/boat-tow-a', 'watercraft/boat-sail-a', 'watercraft/boat-fishing-small'];
-const FROM_MOCK = [...SPARE.map((n) => `people/character-${n}`), 'pirate/ship-pirate-small', 'pirate/ship-pirate-medium', 'pirate/ship-pirate-large', 'pirate/ship-ghost', 'pirate/ship-wreck', 'pirate/mast', 'pirate/chest', 'watercraft/boat-tug-b', 'watercraft/boat-tug-c', 'watercraft/boat-tow-b', 'watercraft/boat-sail-b', 'watercraft/boat-speed-a'];
+const FROM_YARD = [...USED.map((n) => `people/character-${n}`), 'pirate/ship-small', 'pirate/ship-medium', 'pirate/ship-large', 'pirate/crate', 'pirate/barrel', 'pirate/boat-row-small', 'pirate/tower-complete-large', 'pirate/flag-high', 'pirate/flag-pennant', 'pirate/structure', 'pirate/platform-planks', 'watercraft/boat-tug-a', 'watercraft/boat-tug-b', 'watercraft/boat-tow-a', 'watercraft/boat-sail-a', 'watercraft/boat-sail-b', 'watercraft/boat-fishing-small'];
+const FROM_MOCK = [...SPARE.map((n) => `people/character-${n}`), 'pirate/ship-pirate-small', 'pirate/ship-pirate-medium', 'pirate/ship-pirate-large', 'pirate/ship-ghost', 'pirate/ship-wreck', 'pirate/mast', 'pirate/chest', 'watercraft/boat-tug-c', 'watercraft/boat-tow-b', 'watercraft/boat-speed-a'];
 
 // ----- scene -----
 const renderer = new THREE.WebGLRenderer({ antialias: true });
