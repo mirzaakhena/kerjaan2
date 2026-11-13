@@ -2942,9 +2942,9 @@ test('a criterion met: the crane of the slip sets one piece down in the hull, an
   assert.equal(b.wait, true);
   dir.catchUp();
   for (let i = 0; i < 5; i++) await turn();
-  assert.deepEqual([b.wait, b.busy, world.cranes[b.slip].orders.length], [false, false, 0]);
-  for (let i = 0; i < 100; i++) dir.frame(0.1);
-  assert.equal(Math.round(b.shown * 100) / 100, 1);
+  assert.deepEqual([b.wait, world.cranes[b.slip].orders.length], [false, 0]);
+  for (let i = 0; i < 100; i++) { dir.frame(0.1); await turn(); } // the hull goes up by itself
+  assert.deepEqual([Math.round(b.shown * 100) / 100, b.busy], [1, false]);
   assert.deepEqual(errors, []);
 });
 
