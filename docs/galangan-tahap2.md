@@ -78,6 +78,13 @@ menara, jangkar, merpati, perancah, lonceng). Buka dengan
 viewer harus disalin ke `viewer/web/space/kits/` (uji menolak model yang ada
 tetapi tidak dimuat).
 
+`derek.html` di folder yang sama (tombol F di ruang pamer) adalah mockup
+derek putar A1 di tiap dok, untuk dilihat sebelum ada yang dipasang: F1–F5
+(derek penuh atau berkaki ramping; di samping dok, di sudut kepala dok, atau
+satu untuk dua dok), dengan 4, 6, atau 10 dok. Dok dan jaraknya dihitung
+`plan.js` galangan sendiri; tempat derek, jarak bebasnya, dan geraknya ada di
+`derek-plan.js`. Keputusan 34 tetap berlaku sampai pemilik memilih.
+
 Yang sudah bisa diambil dari ruang pamer untuk alur: sepuluh kapal C1–C10
 (keputusan 32) dibuat dengan mewarnai layar dan bendera lewat bahan terpisah
 (lihat `makeShip` di `docs/mockups/galangan/mock.js`), balon emoji digambar di

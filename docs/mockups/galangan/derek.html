@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Derek di tiap dok · ruang pamer galangan</title>
+<!--
+  Mockup: derek putar klasik (A1) di tiap dok, dalam beberapa penempatan (F1–F5), di atas denah dok
+  galangan yang sebenarnya (viewer/web/space/plan.js). Buka lewat server kecil dari akar repo:
+    python3 -m http.server 4400 --bind 127.0.0.1
+  lalu http://127.0.0.1:4400/docs/mockups/galangan/derek.html
+-->
+<style>
+:root { color-scheme: dark }
+* { box-sizing: border-box }
+html, body { margin: 0; height: 100%; background: #191b2c; color: #e3e9f5; font: 14px/1.4 "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif; overflow: hidden }
+#stage { position: fixed; inset: 0 }
+canvas { display: block }
+.bar { position: fixed; left: 12px; top: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; pointer-events: none }
+.bar > * { pointer-events: auto }
+.bar h1 { font-size: 17px; margin: 0 10px 0 0 }
+.bar span { color: #aab3cc; font-size: 13px }
+button, a.btn { font: inherit; color: #e3e9f5; background: rgba(20, 24, 44, .8); border: 1px solid #3d4468; border-radius: 999px; padding: 5px 13px; cursor: pointer; text-decoration: none }
+button:hover, a.btn:hover { border-color: #5fb2ff }
+button[aria-pressed="true"] { background: #1e7bd6; border-color: #1e7bd6; color: #fff; font-weight: 600 }
+.sep { width: 1px; height: 22px; background: #3d4468; margin: 0 6px }
+#note { position: fixed; right: 12px; bottom: 12px; width: 400px; max-width: calc(100vw - 24px); max-height: calc(100vh - 120px); overflow: auto; background: rgba(20, 24, 44, .9); border: 1px solid #3d4468; border-radius: 10px; padding: 10px 12px; font-size: 13px; color: #c9d1e6 }
+#note b { color: #fff }
+#note h2 { font-size: 15px; margin: 0 0 4px; color: #fff }
+#note p { margin: 4px 0 8px }
+#note table { border-collapse: collapse; width: 100%; margin: 4px 0 8px }
+#note td, #note th { padding: 2px 6px; border-bottom: 1px solid #2c3252; text-align: left; font-weight: 400 }
+#note td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap }
+#note th { color: #aab3cc; font-size: 12px }
+#note small { color: #9aa4c0; display: block; margin-top: 6px }
+.clash { color: #ff7b6e; font-weight: 600 }
+.tight { color: #ffc65c }
+.clear { color: #6fdcaa }
+#grid td { cursor: pointer; text-align: center; white-space: nowrap }
+#grid td.on { outline: 2px solid #1e7bd6; outline-offset: -2px }
+#grid td:first-child { text-align: left; color: #fff; font-weight: 600 }
+#verdict { padding: 6px 8px; border-radius: 8px; margin: 6px 0; border: 1px solid currentColor }
+#loading[hidden] { display: none }
+#loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #c9d1e6 }
+</style>
+<script type="importmap">{ "imports": { "three": "../../../viewer/web/space/three/three.module.min.js", "three/addons/": "../../../viewer/web/space/three/" } }</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="loading">Membuka mockup…</div>
+<div class="bar">
+  <a class="btn" href="./">← Ruang pamer</a>
+  <h1>F · Derek di tiap dok</h1>
+  <span id="opts"></span>
+  <span class="sep"></span>
+  <span>Dok:</span>
+  <span id="counts"></span>
+  <span class="sep"></span>
+  <span>Kapal:</span>
+  <button data-stage="hull">sedang dibangun</button>
+  <button data-stage="masts">tiang berdiri</button>
+</div>
+<div id="note"></div>
+<script type="module" src="./derek.js"></script>
+</body>
+</html>

@@ -2533,3 +2533,33 @@ test('the trail only answers GET, and asking it changes nothing on the board', a
   assert.equal(fingerprintOf(wtOf(r, a)), wtBefore);
   assert.equal(r.git('status', '--porcelain').out, status);
 });
+
+test('the mockup of a crane at every slip stands on the yard\'s own slips, and no arm or load strikes anything', async () => {
+  const { yardOf } = await import('../viewer/web/space/plan.js');
+  const { OPTIONS, COUNTS, KINDS, layout, clearances, swing } = await import('../docs/mockups/galangan/derek-plan.js');
+  // the largest ship from above, as a plain box: 4.2 wide, 11.5 long, a mast amidships
+  const hull = Array.from({ length: 46 }, (_, k) => ({ z0: -5.75 + k * 0.25, z1: -5.5 + k * 0.25, w: 2.112, mast: k === 22 ? 1.94 : 0 }));
+  assert.deepEqual(COUNTS, [4, 6, 10]);
+  assert.ok(OPTIONS.length >= 3 && OPTIONS.some((o) => o.shared), 'three placements at least, one of them a crane between two slips');
+  assert.equal(new Set(OPTIONS.map((o) => o.code)).size, OPTIONS.length);
+  const states = new Set();
+  for (const o of OPTIONS) for (const n of COUNTS) {
+    const L = layout(o.code, n), at = `${o.code} with ${n} slips`;
+    assert.deepEqual(L.Y.docks, yardOf(n).docks, `${at}: the slips are the yard's`);
+    assert.equal(L.cranes.length, o.shared ? L.Y.front / 2 + L.Y.back / 2 : n, `${at}: how many cranes`);
+    assert.deepEqual([...new Set(L.cranes.flatMap((c) => c.serves))].sort((a, b) => a - b), L.Y.docks.map((_, k) => k), `${at}: every slip is served`);
+    const room = clearances(L, hull);
+    for (const k of KINDS) assert.ok(!Number.isNaN(room.least[k]), `${at}: ${k}`);
+    assert.equal(room.per.length, L.cranes.length);
+    states.add(room.state);
+    for (const masts of [false, true]) {
+      const s = swing(L, hull, { masts, step: 0.1 });
+      assert.ok(s.arm > 0, `${at}${masts ? ', masts up' : ''}: an arm strikes another crane (${s.arm})`);
+      if (masts) assert.ok(s.mast > 0, `${at}: a parked arm strikes a mast (${s.mast})`);
+      else assert.ok(s.load > 0, `${at}: a load strikes something on its way (${s.load})`);
+    }
+  }
+  assert.ok(states.has('clash') && states.has('clear'), 'the page has both to show: a placement that fits and one that does not');
+  // the full foot beside a slip stands on the shipwrights' spots, whatever the number of slips
+  for (const n of COUNTS) assert.ok(clearances(layout('F1', n), hull).least.worker < 0);
+});

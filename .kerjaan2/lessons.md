@@ -13,3 +13,4 @@ What earlier tickets learned about this project. Newest last; k2 keeps the last 
 - k2 view ditolak untuk worker: halaman galangan mode demo bisa dilihat dengan server berkas statis atas viewer/web (space.html di /p/<nama>/space, sisanya di /assets).
 - Galangan: uji adegan review membaca 'drama' dari stagedYard (siapa berkata, bergerak, dan ke titik dok mana); tiket tanpa kejadian baru ditaruh pada pembacaan kedua, jadi uji memanggil dir.update dua kali sebelum memakainya.
 - Scratchpad dipakai bersama worker lain: taruh berkas sementara di subfolder bernama tiket, dan halaman ?demo bisa dilihat lewat server berkas statis kecil (k2 view dan k2 init bukan milik worker).
+- Ruang pamer: mockup yang butuh denah dok mengimpor yardOf dan footprints dari plan.js galangan; derek-plan.js bisa diuji di Node, dan mock.hold = t di derek.html menghentikan jam untuk memotret satu saat.
