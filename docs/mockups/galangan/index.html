@@ -21,6 +21,8 @@ canvas { display: block }
 .bar h1 { font-size: 17px; margin: 0 10px 0 0 }
 button { font: inherit; color: #e3e9f5; background: rgba(20, 24, 44, .8); border: 1px solid #3d4468; border-radius: 999px; padding: 5px 13px; cursor: pointer }
 button:hover { border-color: #5fb2ff }
+a.btn { color: #e3e9f5; background: rgba(20, 24, 44, .8); border: 1px solid #3d4468; border-radius: 999px; padding: 5px 13px; text-decoration: none }
+a.btn:hover { border-color: #5fb2ff }
 button[aria-pressed="true"] { background: #1e7bd6; border-color: #1e7bd6; color: #fff; font-weight: 600 }
 .sep { width: 1px; height: 22px; background: #3d4468; margin: 0 6px }
 #tools { position: fixed; left: 12px; bottom: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
@@ -43,6 +45,8 @@ button[aria-pressed="true"] { background: #1e7bd6; border-color: #1e7bd6; color:
   <button data-go="ships">C · Kapal</button>
   <button data-go="parts">D · Komponen kapal</button>
   <button data-go="other">E · Komponen lain</button>
+  <span class="sep"></span>
+  <a class="btn" href="./derek.html">F · Derek di tiap dok →</a>
 </div>
 <div id="note"></div>
 <div id="tools"></div>
