@@ -938,3 +938,277 @@ test('worker and reviewer are told to describe each shell step, in the board\'s 
   handOver(r, theirs);
   assert.match(r.k('brief', theirs, '--role', 'reviewer').out, /Give every Bash call a `description` in Bahasa Indonesia/);
 });
+
+// ----- the trail since a point -----
+
+const trail = async (s, name, since) => (await get(s, `/api/p/${name}/timeline${since === undefined ? '' : `?since=${encodeURIComponent(since)}`}`)).body;
+// Every event of a board as its files hold them: ticket and line, in file order.
+const written = (r) => {
+  const dir = path.join(r.dir, '.kerjaan2', 'log');
+  return fs.readdirSync(dir).sort().flatMap((n) => fs.readFileSync(path.join(dir, n), 'utf8').split('\n').filter(Boolean).map((l) => `${n.slice(0, 12)} ${l}`));
+};
+const asWritten = (e) => { const { ticket, at, ...rest } = e; return `${ticket} ${JSON.stringify(rest)}`; };
+
+test('the trail since a point: nothing without a point, then only what came after, in time order, each naming its ticket', async () => {
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const a = plainTicket(r, 'Tombol simpan');
+  const s = await serve(root);
+  const first = await trail(s, 'toko');
+  assert.deepEqual(first.events, [], 'no point: no history');
+  assert.equal(first.reread, false);
+  assert.equal(typeof first.point, 'string');
+  assert.ok(first.point.length > 0);
+  assert.equal(typeof first.now, 'number');
+  const before = written(r);
+  // Nothing written: asking again gives nothing, with or without the point.
+  assert.deepEqual((await trail(s, 'toko', first.point)).events, []);
+  assert.deepEqual((await trail(s, 'toko')).events, []);
+
+  const b = plainTicket(r, 'Halaman daftar'); // a ticket born after the point
+  assert.equal(r.k('start', a).code, 0);
+  assert.equal(r.k('agent', a, 'worker', 'wa').code, 0);
+  assert.equal(r.k('start', b).code, 0);
+  const second = await trail(s, 'toko', first.point);
+  assert.equal(second.reread, false);
+  const after1 = written(r).filter((l) => !before.includes(l));
+  assert.deepEqual(second.events.map(asWritten).sort(), [...after1].sort(), 'exactly what was written after the point');
+  assert.ok(second.events.length >= 4);
+  for (const e of second.events) {
+    assert.match(e.ticket, /^\d{12}$/);
+    assert.ok([a, b].includes(e.ticket));
+    assert.equal(typeof e.at, 'number');
+    assert.equal(typeof e.event, 'string');
+  }
+  assert.ok(second.events.some((e) => e.ticket === a && e.event === 'started'));
+  assert.ok(second.events.some((e) => e.ticket === b && e.event === 'created'));
+  for (let i = 1; i < second.events.length; i++) assert.ok(second.events[i - 1].at <= second.events[i].at, 'oldest first');
+  // Within one ticket the order is the order written.
+  for (const id of [a, b]) assert.deepEqual(second.events.filter((e) => e.ticket === id).map(asWritten), after1.filter((l) => l.startsWith(id)));
+  // The old point still answers, and answers the same.
+  assert.deepEqual((await trail(s, 'toko', first.point)).events, second.events);
+});
+
+test('the trail in time order across tickets, whatever order their files come in', async () => {
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const a = plainTicket(r, 'Satu');
+  const b = plainTicket(r, 'Dua');
+  const s = await serve(root);
+  const p0 = (await trail(s, 'toko')).point;
+  const log = (id) => path.join(r.dir, '.kerjaan2', 'log', `${id}.jsonl`);
+  const [lo, hi] = [a, b].sort();
+  fs.appendFileSync(log(lo), '{"t":"2026-01-01 10:00:05","event":"x3"}\n{"t":"2026-01-01 10:00:09","event":"x5"}\n');
+  fs.appendFileSync(log(hi), '{"t":"2026-01-01 10:00:01","event":"x1"}\n{"t":"2026-01-01 10:00:05","event":"x4"}\n{"t":"2026-01-01 10:00:03","event":"x2"}\n');
+  const got = await trail(s, 'toko', p0);
+  assert.deepEqual(got.events.map((e) => e.event), ['x1', 'x2', 'x3', 'x4', 'x5']);
+  assert.deepEqual(got.events.map((e) => e.ticket), [hi, hi, lo, hi, lo]);
+});
+
+test('one request after another, each from the point of the last: nothing lost, nothing twice', async () => {
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const a = plainTicket(r, 'Tombol simpan');
+  const s = await serve(root);
+  const start = written(r);
+  let point = (await trail(s, 'toko')).point;
+  const seen = [];
+  const ask = async () => {
+    const got = await trail(s, 'toko', point);
+    assert.equal(got.reread, false);
+    point = got.point;
+    seen.push(...got.events.map(asWritten));
+    return got.events.length;
+  };
+  const steps = [
+    () => r.k('start', a),
+    () => r.k('agent', a, 'worker', 'wa'),
+    () => {}, // nothing written between two requests
+    () => { plainTicket(r, 'Halaman daftar'); plainTicket(r, 'Cetak nota'); },
+    () => r.k('release', a, 'worker'),
+    () => {},
+    () => r.k('agent', a, 'worker', 'wb'),
+  ];
+  const counts = [];
+  for (const step of steps) {
+    step();
+    counts.push(await ask());
+  }
+  assert.equal(counts[2], 0);
+  assert.equal(counts[5], 0);
+  assert.ok(counts[0] > 0 && counts[1] > 0 && counts[3] >= 2 && counts[4] > 0 && counts[6] > 0, JSON.stringify(counts));
+  const all = written(r).filter((l) => !start.includes(l));
+  assert.equal(new Set(seen).size, seen.length, 'nothing twice');
+  assert.deepEqual([...seen].sort(), [...all].sort(), 'nothing lost');
+  // Two pages, each with its own points, both get everything.
+  const other = await serve(root);
+  assert.deepEqual((await trail(other, 'toko', point)).reread, true, 'a point of another server is not known here');
+});
+
+test('a line still being written is given once, when it is whole', async () => {
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const a = plainTicket(r, 'Tombol simpan');
+  const s = await serve(root);
+  const log = path.join(r.dir, '.kerjaan2', 'log', `${a}.jsonl`);
+  let got = await trail(s, 'toko');
+  fs.appendFileSync(log, '{"t":"2026-01-01 10:00:00","event":"whole"}\n{"t":"2026-01-01 10:00:01","ev');
+  got = await trail(s, 'toko', got.point);
+  assert.deepEqual(got.events.map((e) => e.event), ['whole']);
+  fs.appendFileSync(log, 'ent":"late"}\n');
+  got = await trail(s, 'toko', got.point);
+  assert.deepEqual(got.events.map((e) => e.event), ['late']);
+  assert.deepEqual((await trail(s, 'toko', got.point)).events, []);
+});
+
+test('the last event of a ticket that landed or was cancelled after the point is still given', async () => {
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const a = plainTicket(r, 'Tombol simpan');
+  const b = plainTicket(r, 'Halaman daftar');
+  handOver(r, a);
+  assert.equal(r.k('agent', a, 'reviewer', 'rv').code, 0);
+  const passed = r.k('verdict', a, 'pass', '--note', '1: terlihat');
+  assert.equal(passed.code, 0, passed.out);
+  const s = await serve(root);
+  const p0 = (await trail(s, 'toko')).point;
+  assert.equal(r.k('land', a).code, 0);
+  const cancelled = r.k('move', b, 'cancel', '--why', 'tidak jadi');
+  assert.equal(cancelled.code, 0, cancelled.out);
+  const st = await stateOf(s, 'toko');
+  assert.equal(st.tickets.find((t) => t.id === a).status, 'done');
+  assert.equal(st.tickets.find((t) => t.id === b).status, 'cancel');
+  const got = await trail(s, 'toko', p0);
+  const of = (id) => got.events.filter((e) => e.ticket === id);
+  assert.equal(of(a).at(-1).event, 'landed');
+  assert.ok(of(b).some((e) => e.event === 'moved' && e.to === 'cancel'), JSON.stringify(of(b)));
+  // And once more from the new point: they are not given again.
+  assert.deepEqual((await trail(s, 'toko', got.point)).events, []);
+});
+
+test('a point not known, or more than ten minutes back, is answered as no point, and the page is told to read the state again', async () => {
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const r2 = repo(root, 'lain');
+  const a = plainTicket(r, 'Tombol simpan');
+  plainTicket(r2, 'Di papan lain');
+  let now = 1_800_000_000_000;
+  const s = await serve(root, { clock: () => now });
+  const fresh = async (since, why) => {
+    const got = await trail(s, 'toko', since);
+    assert.equal(got.reread, true, why);
+    assert.deepEqual(got.events, [], why);
+    assert.equal(typeof got.point, 'string', why);
+    // The point it gives works at once.
+    const next = await trail(s, 'toko', got.point);
+    assert.equal(next.reread, false, why);
+    return got;
+  };
+  const p0 = (await trail(s, 'toko')).point;
+  assert.equal(r.k('start', a).code, 0);
+  for (const bad of ['', 'nope', '0', 'null', 'undefined', '../x', `${p0}x`, p0.slice(1), 'a'.repeat(5000), '__proto__', 'constructor']) await fresh(bad, `"${bad.slice(0, 20)}"`);
+  // A point of another board is not one of this board.
+  const foreign = (await trail(s, 'lain')).point;
+  await fresh(foreign, 'another board\'s point');
+  assert.equal((await trail(s, 'lain', foreign)).reread, false);
+
+  // Ten minutes to the second is still in reach; a moment more is not.
+  now += 10 * 60 * 1000;
+  let got = await trail(s, 'toko', p0);
+  assert.equal(got.reread, false, 'exactly ten minutes');
+  assert.ok(got.events.some((e) => e.event === 'started'));
+  now += 1;
+  await fresh(p0, 'ten minutes and a moment');
+
+  // A page that keeps asking while nothing is written does not grow old.
+  let p = (await trail(s, 'toko')).point;
+  for (let i = 0; i < 5; i++) {
+    now += 4 * 60 * 1000;
+    got = await trail(s, 'toko', p);
+    assert.equal(got.reread, false, `quiet round ${i}`);
+    p = got.point;
+  }
+  assert.equal(r.k('agent', a, 'worker', 'wa').code, 0);
+  got = await trail(s, 'toko', p);
+  assert.deepEqual(got.events.map((e) => e.event), ['agent']);
+  // A page that slept for hours.
+  now += 3 * 60 * 60 * 1000;
+  await fresh(got.point, 'hours later');
+  await fresh(p, 'hours later, an older point');
+
+  // A trail replaced or cut short under a point: the board is not the one the point saw.
+  p = (await trail(s, 'toko')).point;
+  const log = path.join(r.dir, '.kerjaan2', 'log', `${a}.jsonl`);
+  const text = fs.readFileSync(log, 'utf8');
+  fs.writeFileSync(log, text.split('\n').slice(0, 1).join('\n') + '\n');
+  await fresh(p, 'a trail cut short');
+  p = (await trail(s, 'toko')).point;
+  fs.rmSync(log);
+  await fresh(p, 'a trail gone');
+});
+
+test('a broken line in a trail is passed over; the request still answers with the rest', async () => {
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const a = plainTicket(r, 'Tombol simpan');
+  const b = plainTicket(r, 'Halaman daftar');
+  const s = await serve(root);
+  const p0 = (await trail(s, 'toko')).point;
+  const log = (id) => path.join(r.dir, '.kerjaan2', 'log', `${id}.jsonl`);
+  const bad = [
+    'not json at all',
+    '{"t":"2026-01-01 10:00:00","event":"cut',
+    '[1,2,3]',
+    '42',
+    'null',
+    '"a string"',
+    '{"event":"no time"}',
+    '{"t":"yesterday","event":"bad time"}',
+    '{"t":"2026-01-01 10:00:00"}',
+    '{"t":"2026-01-01 10:00:00","event":7}',
+    '\u0000\u0001�',
+    '   ',
+    '',
+  ];
+  fs.appendFileSync(log(a), bad.join('\n') + '\n' + '{"t":"2026-01-01 10:00:02","event":"good-a"}\n' + bad.join('\r\n') + '\n');
+  fs.appendFileSync(log(b), Buffer.concat([Buffer.from([0xff, 0xfe, 0x0a]), Buffer.from('{"t":"2026-01-01 10:00:01","event":"good-b"}\n')]));
+  assert.equal(r.k('start', a).code, 0); // the real CLI still writes after the damage
+  const res = await get(s, `/api/p/toko/timeline?since=${p0}`);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.reread, false);
+  assert.deepEqual(res.body.events.filter((e) => /^good/.test(e.event)).map((e) => `${e.ticket} ${e.event}`), [`${b} good-b`, `${a} good-a`]);
+  assert.ok(res.body.events.some((e) => e.ticket === a && e.event === 'started'));
+  assert.equal(res.body.events.length, 3, JSON.stringify(res.body.events));
+  // The damage is behind the new point: it does not come back, and the next event does.
+  assert.equal(r.k('agent', a, 'worker', 'wa').code, 0);
+  assert.deepEqual((await trail(s, 'toko', res.body.point)).events.map((e) => e.event), ['agent']);
+});
+
+test('the trail only answers GET, and asking it changes nothing on the board', async () => {
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const a = plainTicket(r, 'Tombol simpan');
+  assert.equal(r.k('start', a).code, 0);
+  const s = await serve(root);
+  const host = { host: `127.0.0.1:${s.port}` };
+  const board = path.join(r.dir, '.kerjaan2');
+  const before = fingerprintOf(board);
+  const status = r.git('status', '--porcelain').out;
+  const wtBefore = fingerprintOf(wtOf(r, a));
+  let got = await trail(s, 'toko');
+  assert.equal(r.k('agent', a, 'worker', 'wa').code, 0);
+  const moved = fingerprintOf(board);
+  assert.notEqual(moved, before, 'the CLI moved the board');
+  for (const since of [undefined, got.point, 'unknown', got.point]) got = await trail(s, 'toko', since === undefined ? undefined : since);
+  for (const method of ['POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']) {
+    for (const p of ['/api/p/toko/timeline', `/api/p/toko/timeline?since=${got.point}`]) {
+      const res = await raw(s, p, host, method);
+      assert.equal(res.status, 405, `${method} ${p}`);
+    }
+  }
+  assert.equal((await get(s, '/api/p/toko/timeline/extra')).status, 404);
+  assert.equal((await get(s, '/api/p/nowhere/timeline')).status, 404);
+  assert.equal(fingerprintOf(board), moved, 'asking moved nothing');
+  assert.equal(fingerprintOf(wtOf(r, a)), wtBefore);
+  assert.equal(r.git('status', '--porcelain').out, status);
+});
