@@ -249,6 +249,19 @@ function testRun(board, id) {
   }
 }
 
+// The planner belongs to no ticket: the hook records it on the board when it
+// is sent, resumed and stopped. One that was never seen stopping (a session
+// closed halfway) is not at work for ever: with no sign of life for
+// `stuck_after_minutes`, neither its dispatch nor a step in its transcript,
+// it no longer counts.
+function plannerAtWork(board) {
+  const p = B.getPlanner(board);
+  if (!p || p.ended || typeof p.at !== 'number') return null;
+  const act = lastStep(p.transcript, p.at);
+  if (Date.now() - Math.max(p.at, act?.at || 0) >= board.settings.stuck_after_minutes * 60000) return null;
+  return { agent: p.agent, since: p.at, model: C.modelFor(board, 'planner'), step: act?.step || null, command: act?.command || null, at: act?.at || null };
+}
+
 // Agents at work, test runs, and who holds a turn. Cheap: asked once a second.
 export function liveState(project, board = openProject(project)) {
   const agents = {};
@@ -272,7 +285,7 @@ export function liveState(project, board = openProject(project)) {
     const ticket = name === 'test' ? Object.keys(tests).find((id) => tests[id].pid === pid) || null : null;
     locks.push({ name, pid, ticket });
   }
-  return { now: Date.now(), agents, tests, locks };
+  return { now: Date.now(), agents, planner: plannerAtWork(board), tests, locks };
 }
 
 // ----- one ticket in full -----

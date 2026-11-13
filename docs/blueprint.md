@@ -363,9 +363,9 @@ Empat hook. Penjaga peran berjalan di setiap pemanggilan Bash, tetapi hanya memu
 | Kejadian | Yang dilakukan | Menggantikan |
 |---|---|---|
 | `SessionStart` (mulai, lanjut, sesudah ringkas) | Menyuntikkan apa yang sedang berjalan dan apa yang menunggu pemilik | Aturan "awal sesi", `handoff.md`, hook penebak persen konteks |
-| `PostToolUse` pada `Agent` dan `SendMessage` | Mencatat ID agen ke tiketnya begitu agen dikirim atau dilanjutkan | Mandor yang harus ingat `k2 agent`; mencegah pengerja kedua masuk worktree yang sama |
+| `PostToolUse` pada `Agent` dan `SendMessage` | Mencatat ID agen ke tiketnya begitu agen dikirim atau dilanjutkan. Planner tidak terikat satu tiket: ia dicatat di keadaan lokal papan (`.state/planner.json`: siapa, sejak kapan, di mana transkripnya), dan dihidupkan lagi saat dilanjutkan dengan pesan | Mandor yang harus ingat `k2 agent`; mencegah pengerja kedua masuk worktree yang sama |
 | `PreToolUse` pada `Bash` | **Penjaga peran**: menitipkan peran agen ke setiap perintah shell yang dijalankan subagen kerjaan2 (`export K2_ROLE=...;` di depan perintah); `k2` sendiri lalu menolak, dari argumennya yang sebenarnya, perintah yang bukan hak peran itu | Gerbang yang sebelumnya hanya berbasis kepercayaan |
-| `SubagentStop` (pengerja kerjaan2) | Menolak sekali bila pengerja belum menyerahkan; bila ia tetap berakhir, menandainya di papan sehingga `k2 next` mengirim lagi | Sebagian besar `on-ticket-review.sh` |
+| `SubagentStop` (pengerja dan planner kerjaan2) | Menolak sekali bila pengerja belum menyerahkan; bila ia tetap berakhir, menandainya di papan sehingga `k2 next` mengirim lagi. Planner yang berhenti tidak ditahan: catatannya di papan diakhiri | Sebagian besar `on-ticket-review.sh` |
 
 Karena ID agen tersimpan di disk, mandor yang konteksnya baru diringkas cukup
 membaca `k2 status` untuk melanjutkan agen yang sama. Menjalankan `k2 next`

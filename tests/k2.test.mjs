@@ -990,11 +990,130 @@ test('the hooks: an agent is recorded the moment it is sent, and the matchers ar
   sent({ tool_name: 'SendMessage', tool_input: { to: 'abc123def', message: `Ticket ${id}: finish and hand over.` }, tool_response: { success: true } });
   assert.match(r.k('next').out, /WAIT   .* worker abc123def is on it/, 'a resume binds the step again');
   const hooks = JSON.parse(fs.readFileSync(path.join(path.dirname(K2), '..', 'hooks', 'hooks.json'), 'utf8')).hooks;
-  assert.equal(hooks.SubagentStop[0].matcher, '^kerjaan2:worker$');
+  assert.equal(hooks.SubagentStop[0].matcher, '^kerjaan2:(worker|planner)$');
   assert.ok(!new RegExp(hooks.SubagentStop[0].matcher).test('kerjaan:kerjaan-worker'));
   const stop = (type) => sh(r.dir, K2, ['hook', 'subagent-stop'], JSON.stringify({ cwd: r.dir, agent_id: 'abc123def', agent_type: type })).out;
   assert.equal(stop('kerjaan:kerjaan-worker').trim(), '', "the old plugin's worker is not ours");
   assert.match(stop('kerjaan2:worker'), /"decision":"block"/);
+});
+
+test('the hooks: the planner is recorded on the board while it works, tied to no ticket', () => {
+  const r = repo();
+  const id = ticket(r, 'Sedang dikerjakan');
+  r.k('start', id);
+  const file = path.join(r.dir, '.kerjaan2', '.state', 'planner.json');
+  const read = () => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null);
+  const call = (name, payload) => sh(r.dir, K2, ['hook', name], JSON.stringify({ cwd: r.dir, ...payload }));
+  const sent = (payload) => call('agent-sent', { transcript_path: '/c/sess-1.jsonl', ...payload });
+  const stop = (agent, type = 'kerjaan2:planner') => call('subagent-stop', { agent_id: agent, agent_type: type });
+  const before = Date.now();
+
+  // An agent that is not kerjaan2's, with or without a ticket in its prompt, writes nothing.
+  sent({ tool_name: 'Agent', tool_input: { subagent_type: 'general-purpose', prompt: 'Plan the backlog.' }, tool_response: { agentId: 'orang-lain' } });
+  sent({ tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan:planner', prompt: 'Plan the backlog.' }, tool_response: { agentId: 'orang-lain' } });
+  sent({ tool_name: 'SendMessage', tool_input: { to: 'orang-lain', message: 'go on' }, tool_response: { success: true } });
+  stop('orang-lain', 'general-purpose');
+  assert.equal(read(), null);
+  assert.deepEqual(fs.readdirSync(path.join(r.dir, '.kerjaan2', '.state', 'tickets')), [`${id}.json`]);
+
+  // Sent: at work, since now, and no ticket named, though the prompt names one.
+  const first = sent({ tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:planner', prompt: `Plan the backlog. Ticket ${id} is in flight.` }, tool_response: { status: 'async_launched', agentId: 'perencana1' } });
+  assert.equal(first.code, 0);
+  assert.equal(first.out, '');
+  let p = read();
+  assert.deepEqual(Object.keys(p).sort(), ['agent', 'at', 'transcript']);
+  assert.equal(p.agent, 'perencana1');
+  assert.ok(p.at >= before && p.at <= Date.now());
+  assert.equal(p.transcript, path.join('/c/sess-1', 'subagents', 'agent-perencana1.jsonl'));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(r.dir, '.kerjaan2', '.state', 'tickets', `${id}.json`), 'utf8')).worker, undefined, 'the ticket the prompt names is not bound to the planner');
+
+  // Stopped: the record ends, and the stop asks nothing of the planner.
+  assert.equal(stop('perencana1').out, '');
+  p = read();
+  assert.equal(p.agent, 'perencana1');
+  assert.ok(p.ended >= p.at);
+
+  // Resumed with a message: alive again, from now.
+  const was = p.at;
+  sent({ tool_name: 'SendMessage', tool_input: { to: 'perencana1', message: `The owner answered Q1 of ${id}.` }, tool_response: { success: true } });
+  p = read();
+  assert.equal(p.ended, undefined);
+  assert.ok(p.at >= was);
+  assert.equal(p.transcript, path.join('/c/sess-1', 'subagents', 'agent-perencana1.jsonl'));
+  // A message to somebody else leaves it alone.
+  stop('perencana1');
+  sent({ tool_name: 'SendMessage', tool_input: { to: 'orang-lain', message: 'go on' }, tool_response: { success: true } });
+  assert.ok(read().ended);
+
+  // A newer planner replaces it, and the older one stopping late does not end the newer.
+  sent({ tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:planner', prompt: 'Plan.' }, tool_response: 'Async agent launched successfully. agentId: perencana2 (internal)' });
+  stop('perencana1');
+  p = read();
+  assert.equal(p.agent, 'perencana2');
+  assert.equal(p.ended, undefined);
+
+  // A planner run in the foreground is reported sent only when it is back: never shown at work.
+  sent({ tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:planner', prompt: 'Plan.' }, tool_response: { status: 'completed', agentId: 'perencana3' } });
+  assert.ok(read().ended);
+  stop('perencana4');
+  sent({ tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:planner', prompt: 'Plan.' }, tool_response: { agentId: 'perencana4' } });
+  assert.equal(read().agent, 'perencana4');
+  assert.ok(read().ended, 'its stop was seen first');
+
+  // Workers and reviewers are recorded as before.
+  sent({ tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:worker', prompt: `Ticket ${id}.` }, tool_response: { agentId: 'pekerja77' } });
+  assert.match(r.k('next').out, /WAIT   .* worker pekerja77 is on it/);
+  assert.equal(read().agent, 'perencana4');
+  // Nothing of this is committed or shown as a change of the board.
+  assert.equal(sh(r.dir, 'git', ['status', '--porcelain', '--', '.kerjaan2/.state']).out.trim(), '');
+});
+
+test('the planner hooks never fail a session: no board, a board that cannot be read, a held lock', () => {
+  const payload = { tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:planner', prompt: 'Plan.' }, tool_response: { agentId: 'perencana1' } };
+  const quiet = (dir, name, extra, why) => {
+    const out = sh(dir, K2, ['hook', name], JSON.stringify({ cwd: dir, ...extra }));
+    assert.equal(out.code, 0, why);
+    assert.equal(out.out, '', why);
+  };
+  const each = (dir, why) => {
+    quiet(dir, 'agent-sent', payload, why);
+    quiet(dir, 'agent-sent', { tool_name: 'SendMessage', tool_input: { to: 'perencana1', message: 'go on' } }, why);
+    quiet(dir, 'subagent-stop', { agent_id: 'perencana1', agent_type: 'kerjaan2:planner' }, why);
+  };
+  // No repository at all, and a repository with no board.
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'k2-none-'));
+  each(bare, 'not a repository');
+  sh(bare, 'git', ['init', '-q']);
+  each(bare, 'no board');
+  assert.equal(fs.existsSync(path.join(bare, '.kerjaan2')), false);
+  fs.rmSync(bare, { recursive: true, force: true });
+  // Settings that cannot be read.
+  const r = repo();
+  const settings = path.join(r.dir, '.kerjaan2', 'settings.yml');
+  const good = fs.readFileSync(settings, 'utf8');
+  fs.writeFileSync(settings, 'max_parallel: banyak\n: : :\n');
+  each(r.dir, 'bad settings');
+  fs.writeFileSync(settings, good);
+  const file = path.join(r.dir, '.kerjaan2', '.state', 'planner.json');
+  assert.equal(fs.existsSync(file), false);
+  // A record that is not JSON is replaced, not tripped over.
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '{ setengah');
+  quiet(r.dir, 'subagent-stop', { agent_id: 'perencana1', agent_type: 'kerjaan2:planner' }, 'a broken record');
+  quiet(r.dir, 'agent-sent', { tool_name: 'SendMessage', tool_input: { to: 'perencana1', message: 'go on' } }, 'a broken record');
+  quiet(r.dir, 'agent-sent', payload, 'a broken record');
+  fs.rmSync(file);
+  // The state lock held by a live process: the hook gives up within its ten seconds, in silence.
+  const lock = path.join(r.dir, '.kerjaan2', '.state', 'state.lock');
+  fs.mkdirSync(lock, { recursive: true });
+  fs.writeFileSync(path.join(lock, 'pid'), String(process.pid));
+  const t0 = Date.now();
+  quiet(r.dir, 'agent-sent', payload, 'locked');
+  assert.ok(Date.now() - t0 < 10000, 'within the hook\'s timeout');
+  assert.equal(fs.existsSync(file), false);
+  fs.rmSync(lock, { recursive: true, force: true });
+  quiet(r.dir, 'agent-sent', payload, 'free again');
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).agent, 'perencana1');
 });
 
 test('a ticket taken out of flight forgets its agents', () => {

@@ -490,6 +490,89 @@ test('an agent at work: its role, and its step read from the transcript the hook
   assert.equal((await get(s, '/api/p/toko/state')).body.live.agents[id].step, 'Edit app.txt');
 });
 
+test('the planner at work: the board state says so and since when, with its last step; ended, resumed, and never left working for ever', async () => {
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const session = path.join(root, 'claude', 'sess-1.jsonl');
+  const agentFile = path.join(root, 'claude', 'sess-1', 'subagents', 'agent-perencana1.jsonl');
+  fs.mkdirSync(path.dirname(agentFile), { recursive: true });
+  fs.writeFileSync(session, '');
+  const hook = (name, payload) => assert.equal(sh(r.dir, K2, ['hook', name], JSON.stringify({ cwd: r.dir, transcript_path: session, ...payload })).code, 0);
+  const s = await serve(root);
+  const live = async () => (await get(s, '/api/p/toko/state')).body.live;
+  const file = path.join(r.dir, '.kerjaan2', '.state', 'planner.json');
+
+  // No planner was ever sent: the state says so, and reading it wrote nothing.
+  assert.equal((await live()).planner, null);
+  assert.equal(fs.existsSync(file), false, 'the viewer does not write the record');
+
+  const before = Date.now();
+  hook('agent-sent', { tool_name: 'Agent', tool_input: { subagent_type: 'kerjaan2:planner', prompt: 'Plan the backlog.' }, tool_response: { status: 'async_launched', agentId: 'perencana1' } });
+  let p = (await live()).planner;
+  assert.equal(p.agent, 'perencana1');
+  assert.ok(p.since >= before && p.since <= Date.now());
+  assert.equal(p.step, null, 'sent, nothing done yet');
+  assert.equal(p.ticket, undefined);
+  // No ticket is in flight for it, and it takes no place.
+  const st = (await get(s, '/api/p/toko/state')).body;
+  assert.equal(st.places.used, 0);
+  assert.deepEqual(st.live.agents, {});
+
+  // Its last step, from the transcript.
+  const line = (ts, content) => JSON.stringify({ type: 'assistant', timestamp: new Date(ts).toISOString(), message: { role: 'assistant', content } }) + '\n';
+  fs.writeFileSync(agentFile, line(Date.now() + 1000, [{ type: 'tool_use', name: 'Bash', input: { command: 'k2 list backlog', description: 'Membaca backlog' } }]));
+  p = (await live()).planner;
+  assert.equal(p.step, 'Membaca backlog');
+  assert.equal(p.command, 'k2 list backlog');
+  assert.equal(typeof p.at, 'number');
+
+  // It stops: no longer at work. A message resumes it: at work again, and a step of before the resume is not this one's.
+  const mtime = fs.statSync(file).mtimeMs;
+  await live();
+  assert.equal(fs.statSync(file).mtimeMs, mtime, 'reading leaves the record as it is');
+  hook('subagent-stop', { agent_id: 'perencana1', agent_type: 'kerjaan2:planner' });
+  assert.equal((await live()).planner, null);
+  fs.writeFileSync(agentFile, line(Date.now() - 5000, [{ type: 'tool_use', name: 'Read', input: { file_path: '/x/lama.md' } }]));
+  hook('agent-sent', { tool_name: 'SendMessage', tool_input: { to: 'perencana1', message: 'The owner answered.' }, tool_response: { success: true } });
+  p = (await live()).planner;
+  assert.equal(p.agent, 'perencana1');
+  assert.equal(p.step, null);
+
+  // Never seen stopping (the session was closed): after stuck_after_minutes with no sign of life it is not at work.
+  const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const limit = 60 * 60000;
+  fs.writeFileSync(agentFile, '');
+  fs.writeFileSync(file, JSON.stringify({ ...rec, at: Date.now() - limit + 30000 }));
+  assert.equal((await live()).planner.agent, 'perencana1', 'just under the limit');
+  fs.writeFileSync(file, JSON.stringify({ ...rec, at: Date.now() - limit - 1000 }));
+  assert.equal((await live()).planner, null, 'over the limit');
+  // A step it made lately is a sign of life: a long planning is not cut off at the limit.
+  fs.writeFileSync(agentFile, line(Date.now() - 60000, [{ type: 'tool_use', name: 'Read', input: { file_path: '/x/baru.md' } }]));
+  assert.equal((await live()).planner.step, 'Read baru.md');
+  fs.writeFileSync(agentFile, line(Date.now() - limit - 1000, [{ type: 'tool_use', name: 'Read', input: { file_path: '/x/baru.md' } }]));
+  assert.equal((await live()).planner, null);
+  // The board's own limit, not a fixed hour.
+  const settings = path.join(r.dir, '.kerjaan2', 'settings.yml');
+  fs.writeFileSync(settings, fs.readFileSync(settings, 'utf8').replace(/^stuck_after_minutes:.*$/m, 'stuck_after_minutes: 5'));
+  fs.writeFileSync(file, JSON.stringify({ ...rec, at: Date.now() - 4 * 60000 }));
+  assert.equal((await live()).planner.agent, 'perencana1');
+  fs.writeFileSync(file, JSON.stringify({ ...rec, at: Date.now() - 6 * 60000 }));
+  assert.equal((await live()).planner, null);
+  // A record of another shape is no planner, and no error.
+  for (const junk of ['{ setengah', '[]', '{"agent":7}', '{"agent":"x"}', 'null']) {
+    fs.writeFileSync(file, junk);
+    const res = await get(s, '/api/p/toko/state');
+    assert.equal(res.status, 200, junk);
+    assert.equal(res.body.live.planner, null, junk);
+  }
+});
+
+test('the Control room shows the planner as a card of its own', () => {
+  const code = fs.readFileSync(path.join(path.dirname(K2), '..', 'viewer', 'web', 'app.js'), 'utf8');
+  assert.match(code, /D\.live\.planner/);
+  assert.match(code, /class="agent planner"/);
+});
+
 test('a transcript that is missing, empty, cut, or from an earlier dispatch gives no step', () => {
   const root = workspace();
   const f = path.join(root, 't.jsonl');

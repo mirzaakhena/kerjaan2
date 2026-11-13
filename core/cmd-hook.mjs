@@ -50,6 +50,7 @@ function sessionStart(inp) {
 // A worker that stops with its ticket neither handed over nor waiting on a
 // recorded question looks finished to the foreman and is not.
 function subagentStop(inp) {
+  if (/^(kerjaan2:)?planner$/.test(inp.agent_type || '')) return plannerStopped(inp);
   if (!/^(kerjaan2:)?worker$/.test(inp.agent_type || '')) return;
   const board = boardAt(inp.cwd);
   if (!board) return;
@@ -82,6 +83,60 @@ function subagentStop(inp) {
   }
 }
 
+// ----- the planner -----
+//
+// A planner reads the whole backlog and belongs to no ticket, so the board
+// keeps one record of it (`B.setPlanner`): written when it is sent, ended
+// when it stops, alive again when a message resumes it. Nobody runs a command
+// for this, and the viewer only reads it.
+const WAIT = { waitMs: 6000 }; // a hook has ten seconds
+
+// Claude Code keeps a subagent's transcript beside the session's own, under
+// the session's ID. Recorded here, so the viewer never has to guess where.
+function transcriptOf(inp, agentId) {
+  const session = String(inp.transcript_path || '');
+  return /\.jsonl$/.test(session) && /^[A-Za-z0-9_-]+$/.test(agentId) ? path.join(session.replace(/\.jsonl$/, ''), 'subagents', `agent-${agentId}.jsonl`) : undefined;
+}
+
+// The ID the Agent tool gave the agent it started: the tool's own field
+// first; its text only when the answer is plain text.
+function sentId(resp) {
+  if (resp && typeof resp === 'object') return resp.agentId || resp.agent_id || null;
+  return String(resp ?? '').match(/\bagentId: ([A-Za-z0-9_-]{6,})/)?.[1] || null;
+}
+
+function plannerSent(board, inp) {
+  const agent = sentId(inp.tool_response);
+  if (!agent) return;
+  const transcript = transcriptOf(inp, String(agent));
+  // A planner run in the foreground is reported sent only when it is back.
+  const back = inp.tool_response && typeof inp.tool_response === 'object' && inp.tool_response.status === 'completed';
+  B.setPlanner(board, (was) => {
+    const now = Date.now();
+    // Its stop was seen before this report of its start: it is not at work.
+    if (was?.agent === agent && was.ended) return transcript && !was.transcript ? { ...was, transcript } : null;
+    return { agent: String(agent), at: now, ...(transcript ? { transcript } : {}), ...(back || was?.stopped === agent ? { ended: now } : {}) };
+  }, WAIT);
+}
+
+function plannerResumed(board, was) {
+  B.setPlanner(board, (p) => (p?.agent === was.agent ? { agent: p.agent, at: Date.now(), ...(p.transcript ? { transcript: p.transcript } : {}) } : null), WAIT);
+}
+
+function plannerStopped(inp) {
+  const board = boardAt(inp.cwd);
+  const agent = String(inp.agent_id || '');
+  if (!board || !agent) return;
+  B.setPlanner(board, (p) => {
+    // An older planner ending does not end the one that replaced it. Or it is
+    // one whose start is not reported yet: remembered, for `plannerSent`.
+    if (p && p.agent !== agent) return { ...p, stopped: agent };
+    if (p?.ended) return null;
+    const now = Date.now();
+    return p ? { ...p, ended: now } : { agent, at: now, ended: now };
+  }, WAIT);
+}
+
 // The foreman is told to record each agent with `k2 agent`. This does it for
 // it the moment the agent is sent or resumed, so a forgotten step cannot put
 // a second worker into the same worktree.
@@ -89,6 +144,10 @@ function agentSent(inp) {
   const board = boardAt(inp.cwd);
   if (!board) return;
   const ti = inp.tool_input || {};
+  if (inp.tool_name === 'SendMessage') {
+    const planner = B.getPlanner(board);
+    if (planner && planner.agent === String(ti.to || '')) return plannerResumed(board, planner);
+  } else if (ti.subagent_type === 'kerjaan2:planner') return plannerSent(board, inp);
   const text = String(ti.prompt || ti.message || '');
   // The ticket the message is about: named as "Ticket <id>", or the only ID in it.
   const ids = [...new Set(text.match(/\b\d{12}\b/g) || [])];
@@ -109,16 +168,10 @@ function agentSent(inp) {
     role = ['worker', 'reviewer'].find((r) => st[r]?.agent === agentId) || null;
   } else {
     role = String(ti.subagent_type || '').match(/^kerjaan2:(worker|reviewer)$/)?.[1] || null;
-    // The tool's own field first; its text only when the answer is plain text.
-    const resp = inp.tool_response;
-    if (resp && typeof resp === 'object') agentId = resp.agentId || resp.agent_id || null;
-    else agentId = String(resp ?? '').match(/\bagentId: ([A-Za-z0-9_-]{6,})/)?.[1] || null;
+    agentId = sentId(inp.tool_response);
   }
   if (!role || !agentId) return;
-  // Claude Code keeps a subagent's transcript beside the session's own, under
-  // the session's ID. Recorded here, so the viewer never has to guess where.
-  const session = String(inp.transcript_path || '');
-  const transcript = /\.jsonl$/.test(session) && /^[A-Za-z0-9_-]+$/.test(agentId) ? path.join(session.replace(/\.jsonl$/, ''), 'subagents', `agent-${agentId}.jsonl`) : undefined;
+  const transcript = transcriptOf(inp, agentId);
   // A hook has ten seconds: if the board is busy that long, the foreman's own `k2 agent` records it.
   B.withLock(board, 'board', () => bind(board, t, role, agentId, transcript), { waitMs: 6000 });
 }

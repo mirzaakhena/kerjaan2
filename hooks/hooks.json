@@ -1,5 +1,5 @@
 {
-  "description": "kerjaan2 \u2014 tell a starting, resumed or just-summarized session what the board has in flight; record each worker and reviewer the moment it is sent; keep a worker from ending before its ticket is handed over; and tell k2 which kind of agent is calling it, so it can refuse what is not that agent's to run",
+  "description": "kerjaan2 \u2014 tell a starting, resumed or just-summarized session what the board has in flight; record each worker and reviewer the moment it is sent, and the planner while it works; keep a worker from ending before its ticket is handed over; and tell k2 which kind of agent is calling it, so it can refuse what is not that agent's to run",
   "hooks": {
     "SessionStart": [
       {
@@ -14,7 +14,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "^kerjaan2:worker$",
+        "matcher": "^kerjaan2:(worker|planner)$",
         "hooks": [
           {
             "type": "command",

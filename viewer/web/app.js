@@ -96,7 +96,7 @@
         <span class="ro"><span>landed today</span><b>${landed}</b></span>
         <span class="ro"><span>worktrees</span><b>${trees}${D.orphans.length ? `<small class="warn"> · ${D.orphans.length} orphan</small>` : ''}</b></span>
         <span class="ro"><span>test turn</span><b>${test ? (test.ticket ? test.ticket.slice(8) : 'held') : 'free'}</b></span>
-        <span class="ro run" title="agents at work now"><span>running</span><b>${running().length}</b></span>
+        <span class="ro run" title="agents at work now"><span>running</span><b>${running().length + (D.live.planner ? 1 : 0)}</b></span>
         <span class="ro" title="tickets in flight that take a place, of max_parallel"><span>places</span><b>${D.places.used}<small>/${D.places.max}</small></b></span>
         <span class="ro need"><span>need you</span><b>${D.inbox.length}</b></span>
         ${projects.length > 1 ? `<select class="field" id="project" aria-label="Project">${projects.map((p) => `<option ${p.name === D.project ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : ''}
@@ -148,6 +148,16 @@
       </article>`;
     }).join('');
 
+    // The planner works on the whole backlog, not on one ticket: a card of its own, first.
+    const pl = D.live.planner;
+    const planner = pl ? `<article class="agent planner">
+        <div class="head"><span class="title">Planning the backlog</span><span class="el" title="since the planner was sent, or last resumed"><span data-clock="${pl.since}"></span></span></div>
+        <div class="row"><span class="role"><span class="dot blink"></span>planner</span> <span class="tag">${esc(pl.model || 'session model')}</span></div>
+        <div class="act">${pl.step ? `<p>${esc(pl.step)}${pl.at ? ` <span class="dim">· <span data-since="${pl.at}"></span> ago</span>` : ''}</p>${pl.command && pl.command !== pl.step ? `<p class="cmd">$ ${esc(pl.command)}</p>` : ''}` : '<p class="dim">no step seen yet</p>'}</div>
+        <p class="wt">no ticket of its own: it reads the backlog and fills the queue</p>
+      </article>` : '';
+    const atWork = running().length + (pl ? 1 : 0);
+
     const todo = D.queue.order.map((id) => ids.get(id)).filter(Boolean);
     const why = (t, i) => {
       if (t.waits?.length) return [`starts after ${t.waits.map((w) => w.slice(8)).join(', ')} lands`, true];
@@ -169,8 +179,8 @@
         <p class="panel-foot">Read-only. Settle these in your Claude session, for example “${D.inbox[0] ? `${D.inbox[0].kind} ${D.inbox[0].id.slice(8)}` : 'manual check 0412'}: …”.</p>
       </section>
       <section class="panel" style="--c:var(--done)">
-        <div class="panel-head"><h2>Running now</h2><span class="count">${running().length} at work · ${D.places.used} of ${D.places.max} places taken</span></div>
-        <div class="scroll agents" data-keep="s-agents">${agents || '<p class="empty">No agent is working.</p>'}</div>
+        <div class="panel-head"><h2>Running now</h2><span class="count">${atWork} at work · ${D.places.used} of ${D.places.max} places taken</span></div>
+        <div class="scroll agents" data-keep="s-agents">${planner + agents || '<p class="empty">No agent is working.</p>'}</div>
       </section>
       <div class="side">
         <section class="panel" style="--c:var(--review)">
