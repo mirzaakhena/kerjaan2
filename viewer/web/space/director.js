@@ -10,6 +10,7 @@ import { picture, nextStep, FLEET, placeOf, seen, sameSeen, play, buildOf, paceO
 const BERTH_Y = 0.28;
 const DRAFT = 0.75;
 const LEVEL = 0.02; // a hull this near to its height has stopped moving
+const FADE = 2; // seconds a cancelled token takes to fade away
 const BUSY = 3; // with this many jobs waiting, a person is not asked for more: the token is just put in place
 export const LAP = [0, 3, 7, 4]; // once round a hull: down one side, back by the street, down the other
 const MEET = 6; // where on the slip the shipwright hears the verdict
@@ -81,7 +82,7 @@ export class Director {
   }
 
   token(p, see) {
-    const tok = { id: p.id, board: p, see, pic: null, place: null, obj: null, ship: null, slip: -1, anchor: -1, slot: null, busy: false, gone: 0, shown: 0, breaking: false, todo: [], playing: null, run: 0, odd: false, risen: null, rig: false, stay: false, meet: null, lapped: false, hook: null, drop: 0 };
+    const tok = { id: p.id, board: p, see, pic: null, place: null, obj: null, ship: null, slip: -1, anchor: -1, slot: null, busy: false, gone: 0, shown: 0, todo: [], playing: null, run: 0, odd: false, risen: null, rig: false, stay: false, meet: null, lapped: false, hook: null, drop: 0 };
     this.look(tok);
     tok.shown = tok.pic.build;
     tok.rig = tok.pic.rigged;
@@ -231,7 +232,6 @@ export class Director {
     if (tok.anchor >= 0) { this.anchorOf[tok.anchor] = null; tok.anchor = -1; }
     const i = this.fleet.indexOf(tok);
     if (i >= 0) this.fleet.splice(i, 1);
-    tok.breaking = false;
     tok.adrift = false;
   }
 
@@ -336,7 +336,7 @@ export class Director {
   goal(tok) {
     if (tok.place !== 'slip' || !tok.ship) return null;
     if (tok.stay) return tok.shown; // sent back: it stands as it stood until the inspector has said so
-    return tok.breaking ? 0 : tok.pic.status === 'done' ? 1 : tok.pic.build; // done: on its way down the ramp
+    return tok.pic.status === 'done' ? 1 : tok.pic.build; // done: on its way down the ramp
   }
 
   uneven(tok) {
@@ -595,38 +595,19 @@ export class Director {
       .then(() => { this.w.floatOff(o); this.scene.remove(o); ship.dispose(); });
   }
 
-  // anywhere -> scrap: a hull is broken up for timber, a drawing is thrown out
-  async scrap(tok, live) {
-    const { courier, wrights } = this.cast;
-    const title = short(tok.pic.title);
-    if (tok.ship && tok.slip >= 0 && wrights[tok.slip] && wrights[tok.slip].jobs.length < BUSY) {
-      const k = tok.slip;
-      await this.job(wrights[k], async (a) => {
-        a.doing = `breaking up “${title}”`;
-        await a.goTo(this.w.slips[k].spots[k % 2 ? 5 : 1]);
-        if (!live()) return;
-        tok.breaking = true;
-        await a.act('attack-melee-right', 3.5, { repeat: true });
-        a.hold(this.w.make.plank());
-        a.doing = 'carrying the timber back';
-        await a.goTo(this.w.stations.timber);
-        await a.act('interact-right', 0.9);
-        a.hold(null);
-      });
-    } else if (tok.obj && courier.jobs.length < BUSY) {
-      const from = PINNED[tok.place] === 'queue' ? this.w.stations.queue : this.w.stations.shelf;
-      await this.job(courier, async (a) => {
-        a.doing = `taking the cancelled order “${title}” away`;
-        await a.goTo(from);
-        await a.act('pick-up', 1.2);
-        if (live() && tok.obj) { this.scene.remove(tok.obj); tok.obj = null; }
-        a.hold(this.w.make.scroll());
-        await a.goTo({ ...this.w.stations.timber, x: this.w.stations.timber.x + 3.5 });
-        await a.act('interact-right', 0.9);
-        a.hold(null);
-      });
-    }
-    if (live()) this.put(tok, 'scrap');
+  // anywhere -> scrap: no story. The token fades slowly out of sight where it is, and the place it
+  // held is free at once. Nobody walks or works for it.
+  scrap(tok) {
+    const o = tok.ship ? tok.ship.o : tok.obj;
+    const ship = tok.ship;
+    tok.ship = null; // `put` must not take the thing away: it is left to fade
+    tok.obj = null;
+    this.put(tok, 'scrap');
+    if (!o) return;
+    this.w.fade(o, FADE).then(() => {
+      if (ship) { this.w.floatOff(o); ship.dispose(); }
+      this.scene.remove(o);
+    });
   }
 
   // ----- what changes while a ticket stays where it is -----
@@ -744,7 +725,7 @@ export class Director {
   // The token on a slip, once its keel is laid.
   onSlip(k) {
     const tok = this.slipOf[k];
-    return tok && tok.ship && tok.place === 'slip' && !tok.breaking && !tok.gone ? tok : null;
+    return tok && tok.ship && tok.place === 'slip' && !tok.gone ? tok : null;
   }
 
   // The ship under review that has a reviewer on it, if any.
@@ -776,7 +757,7 @@ export class Director {
       const landed = p.status === 'done'; // on its way down the ramp
       // the hull stands as high as the criteria met: it moves when one is met, taken back or struck out
       const goal = this.goal(tok);
-      tok.shown += (goal - tok.shown) * Math.min(1, dt * this.speed * (tok.breaking ? 1.2 : 0.5));
+      tok.shown += (goal - tok.shown) * Math.min(1, dt * this.speed * 0.5);
       if (tok.risen && !this.uneven(tok)) { const done = tok.risen; tok.risen = null; done(); }
       tok.ship.setBuild(landed ? 1 : tok.shown);
       tok.ship.setRigged(landed || tok.rig);

@@ -61,12 +61,13 @@ export function startDemo(onState, { docks = 4 } = {}) {
     } else if (p.left <= 0) {
       if (!p.asked && (p.rounds === 0 || Math.random() < 0.4)) return Object.assign(p, { phase: 'asking', left: rnd(9, 13), asked: true, about: due()[0] || null });
       const flying = tickets.filter((t) => t.status === 'in_progress');
-      for (const t of due()) {
-        t.status = Math.random() < 0.08 ? 'cancel' : 'todo';
+      // the second round cancels one order for certain, so that its token fading out is seen; later, now and then
+      due().forEach((t, i) => {
+        t.status = (p.rounds === 1 && i === 0) || Math.random() < 0.08 ? 'cancel' : 'todo';
         t.wait = rnd(30, 45);
         if (t.status === 'todo' && flying.length && Math.random() < 0.4) t.after = flying[Math.floor(rnd(0, flying.length))].id;
         log(t, 'moved', { to: t.status });
-      }
+      });
       p.phase = 'idle';
       p.rounds++;
     }
