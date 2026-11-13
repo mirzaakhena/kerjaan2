@@ -394,8 +394,11 @@ export function buildWorld(scene) {
     afloat.push({ o, y: SEA - draft, phase: rnd() * 6, sway });
     return o;
   };
-  const MAIL_AWAY = { x: -21, z: 15.5, ry: -2.2 }, MAIL_IN = { x: -25.4, z: 8.6, ry: 0.15 };
-  const mailBoat = float('pirate/boat-row-small', MAIL_AWAY.x, MAIL_AWAY.z, { ry: MAIL_AWAY.ry, draft: 0.2 });
+  // the order boat: in from the open edge of the sea, alongside the pier, out past the pier's end to the other side
+  const MAIL = { far: { x: -15, z: 25.4 }, in: { x: -25.4, z: 8.6, ry: 0.15 }, round: { x: -27.2, z: 13.2 }, off: { x: -31.7, z: 22.5 } };
+  const mailBoat = float('pirate/boat-row-small', MAIL.far.x, MAIL.far.z, { draft: 0.2 });
+  mailBoat.visible = false; // there is a boat only while it brings orders
+  const mailCrate = prop(mailBoat, 'pirate/crate', 0, 0.22, 0, { s: 0.45 });
   float('watercraft/boat-fishing-small', 28.5, 13.5, { ry: 2.2, draft: 0.3 });
   float('watercraft/boat-tow-a', 21.5, 4.6, { ry: Math.PI / 2, draft: 0.4 });
   float('watercraft/boat-sail-a', 29, 23.5, { ry: 0.7, draft: 0.3 });
@@ -434,6 +437,7 @@ export function buildWorld(scene) {
     walk: { x: 0, z: -13.6, face: 0 },
   };
 
+  const towards = (a, b) => Math.atan2(b.x - a.x, b.z - a.z);
   const craneState = { aim: 0.5 };
   function update(t, dt) {
     const p = seaGeo.attributes.position.array;
@@ -471,14 +475,31 @@ export function buildWorld(scene) {
 
   return {
     stations, slips, shelfSlots, queueSlots, waitSlots, anchors, crane: craneState, update, move,
-    make: { scroll, plank, ship: makeShip },
+    make: { scroll, plank, crate: () => { const o = spawn('pirate/crate'); o.scale.setScalar(0.5); return o; }, ship: makeShip },
     sea: SEA,
     floatOn(o, draft, sway = 0.5) { afloat.push({ o, y: SEA - draft, phase: rnd() * 6, sway }); },
     floatOff(o) { const i = afloat.findIndex((f) => f.o === o); if (i >= 0) afloat.splice(i, 1); },
     setFlags(n) { flags.forEach((f, k) => { f.visible = k < n; }); },
-    // the mail boat rows in with a new order, and out again
-    mailIn: () => move(mailBoat, MAIL_IN, 5),
-    mailOut: () => move(mailBoat, MAIL_AWAY, 7),
+    // The order boat. `mailIn` resolves when it lies at the pier, `mailOut` when it is gone from
+    // sight; `mailTake` empties it. `pace` is how many times faster than usual it goes.
+    async mailIn(pace = 1) {
+      const { far, in: at } = MAIL;
+      mailBoat.position.x = far.x;
+      mailBoat.position.z = far.z;
+      mailBoat.rotation.y = towards(far, at);
+      mailBoat.scale.setScalar(0.02);
+      mailBoat.visible = mailCrate.visible = true;
+      await move(mailBoat, { x: -23.6, z: 12.6, s: 1 }, 8 / pace);
+      await move(mailBoat, at, 3 / pace);
+    },
+    mailTake() { mailCrate.visible = false; },
+    async mailOut(pace = 1) {
+      const { in: at, round, off } = MAIL;
+      await move(mailBoat, { ...round, ry: towards(at, round) }, 3.5 / pace);
+      await move(mailBoat, { ry: towards(round, off) }, 1.2 / pace);
+      await move(mailBoat, { ...off, s: 0.02 }, 7 / pace);
+      mailBoat.visible = false;
+    },
   };
 }
 

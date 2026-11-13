@@ -16,6 +16,7 @@ export function startDemo(onState) {
   let n = 0;
   let serial = 0;
   let clock = 0;
+  let sittings = 0; // how many times new orders were written
   const tickets = [];
   const make = (status) => {
     const size = [2, 3, 5, 6, 8][Math.floor(rnd(0, 5))];
@@ -66,8 +67,13 @@ export function startDemo(onState) {
   function tick(dt) {
     clock += dt;
     const flying = tickets.filter((t) => ['in_progress', 'review'].includes(t.status)).length;
-    // (no new order while the todo table is filling up: the demo keeps to what the table shows)
-    if (tickets.filter((t) => t.status === 'backlog').length < 2 && tickets.filter((t) => t.status === 'todo').length < 6 && Math.random() < dt / 35) log(make('backlog'), 'created', { status: 'backlog' });
+    // orders are written a few in one sitting, as a foreman does: they come as one party, by one boat
+    // (the first sitting soon and never a single order, so that a party is there to be seen)
+    const waiting = (status) => tickets.filter((t) => t.status === status).length;
+    if (waiting('backlog') < 2 && waiting('todo') < 4 && Math.random() < dt / (sittings ? 35 : 6)) {
+      const many = sittings++ ? Math.floor(rnd(1, 4)) : 3;
+      for (let k = 0; k < many; k++) { const t = make('backlog'); t.wait += k * rnd(4, 9); log(t, 'created', { status: 'backlog' }); }
+    }
     plan(dt);
     for (const t of tickets) {
       t.wait -= dt;

@@ -11,6 +11,10 @@ export const PLACE = { backlog: 'shelf', todo: 'queue', in_progress: 'slip', rev
 const ORDER = ['mail', 'shelf', 'queue', 'slip', 'bay'];
 const STEPS = ['deliver', 'plan', 'start', 'launch'];
 export const FLEET = 4; // how many landed ships stay at anchor
+// Orders written close together come as one party, by one boat: each within GROUP of the one
+// written before it, while that boat has not left the pier.
+export const GROUP = 60000;
+export const joins = (party, at) => !!party && party.open && at >= party.last && at - party.last <= GROUP;
 
 // The one move that brings a ticket nearer to where the board says it is.
 export function nextStep(from, to) {

@@ -1,8 +1,8 @@
 # Galangan: padanan viewer kanban ke ruang 3D
 
 Ditulis 13 November 2026, untuk versi 0.16.0; sepuluh macam kapal, pemutar
-linimasa, lalu perencana (Naval Architect) dan meja todo ditambahkan
-sesudahnya. Berkas ini mendaftar apa yang
+linimasa, perahu rombongan, lalu perencana (Naval Architect) dan meja todo
+ditambahkan sesudahnya. Berkas ini mendaftar apa yang
 terjadi di viewer kanban (`k2 view`) dan apa padanannya di halaman galangan
 (`/p/<proyek>/space`), serta apa yang belum punya padanan. Keputusan dan batas
 galangan ada di bagian "Galangan" pada akhir `docs/blueprint.md`.
@@ -56,7 +56,7 @@ kapal tunda tetap pada kecepatannya. Angkanya ada di `plan.js` (`CALM`,
 
 | Kejadian | Adegan |
 |---|---|
-| `created` | Perahu pos, Courier membawa gulungan ke rak ORDERS |
+| `created` | Perahu rombongan; Courier membawa peti ke rak ORDERS (lihat "Perahu rombongan") |
 | `moved` ke todo | Naval Architect mengambil tiket dari papan pesanan dan menjejerkannya di meja todo; tiket yang pindah hampir bersamaan dibawa dalam satu jalan |
 | `started` | Foreman membawa gulungan dari meja todo ke dok kosong; lunas diletakkan |
 | `check`, `uncheck`, `void` | Lambung naik atau turun |
@@ -93,10 +93,48 @@ Batas-batasnya:
   pembacaan kedua. Satu pembacaan saja belum cukup, sebab papan bisa terbaca
   tepat di antara berkas yang pindah dan kejadiannya yang ditulis.
 - Tiket yang muncul di papan tanpa kejadian `created` (berkas ditaruh dengan
-  tangan) diletakkan di tempatnya dengan cara yang sama, tanpa perahu pos.
+  tangan) diletakkan di tempatnya dengan cara yang sama, tanpa perahu.
 - Mode `?demo` mengarang linimasanya sendiri dalam bentuk yang sama dengan
   jawaban server, jadi demo diputar oleh mesin yang sama dengan papan
   sungguhan: satu tiket bisa ditonton dari pesanan sampai berlabuh.
+
+## Perahu rombongan
+
+Tiket baru (kejadian `created`) datang dengan perahu kecil, serombongan.
+
+- **Satu rombongan** adalah tiket-tiket yang dibuat berdekatan: tiap tiket
+  dibuat paling lama **60 detik** sesudah tiket sebelumnya di rombongan itu,
+  selagi perahunya belum pergi dari dermaga. Yang dihitung adalah waktu tiket
+  dibuat di papan, bukan waktu adegannya diputar. Angkanya `GROUP` di
+  `plan.js`, aturannya `joins`.
+- Perahu berangkat begitu tiket pertama terlihat; galangan tidak menunggu
+  rombongannya lengkap. Tiket yang dibuat selagi perahu masih di jalan atau
+  berlabuh ikut naik. Tiket yang dibuat lebih dari 60 detik sesudah tiket
+  sebelumnya, atau sesudah perahu pergi, menunggu perahu berikutnya, yang baru
+  muncul setelah perahu sebelumnya hilang dari pandangan.
+- Perahu muncul dari ujung laut (tepi luar teluk), berlabuh di sisi dermaga,
+  lalu pergi memutari ujung dermaga ke sisi seberangnya dan menghilang. Di
+  luar itu tidak ada perahu di dermaga.
+- Courier hanya berjalan ke dermaga setelah perahu berlabuh. Ia mengambil satu
+  peti, berapa pun isi rombongannya; saat peti diangkat perahu pergi, dan
+  rombongan itu tertutup. Semua tiket rombongan muncul di rak ORDERS pada saat
+  Courier tiba di sana, tidak sebelumnya. Pekerjaan pengisi waktu Courier tidak
+  lagi membawanya ke dermaga.
+- Tiket usulan yang lahir sesudah tiket lain selesai memakai kejadian
+  `created` yang sama, jadi datang dengan cara yang sama.
+- Mode `?demo` menulis pesanan beberapa sekaligus; kiriman pertamanya, tidak
+  lama setelah halaman dibuka, selalu satu rombongan berisi tiga tiket.
+
+Batas-batasnya:
+
+- Bentuk perahunya masih perahu dayung yang lama; bentuk baru belum dipilih.
+- Courier dipanggil oleh perahu yang berlabuh, bukan oleh lonceng Keeper (belum
+  diputuskan).
+- Bila Courier sedang sibuk, perahu menunggu di dermaga sampai ia datang, dan
+  perahu berikutnya ikut tertunda. Bila galangan tertinggal lebih dari 5
+  menit, tiket langsung diletakkan di rak tanpa menunggu peti.
+- Rak ORDERS memuat 12 gulungan; rombongan yang lebih besar tetap dibawa satu
+  peti, sisanya tidak digambar.
 
 ## Pemeran
 
@@ -114,7 +152,7 @@ Batas-batasnya:
 
 | Saat di viewer kanban… | …di galangan |
 |---|---|
-| Tiket baru muncul (selagi halaman terbuka) | Perahu pos merapat; Courier berjalan ke ujung dermaga, mengambil gulungan, membawanya ke rak ORDERS |
+| Tiket baru muncul (selagi halaman terbuka), termasuk usulan sesudah tiket lain selesai | Perahu rombongan datang dari ujung laut dan berlabuh di dermaga; Courier berjalan ke ujung dermaga, mengambil satu peti, dan menaruh semua tiket rombongan itu di rak ORDERS; perahu pergi ke sisi lain dan menghilang |
 | Tiket ada di kolom backlog | Satu gulungan di rak ORDERS |
 | Kartu "Planning the backlog" di Control room (planner sedang bekerja) | Naval Architect berdiri di papan pesanan (rak ORDERS) dan membaca tiket; keterangannya adalah langkah terakhir planner. Di luar itu ia di meja DRAWINGS |
 | Pertanyaan planner menunggu pemilik | Naval Architect memakai balon "?" di papan pesanan; di antara dua giliran planner ia tetap di sana, diam, sampai semua pertanyaan planner terjawab |
