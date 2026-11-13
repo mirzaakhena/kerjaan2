@@ -19,3 +19,8 @@
 {"t":"2026-11-14 00:07:04","event":"agent","role":"reviewer","agent":"a6824c62863bceeaa","step":"review:1:0:0","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
 {"t":"2026-11-14 00:10:37","event":"verdict","result":"pass","round":1,"commit":"09e67c7","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e","by":"reviewer:a6824c62863bceeaa"}
 {"t":"2026-11-14 00:10:47","event":"landed","branch":"k2/261113234801-mockup-derek-di-tiap","files":["docs/galangan-tahap2.md","docs/mockups/galangan/derek-plan.js","docs/mockups/galangan/derek.html","docs/mockups/galangan/derek.js","docs/mockups/galangan/index.html","tests/viewer.test.mjs"],"session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-14 00:16:12","event":"manual-ok","key":"M1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-14 00:18:15","event":"assumption-confirmed","key":"A1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-14 00:18:15","event":"assumption-confirmed","key":"A2","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-14 00:18:15","event":"assumption-confirmed","key":"A3","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-14 00:18:15","event":"assumption-confirmed","key":"A4","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}

@@ -46,7 +46,7 @@ sempit dan memilih penempatannya.
 - [x] Derek terlihat bekerja: lengannya mengayun membawa muatan ke lambung berulang-ulang, tanpa menembus kapal, tukang, atau derek tetangga.
 - [x] Kamera bisa diputar dan di-zoom seperti di ruang pamer lainnya.
 - [x] Galangan yang sebenarnya (halaman Shipyard di viewer) tidak berubah.
-- [ ] (owner) Pemilik bisa membandingkan pilihan-pilihan itu dan menilai apakah ruang kapal menjadi sempit.
+- [x] (owner) Pemilik bisa membandingkan pilihan-pilihan itu dan menilai apakah ruang kapal menjadi sempit.
 
 ## Out of scope
 
@@ -57,29 +57,34 @@ menunggu pilihan pemilik sesudah melihat mockup ini.
 <!-- k2:record — written by k2 only; do not edit by hand -->
 
 ## Assumptions
-- A1 [unseen] Tiga dari lima pilihan (F3, F4, F5) memakai derek A1 dengan tapak dikecilkan dari 2,4 menjadi 0,9; tiang, lengan, dan warnanya tetap A1.
+- A1 [confirmed] Tiga dari lima pilihan (F3, F4, F5) memakai derek A1 dengan tapak dikecilkan dari 2,4 menjadi 0,9; tiang, lengan, dan warnanya tetap A1.
   Why: Dengan tapak asli 2,4 derek tidak muat di dok mana pun tanpa menginjak tempat berdiri tukang (F1 dan F2 memperlihatkan itu); tanpa pilihan bertapak kecil pemilik tidak punya penempatan yang muat untuk dibandingkan.
   If wrong: Hapus F3–F5 dari OPTIONS di docs/mockups/galangan/derek-plan.js, atau ubah SLIM menjadi ukuran tapak yang diinginkan.
-- A2 [unseen] Kait derek di mockup bisa bergeser sepanjang lengan dan muatannya tidak ikut berputar; derek di galangan sekarang kaitnya tetap di ujung lengan.
+  Confirmed by owner, 2026-11-14
+- A2 [confirmed] Kait derek di mockup bisa bergeser sepanjang lengan dan muatannya tidak ikut berputar; derek di galangan sekarang kaitnya tetap di ujung lengan.
   Why: Dengan kait tetap di jarak 5 derek hanya bisa menaruh muatan pada satu lingkaran, dan dari samping dok lingkaran itu tidak jatuh di lambung.
   If wrong: Ubah REACH di derek-plan.js menjadi [5, 5]; titik ambil dan taruh perlu dipindah ke lingkaran itu.
-- A3 [unseen] Jarak bebas dihitung dengan tukang sebagai lingkaran berjari-jari 0,5 di tiap tempat berdirinya, dan 'rapat' berarti lebih sempit dari 0,1 (jarak tersempit galangan sekarang). Palet bahan tidak dihitung, derek tunggal dekat mercusuar tidak digambar, jalan tukang dan perancah ikut dihitung selain empat hal yang diminta.
+  Confirmed by owner, 2026-11-14
+- A3 [confirmed] Jarak bebas dihitung dengan tukang sebagai lingkaran berjari-jari 0,5 di tiap tempat berdirinya, dan 'rapat' berarti lebih sempit dari 0,1 (jarak tersempit galangan sekarang). Palet bahan tidak dihitung, derek tunggal dekat mercusuar tidak digambar, jalan tukang dan perancah ikut dihitung selain empat hal yang diminta.
   Why: Tiket meminta angka tetapi tidak menyebut ukuran badan tukang atau batas rapat; 0,5 adalah kepala model tukang pada skala galangan.
   If wrong: Ubah BODY dan TIGHT di derek-plan.js.
-- A4 [unseen] Kapal diperlihatkan pada tahap lambung berdiri tanpa tiang; ada tombol 'tiang berdiri' yang memperlihatkan kapal selesai, dan di situ semua derek berhenti menghadap laut.
+  Confirmed by owner, 2026-11-14
+- A4 [confirmed] Kapal diperlihatkan pada tahap lambung berdiri tanpa tiang; ada tombol 'tiang berdiri' yang memperlihatkan kapal selesai, dan di situ semua derek berhenti menghadap laut.
   Why: Tiang kapal terbesar (9,0) lebih tinggi dari lengan derek (7,6): lengan tidak bisa mengayun di atas kapal yang tiangnya sudah berdiri tanpa menembusnya.
   If wrong: Hapus tombol tahap di derek.html dan cabang masts di derek.js.
+  Confirmed by owner, 2026-11-14
 
 ## Decisions
 - Derek bertetangga bekerja selisih setengah putaran: pada 6 dok jarak antar-derek (7,8) lebih pendek dari lengan ditambah pemberat (8,7), sehingga dua lengan yang sama-sama menunjuk sepanjang baris akan bertabrakan.
 
 ## Manual checks
-- M1 [waiting] (item 8) 1. Di akar repo: python3 -m http.server 4400 --bind 127.0.0.1
+- M1 [ok] (item 8) 1. Di akar repo: python3 -m http.server 4400 --bind 127.0.0.1
   2. Buka http://127.0.0.1:4400/docs/mockups/galangan/ lalu klik 'F · Derek di tiap dok' di baris atas.
   3. Klik F1 sampai F5, dan untuk tiap pilihan klik 4, 6, 10 di sebelah 'Dok:'. Seret untuk memutar, roda tetikus untuk zoom.
   4. Baca panel kanan bawah: kalimat berwarna, jarak bebas per benda, dan tabel 'Semua pilihan' (selnya bisa diklik).
   5. Klik 'tiang berdiri' untuk melihat kapal selesai.
   Yang seharusnya terlihat: derek di tiap dok mengayun membawa peti ke lambung; F1 dan F2 bersilang merah di semua jumlah dok, F4 hijau di 4, 6, dan 10 dok, F5 hijau di 4 dok.
+  Checked by owner, 2026-11-14
 
 ## Handoff
 Ruang pamer mendapat halaman baru, docs/mockups/galangan/derek.html (tombol F di index.html): derek putar A1 di tiap dok dalam lima penempatan F1–F5, dengan 4, 6, atau 10 dok, jarak bebas dalam angka, dan tanda merah bila bersinggungan. derek-plan.js murni (tanpa three.js) dan memegang letak derek, jarak bebas, serta gerak lengan; derek.js hanya menggambar. Yang tidak boleh rusak: letak dok selalu dari yardOf dan footprints di viewer/web/space/plan.js, tidak disalin; tidak ada berkas di viewer/ yang diubah; uji 'mockup of a crane' menahan bahwa lengan dan muatan tidak pernah menyentuh apa pun. Keputusan 34 tidak diubah.
