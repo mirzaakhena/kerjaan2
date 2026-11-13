@@ -15,6 +15,10 @@ const STEPS = ['deliver', 'plan', 'prepare', 'fetch', 'launch'];
 // Where the yard has a ticket, by what it has seen of it.
 export const placeOf = (see) => (see.status === 'in_progress' && !see.fetched ? 'ready' : PLACE[see.status] || 'shelf');
 export const FLEET = 4; // how many landed ships stay at anchor
+// Orders written close together come as one party, by one boat: each within GROUP of the one
+// written before it, while that boat has not left the pier.
+export const GROUP = 60000;
+export const joins = (party, at) => !!party && party.open && at >= party.last && at - party.last <= GROUP;
 
 // The one move that brings a ticket nearer to where the board says it is.
 export function nextStep(from, to) {

@@ -385,6 +385,128 @@ test('the yard gives every ticket one of ten ships, by a hash of its ID, the sam
 
 // The director with a yard and people that are not drawn: every walk and wait is over at once.
 // `journal` is what was played, in order: each carrying step, each verdict, each change of a hull on a slip.
+// The order boat of a staged yard, held by the test: every coming and going is written down, and
+// each waits until the test lets it through (`boat.pass()`), unless `boat.free` is set.
+function heldBoat({ world, cast, dir }, log) {
+  const waiting = [];
+  const boat = { free: false, pass() { for (const go of waiting.splice(0)) go(); } };
+  const gate = (what) => () => { log.push(what); return boat.free ? undefined : new Promise((go) => waiting.push(go)); };
+  world.mailIn = gate('boat in');
+  world.mailOut = gate('boat out');
+  world.mailTake = () => log.push('crate taken');
+  const { courier } = cast;
+  const shelved = () => [...dir.tokens.values()].filter((t) => t.place === 'shelf').map((t) => t.id).sort().join(',');
+  courier.goTo = async (to) => { log.push(`courier to ${to.name} [${shelved()}]`); };
+  return boat;
+}
+const tick = async (n = 20) => { for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r)); };
+
+test('orders written close together come by one boat as one party; one written much later comes by the next', async () => {
+  const { GROUP, joins } = await import('../viewer/web/space/plan.js');
+  assert.equal(GROUP, 60000, 'close together: within 60 seconds of the one before');
+  // the rule, case by case
+  const party = { open: true, last: 100000 };
+  assert.equal(joins(party, 100000), true, 'written at the same moment');
+  assert.equal(joins(party, 100000 + GROUP), true, '60 seconds after the one before');
+  assert.equal(joins(party, 100001 + GROUP), false, 'a moment more than 60 seconds');
+  assert.equal(joins({ ...party, open: false }, 100001), false, 'the boat has left');
+  assert.equal(joins(null, 100000), false, 'no boat');
+
+  const yard = await stagedYard();
+  const { dir, settle, T, board, where, errors, journal, E, trailOf, clock } = yard;
+  const log = [];
+  const boat = heldBoat(yard, log);
+  boat.free = true;
+  dir.update(board([]), trailOf([]));
+  // three in one sitting, each within 60 s of the one before it (the third is 70 s after the first), a fourth much later
+  const t0 = clock.t;
+  const made = [['a', 0], ['b', 20000], ['c', 70000], ['d', 70000 + GROUP + 1]].map(([id, dt]) => ({ ...E(id, 'created', { status: 'backlog' }), at: t0 + dt }));
+  clock.t = t0 + 140000;
+  dir.update(board(['a', 'b', 'c', 'd'].map((id) => T(id, 'backlog'))), trailOf(made));
+  assert.deepEqual(where(), { a: 'mail', b: 'mail', c: 'mail', d: 'mail' });
+  await settle();
+  assert.deepEqual(where(), { a: 'shelf', b: 'shelf', c: 'shelf', d: 'shelf' });
+  // one boat and one walk for the three: nothing is on the shelf until the courier is back at it; then the next boat, for the one
+  assert.deepEqual(log, [
+    'boat in', 'courier to pierEnd []', 'crate taken', 'boat out', 'courier to shelf []',
+    'boat in', 'courier to pierEnd [a,b,c]', 'crate taken', 'boat out', 'courier to shelf [a,b,c]',
+  ]);
+  assert.deepEqual(journal, ['deliver a', 'deliver b', 'deliver c', 'deliver d']);
+  assert.equal(dir.party, null, 'no boat is left behind');
+  assert.deepEqual(errors, []);
+});
+
+test('the boat comes in, lies at the pier and leaves; the courier goes out only to a boat that lies there, and an order shows only once filed', async () => {
+  const yard = await stagedYard();
+  const { dir, T, board, where, errors, E, trailOf, cast } = yard;
+  const log = [];
+  const boat = heldBoat(yard, log);
+  const { courier } = cast;
+  const work = async () => { for (let job; (job = courier.jobs.shift());) { await job.run(courier); job.done(); } await tick(); };
+  dir.update(board([]), trailOf([]));
+  const all = (...ids) => board(ids.map((id) => T(id, 'backlog')));
+  const made = (...ids) => trailOf(ids.map((id) => E(id, 'created', { status: 'backlog' })));
+
+  // the boat sets out as soon as the first order is seen; while it is on its way nobody is asked to the pier
+  dir.update(all('a'), made('a'));
+  await tick();
+  assert.deepEqual(log, ['boat in']);
+  assert.equal(courier.jobs.length, 0, 'no boat at the pier: the courier is not called');
+  // an order written while the boat is on its way goes with it
+  dir.update(all('a', 'b'), made('b'));
+  await tick();
+  assert.deepEqual(log, ['boat in']);
+  boat.pass(); // it lies at the pier
+  await tick();
+  assert.equal(courier.jobs.length, 1, 'the boat lies at the pier: the courier is called, once');
+  // an order written while the boat lies at the pier goes with it too
+  dir.update(all('a', 'b', 'c'), made('c'));
+  await tick();
+  assert.equal(courier.jobs.length, 1);
+  assert.deepEqual(where(), { a: 'mail', b: 'mail', c: 'mail' }, 'none shows before the courier has filed it');
+  await work();
+  assert.deepEqual(log, ['boat in', 'courier to pierEnd []', 'crate taken', 'boat out', 'courier to shelf []']);
+  assert.deepEqual(where(), { a: 'shelf', b: 'shelf', c: 'shelf' }, 'the whole party is filed in one walk');
+  // an order written once the boat has left the pier waits for the next boat, however soon it was written
+  dir.update(all('a', 'b', 'c', 'd'), made('d'));
+  await tick();
+  assert.equal(where().d, 'mail');
+  assert.equal(log.length, 5, 'the next boat does not come while the first is still in sight');
+  assert.equal(courier.jobs.length, 0);
+  boat.pass(); // the first boat is gone
+  await tick();
+  assert.equal(log[5], 'boat in');
+  boat.pass();
+  await tick();
+  await work();
+  boat.pass();
+  await tick();
+  assert.deepEqual(log.slice(5), ['boat in', 'courier to pierEnd [a,b,c]', 'crate taken', 'boat out', 'courier to shelf [a,b,c]']);
+  assert.equal(where().d, 'shelf');
+  assert.equal(dir.party, null);
+
+  // out of hours the courier keeps off the pier: no chore of theirs goes there
+  const castSrc = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'viewer', 'web', 'space', 'cast.js'), 'utf8');
+  assert.equal(castSrc.match(/pierEnd/g), null, 'nobody walks to the pier of their own accord');
+  assert.deepEqual(errors, []);
+});
+
+test('an order proposed after another ticket landed is created as any other, and comes by the boat the same way', async () => {
+  const yard = await stagedYard();
+  const { dir, settle, T, board, where, errors, journal, E, trailOf } = yard;
+  const log = [];
+  heldBoat(yard, log).free = true;
+  dir.update(board([T('a', 'review', { criteria: [{ done: true }], state: { passed: true } })]), trailOf([]));
+  dir.update(board([T('a', 'done', { criteria: [{ done: true }], landed: 5 }), T('p', 'backlog'), T('q', 'backlog')]),
+    trailOf([E('a', 'landed'), E('p', 'created', { status: 'backlog', session: 's1' }), E('q', 'created', { status: 'backlog', session: 's1' })]));
+  assert.deepEqual(where(), { a: 'slip', p: 'mail', q: 'mail' });
+  await settle();
+  assert.deepEqual(where(), { a: 'bay', p: 'shelf', q: 'shelf' });
+  assert.deepEqual(log.filter((x) => x.startsWith('boat')), ['boat in', 'boat out'], 'one boat for the two proposals');
+  assert.ok(journal.includes('deliver p') && journal.includes('deliver q') && journal.includes('launch a'));
+  assert.deepEqual(errors, []);
+});
+
 async function stagedYard() {
   const { Director } = await import('../viewer/web/space/director.js');
   const thing = () => ({ position: { x: 0, y: 0, z: 0, set(x, y, z) { Object.assign(this, { x, y, z }); } }, rotation: { y: 0, set() {} }, userData: {}, visible: true });
@@ -396,9 +518,9 @@ async function stagedYard() {
     setDocks(n) { this.laid.push(n); this.slips.length = 0; for (let k = 0; k < n; k++) this.slips.push(slipAt(k)); },
     anchors: [0, 1, 2, 3].map((k) => ({ x: k * 10, z: 20, ry: 0 })),
     shelfSlots: Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })), queueSlots: Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })),
-    stations: new Proxy({}, { get: (_, name) => ({ ...spot, station: name }) }), crane: {}, sea: 0,
-    make: { scroll: thing, plank: thing, ship: (size, livery) => ({ o: thing(), size, livery, built: null, rigged: null, setBuild(b) { this.built = b; }, setRigged(v) { this.rigged = v; }, dispose() {} }) },
-    move: async () => {}, floatOn() {}, floatOff() {}, setFlags() {}, mailIn() {}, mailOut() {},
+    stations: new Proxy({}, { get: (_, name) => ({ x: 0, z: 0, name, station: name }) }), crane: {}, sea: 0,
+    make: { scroll: thing, plank: thing, crate: thing, ship: (size, livery) => ({ o: thing(), size, livery, built: null, rigged: null, setBuild(b) { this.built = b; }, setRigged(v) { this.rigged = v; }, dispose() {} }) },
+    move: async () => {}, floatOn() {}, floatOff() {}, setFlags() {}, mailIn() {}, mailTake() {}, mailOut() {},
   };
   // a person keeps a diary: where they went (a station, or a slip) and what they took in their hands
   const person = (name) => ({ name, jobs: [], doing: '', diary: [], say() {}, hold(item) { this.diary.push(item ? 'takes a drawing' : 'hands empty'); }, async goTo(to) { this.diary.push(to.station ? `to ${to.station}` : `to slip ${to.slip + 1}`); }, act: async () => {}, wait: async () => {} });
@@ -1015,8 +1137,10 @@ test('the yard keeps a ticket that one look at the board missed, and sees a new 
 
 test('the demo makes up a trail too: a ticket can be watched from its order to its anchor', async () => {
   const { startDemo } = await import('../viewer/web/space/demo.js');
-  const { dir, settle, where, errors, journal } = await stagedYard();
+  const { dir, settle, where, errors, journal, world } = await stagedYard();
   const reads = [];
+  const boats = { n: 0 };
+  world.mailIn = () => { boats.n++; };
   const stop = startDemo((D, trail) => reads.push([D, trail]));
   stop(); // no timer: the test moves the demo on by hand
   assert.equal(reads.length, 1);
@@ -1042,6 +1166,10 @@ test('the demo makes up a trail too: a ticket can be watched from its order to i
     born = seen.find((e) => e.event === 'landed' && seen.some((x) => x.ticket === e.ticket && x.event === 'created'))?.ticket || null;
   }
   assert.ok(born, 'a ticket ordered in the demo landed');
+  // the first orders written in the demo are a party of more than one, by one boat
+  const firstAt = seen.find((e) => e.event === 'created').at;
+  assert.ok(seen.filter((e) => e.event === 'created' && e.at - firstAt < 1000).length > 1, 'more than one order in the first party');
+  assert.ok(boats.n < seen.filter((e) => e.event === 'created').length, 'fewer boats than orders');
   const life = seen.filter((e) => e.ticket === born).map((e) => e.event);
   assert.deepEqual([life[0], life[1], life[2], life[3], life[life.length - 1]], ['created', 'moved', 'started', 'agent', 'landed']);
   assert.ok(life.includes('check') && life.includes('submitted') && life.includes('verdict'));
