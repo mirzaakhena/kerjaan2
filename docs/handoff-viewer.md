@@ -68,7 +68,15 @@ dilihat ada di bagian "Galangan" pada akhir `docs/blueprint.md`.
 Alamat: `/` daftar proyek · `/p/<proyek>/` halaman proyek
 (`?tab=board|history`, `?q=`, `?lane=`, `?hide=`, `?t=<id>&pane=record|timeline`)
 · `/api/projects` · `/api/p/<proyek>/state` · `/api/p/<proyek>/ticket/<id>`
-· `/api/p/<proyek>/events`.
+· `/api/p/<proyek>/events` · `/api/p/<proyek>/timeline?since=<titik>`.
+
+`timeline` menjawab `{ now, point, reread, events }`: kejadian linimasa semua
+tiket papan itu sesudah `since`, terlama dulu, tiap kejadian dengan `ticket`
+dan `at`. Tanpa `since`: tanpa sejarah, hanya `point` untuk permintaan
+berikutnya. Titik yang tidak dikenali, lebih dari 10 menit ke belakang, atau
+dari papan yang sudah diganti: tanpa sejarah, `reread: true` (halaman membaca
+ulang `state`). Titik hanya hidup di ingatan server; server yang dinyalakan
+ulang tidak mengenal titik lama.
 
 Data untuk mencoba: `/Users/mirza/Workspace/k2-akunting/.kerjaan2/` (jangan
 ditulis kecuali lewat sesi sungguhannya sendiri).
