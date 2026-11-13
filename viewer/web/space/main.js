@@ -25,7 +25,7 @@ $('#demo-note').hidden = !DEMO;
 // ----- the board -----
 let D = null; // the last state read
 let director = null;
-function show(state) {
+function show(state, trail = null) {
   D = state;
   D.tickets = D.tickets || [];
   D.inbox = D.inbox || [];
@@ -35,7 +35,7 @@ function show(state) {
     + (D.inbox.length ? `<span class="ro need"><i style="background:var(--in_progress)"></i>need you<b>${D.inbox.length}</b></span>` : '');
   problem('');
   // a fault in the yard is a fault of this page, not of the board: it is not said as one
-  try { if (director) director.update(D); } catch (e) { console.error('the yard:', e); }
+  try { if (director) director.update(D, trail); } catch (e) { console.error('the yard:', e); }
   renderCard();
 }
 function problem(text) {
@@ -43,19 +43,33 @@ function problem(text) {
   $('#problem').textContent = text;
 }
 let asking = false, again = false;
+let point = null; // how far the trail has been read: the next read asks from here
+async function get(what) {
+  const r = await fetch(`/api${HERE}/${what}`);
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+}
+// The board, then what happened since the last read. In that order: the trail
+// then holds every event the state shows, and the yard plays them in turn.
+// A read that fails keeps the point, so the next one misses and repeats nothing.
 async function read() {
   if (asking) { again = true; return; }
   asking = true;
   try {
-    const r = await fetch(`/api${HERE}/state`);
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
-    show(d);
+    const d = await get('state');
+    const trail = await get(`timeline${point ? `?since=${encodeURIComponent(point)}` : ''}`).catch(() => null);
+    if (trail) point = trail.point;
+    show(d, trail);
   } catch (e) {
     problem(`The board cannot be read: ${e.message || e}. The yard shows what was last seen.`);
   }
   asking = false;
   if (again) { again = false; read(); }
+}
+let soon = 0;
+function readSoon() {
+  if (!soon) soon = setTimeout(() => { soon = 0; read(); }, 1000);
 }
 function follow_board() {
   if (DEMO) return startDemo(show);
@@ -224,7 +238,7 @@ function frame() {
   const t = clock.elapsedTime;
   world.update(t, dt);
   director.frame(dt);
-  for (const a of actors) a.update(dt);
+  for (const a of actors) a.update(a.hurry ? dt * director.speed : dt); // a scene keeps the yard's pace
   if (followed) {
     // the camera keeps its angle and rides along with the person
     tmp.copy(followed.position).setY(1.2).sub(controls.target).multiplyScalar(1 - Math.exp(-dt * 5));
@@ -253,11 +267,12 @@ function frame() {
     const cast = startCast(scene, world, () => director);
     actors = cast.actors;
     director = new Director(scene, world, cast.cast);
+    if (!DEMO) director.ask = readSoon;
     cast.begin();
     renderRoster();
     $('#loading').hidden = true;
     renderer.setAnimationLoop(frame);
-    window.k2space = { scene, camera, controls, actors, world, director, follow, home };
+    window.k2space = { scene, camera, controls, actors, world, director, follow, home, read };
     follow_board();
   } catch (e) {
     console.error(e);

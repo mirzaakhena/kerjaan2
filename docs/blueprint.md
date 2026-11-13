@@ -946,3 +946,22 @@ Diminta pemilik: `k2 view` hanya menemukan papan satu tingkat di bawah
 - Pencarian tiga tingkat di folder kerja pemilik memakan sekitar 70 ms, maka
   server mengingat letak papan yang sudah ditemukan dan baru mencari lagi bila
   papan itu hilang; daftar papan di halaman depan selalu mencari ulang.
+
+## Galangan memutar linimasa (tiket 261113190702)
+
+Keputusan pemilik 24 dan 33 (`docs/galangan-tahap2.md`) mengganti dua hal dari
+bagian "Galangan" di atas:
+
+- Galangan tidak lagi membandingkan keadaan papan dari satu pembacaan ke
+  pembacaan berikutnya. Ia memutar linimasa tiap tiket: tiap kejadian satu
+  adegan, berurutan per tiket, dengan jamnya sendiri. Sampai 30 detik
+  tertinggal adegan diputar biasa; lebih dari itu dipercepat sampai 4 kali;
+  lebih dari 5 menit tertinggal galangan langsung diletakkan di keadaan
+  sekarang tanpa cerita (jawaban pemilik atas Q1 tiket itu). Halaman yang baru
+  dibuka tetap mulai dari keadaan sekarang.
+- Lambung tidak lagi merayap naik selama agen bekerja. Ia bergerak hanya
+  ketika kriteria terpenuhi, dicabut, atau dibatalkan.
+
+Kejadian yang belum punya adegan di 0.16.0 dilewati, dan tiket yang mundur
+tetap langsung diletakkan (Q2 dan Q4). Rinciannya, beserta batasnya, ada di
+`docs/galangan-padanan.md` bagian "Linimasa".
