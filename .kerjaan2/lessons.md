@@ -7,3 +7,4 @@ What earlier tickets learned about this project. Newest last; k2 keeps the last 
 - SubagentStop bisa tiba sebelum PostToolUse alat Agent bila agen dijalankan di latar depan: hook yang mencatat 'sedang bekerja' harus memeriksa status 'completed' atau berhenti yang sudah terlihat.
 - Galangan: uji director memakai stagedYard dengan journal adegan; kejadian diumpankan lewat dir.update(board, trailOf([E(id, 'check', { n: 1 })])), dan settle() ikut menjalankan frame supaya lambung sampai.
 - Halaman galangan bisa dijalankan tanpa layar: playwright Python dengan --use-angle=metal --enable-gpu memberi 60 bingkai per detik; swiftshader hanya 10 dan membuat adegan tampak tertinggal.
+- Galangan: uji perahu rombongan memakai heldBoat(yard, log) di tests/viewer.test.mjs; mailIn/mailOut ditahan sampai boat.pass(), dan stations di stagedYard kini bernama (to.name).

@@ -22,7 +22,8 @@ async function think(a, what) {
 
 const chores = {
   courier: [
-    async (a, w) => { a.doing = 'watching for the mail boat'; await a.goTo(near(w.stations.pierEnd, 0.6)); await a.wait(rnd(3, 6)); },
+    // (never out on the pier: the courier goes there only when a boat lies alongside)
+    async (a, w) => { a.doing = 'sorting the orders'; await a.goTo(near(w.stations.orders, 0.6)); await a.act('interact-right', rnd(2, 4), { repeat: true }); },
     async (a, w) => { a.doing = 'tidying the order shelf'; await a.goTo(w.stations.shelf); await a.act('interact-right', rnd(2, 4), { repeat: true }); },
     async (a, w) => { a.doing = 'minding the office'; await a.goTo(w.stations.orders); await a.wait(rnd(3, 6)); },
   ],
