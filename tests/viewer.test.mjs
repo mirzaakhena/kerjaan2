@@ -325,6 +325,58 @@ test('the yard reads the board: where each ticket is, who is on it, and what wai
   assert.deepEqual([2, 5, 9].map((n) => sizeOf({ criteria: Array.from({ length: n }, () => ({})) })), ['small', 'medium', 'large']);
 });
 
+test('the yard gives every ticket one of ten ships, by a hash of its ID, the same from the slip to the bay', async () => {
+  const web = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'viewer', 'web', 'space');
+  const { picture, liveryOf, sizeOf, LIVERIES } = await import('../viewer/web/space/plan.js');
+  assert.deepEqual(LIVERIES, ['white', 'red', 'teal', 'yellow', 'blue', 'green', 'orange', 'purple', 'pirate-red', 'pirate-white']);
+  // the same ID is the same ship on every load and every device: nothing but the ID goes in
+  assert.deepEqual(['261113190704', '261113190701', '261113191201', '261113190706'].map(liveryOf), ['pirate-white', 'purple', 'white', 'pirate-red'], 'the rule was changed: every ticket on every board changes ship');
+  // tickets written in one sitting are not neighbours, and all ten ships are handed out about evenly
+  const run = Array.from({ length: 1000 }, (_, k) => liveryOf(`2611131${String(10000 + k).slice(1)}0`));
+  const count = Object.fromEntries(LIVERIES.map((l) => [l, run.filter((x) => x === l).length]));
+  for (const l of LIVERIES) assert.ok(count[l] > 60 && count[l] < 140, `${l}: ${count[l]} of 1000`);
+  const step = run.slice(1).map((l, k) => (LIVERIES.indexOf(l) - LIVERIES.indexOf(run[k]) + 10) % 10);
+  for (let d = 0; d < 10; d++) assert.ok(step.filter((x) => x === d).length < 200, `consecutive IDs differ by ${d} too often: the hash is the ID's own digits`);
+  // the picture carries it, whatever the ticket's status and size
+  const T = (id, status, n) => ({ id, title: id, status, criteria: Array.from({ length: n }, () => ({ done: false })), state: {} });
+  for (const status of ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancel']) for (const n of [1, 5, 9]) {
+    const p = picture({ tickets: [T('261113190704', status, n)] }).tickets[0];
+    assert.equal(p.livery, 'pirate-white');
+    assert.equal(p.size, sizeOf({ criteria: Array.from({ length: n }, () => ({})) }), 'size still follows the criteria');
+  }
+  // the yard draws every livery in every size, and names no other
+  const world = fs.readFileSync(path.join(web, 'world.js'), 'utf8');
+  const drawn = world.slice(world.indexOf('const LIVERY = {'), world.indexOf('export function makeShip'));
+  assert.deepEqual([...drawn.matchAll(/'?([a-z-]+)'?: \{/g)].map((m) => m[1]).sort(), [...LIVERIES].sort());
+  for (const size of ['small', 'medium', 'large']) for (const style of ['', 'pirate-']) assert.ok(fs.existsSync(path.join(web, 'kits', 'pirate', `ship-${style}${size}.glb`)), `${style}${size}`);
+  // one ship object, made once with the ticket's livery, from keel to anchor; a page opened later makes the same
+  const { dir, settle, board, errors } = await stagedYard();
+  const ids = ['261113190704', '261113190701', '261113191201'];
+  dir.update(board(ids.map((id) => T(id, 'in_progress', 5))));
+  await settle();
+  const built = ids.map((id) => dir.tokens.get(id).ship);
+  assert.deepEqual(built.map((s) => [s.size, s.livery]), [['medium', 'pirate-white'], ['medium', 'purple'], ['medium', 'white']]);
+  dir.update(board(ids.map((id) => T(id, 'review', 5))));
+  await settle();
+  dir.update(board(ids.map((id, k) => ({ ...T(id, 'done', 5), landed: k + 1 }))));
+  await settle();
+  assert.deepEqual(ids.map((id) => dir.tokens.get(id).place), ['bay', 'bay', 'bay']);
+  assert.deepEqual(ids.map((id) => dir.tokens.get(id).ship), built, 'the ship at anchor is the one that was built');
+  const later = await stagedYard();
+  later.dir.update(later.board(ids.map((id, k) => ({ ...T(id, 'done', 5), landed: k + 1 }))));
+  await later.settle();
+  assert.deepEqual(ids.map((id) => later.dir.tokens.get(id).ship.livery), ['pirate-white', 'purple', 'white']);
+  // the demo shows many kinds at once: its first tickets all differ, a pirate among those afloat
+  const { startDemo } = await import('../viewer/web/space/demo.js');
+  let first;
+  startDemo((D) => { first = D; })();
+  const shown = picture(first).tickets;
+  assert.equal(new Set(shown.map((t) => t.livery)).size, shown.length);
+  const hulls = shown.filter((t) => ['in_progress', 'review', 'done'].includes(t.status)).map((t) => t.livery);
+  assert.ok(hulls.length >= 5 && hulls.some((l) => l.startsWith('pirate')) && hulls.some((l) => !l.startsWith('pirate')), hulls.join(' '));
+  assert.deepEqual([...errors, ...later.errors], []);
+});
+
 // The director with a yard and people that are not drawn: every walk and wait is over at once.
 async function stagedYard() {
   const { Director } = await import('../viewer/web/space/director.js');
@@ -335,7 +387,7 @@ async function stagedYard() {
     anchors: [0, 1, 2, 3].map((k) => ({ x: k * 10, z: 20, ry: 0 })),
     shelfSlots: Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })), queueSlots: Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0, ry: 0 })),
     stations: new Proxy({}, { get: () => spot }), crane: {}, sea: 0,
-    make: { scroll: thing, plank: thing, ship: () => ({ o: thing(), setBuild() {}, setRigged() {}, dispose() {} }) },
+    make: { scroll: thing, plank: thing, ship: (size, livery) => ({ o: thing(), size, livery, setBuild() {}, setRigged() {}, dispose() {} }) },
     move: async () => {}, floatOn() {}, floatOff() {}, setFlags() {}, mailIn() {}, mailOut() {},
   };
   const person = () => ({ jobs: [], doing: '', say() {}, hold() {}, goTo: async () => {}, act: async () => {}, wait: async () => {} });

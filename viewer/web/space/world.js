@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { spawn, materialOf } from './kit.js';
 
 export const KIT = [
-  'pirate/barrel', 'pirate/crate', 'pirate/crate-bottles', 'pirate/chest', 'pirate/boat-row-small', 'pirate/flag-high', 'pirate/flag-pennant', 'pirate/palm-bend', 'pirate/palm-straight', 'pirate/palm-detailed-bend', 'pirate/palm-detailed-straight', 'pirate/patch-sand-foliage', 'pirate/platform-planks', 'pirate/rocks-a', 'pirate/rocks-b', 'pirate/rocks-c', 'pirate/ship-small', 'pirate/ship-medium', 'pirate/ship-large', 'pirate/structure', 'pirate/structure-roof', 'pirate/structure-fence', 'pirate/tower-complete-large', 'pirate/tower-watch', 'pirate/grass', 'pirate/grass-patch', 'pirate/grass-plant',
+  'pirate/barrel', 'pirate/crate', 'pirate/crate-bottles', 'pirate/chest', 'pirate/boat-row-small', 'pirate/flag-high', 'pirate/flag-pennant', 'pirate/palm-bend', 'pirate/palm-straight', 'pirate/palm-detailed-bend', 'pirate/palm-detailed-straight', 'pirate/patch-sand-foliage', 'pirate/platform-planks', 'pirate/rocks-a', 'pirate/rocks-b', 'pirate/rocks-c', 'pirate/ship-small', 'pirate/ship-medium', 'pirate/ship-large', 'pirate/ship-pirate-small', 'pirate/ship-pirate-medium', 'pirate/ship-pirate-large', 'pirate/structure', 'pirate/structure-roof', 'pirate/structure-fence', 'pirate/tower-complete-large', 'pirate/tower-watch', 'pirate/grass', 'pirate/grass-patch', 'pirate/grass-plant',
   'watercraft/boat-fishing-small', 'watercraft/boat-tug-a', 'watercraft/boat-tow-a', 'watercraft/boat-sail-a', 'watercraft/cargo-pile-a', 'watercraft/cargo-container-a', 'watercraft/cargo-container-b', 'watercraft/buoy', 'watercraft/buoy-flag',
 ];
 
@@ -129,26 +129,49 @@ export function plank() {
   return g;
 }
 
-// A ticket's ship. `setBuild(0..1)` shows it from the keel up: the hull stands
-// at 0.7, the masts at 1. Sails and flags come with `setRigged`.
-const SHIPS = { small: ['ship-small', 1], medium: ['ship-medium', 1], large: ['ship-large', 0.88] };
-export function makeShip(size) {
-  const [key, s] = SHIPS[size] || SHIPS.small;
-  const o = spawn(`pirate/${key}`);
+// A ticket's ship. Its size says how large the contract is, its livery (one of
+// ten, `liveryOf` in plan.js) which ticket it is: eight plain hulls told apart
+// by the colour of sail and flag, and two pirate hulls, whose black sail is
+// drawn in the model and cannot be dyed, told apart by their flag.
+// `setBuild(0..1)` shows it from the keel up: the hull stands at 0.7, the masts
+// at 1. Sails and flags come with `setRigged`.
+const SHIPS = { small: ['small', 1], medium: ['medium', 1], large: ['large', 0.88] };
+const LIVERY = {
+  white: { sail: 0xffffff }, red: { sail: 0xff6a5a }, teal: { sail: 0x5fe0d2 }, yellow: { sail: 0xffd75a },
+  blue: { sail: 0x6fb4ff }, green: { sail: 0x7ddc8f }, orange: { sail: 0xffa257 }, purple: { sail: 0xc49bff },
+  'pirate-red': { pirate: true, flag: 0xe5483a }, 'pirate-white': { pirate: true, flag: 0xffffff },
+};
+export function makeShip(size, livery) {
+  const [hull, s] = SHIPS[size] || SHIPS.small;
+  const look = LIVERY[livery] || LIVERY.white;
+  const o = spawn(`pirate/ship-${look.pirate ? 'pirate-' : ''}${hull}`);
   o.scale.setScalar(s);
+  o.userData.livery = LIVERY[livery] ? livery : 'white';
   const cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e3);
-  const m = materialOf('pirate').clone();
-  m.side = THREE.DoubleSide;
-  m.clippingPlanes = [cut];
-  m.clipShadows = true;
-  m.shadowSide = THREE.BackSide; // the inside of an open hull would otherwise shade itself in stripes
+  const mk = (color, plain) => {
+    const m = materialOf('pirate').clone();
+    if (plain) m.map = null; // a flag is one flat colour, whatever the model painted it
+    if (color != null) m.color.setHex(color);
+    m.side = THREE.DoubleSide;
+    m.clippingPlanes = [cut];
+    m.clipShadows = true;
+    m.shadowSide = THREE.BackSide; // the inside of an open hull would otherwise shade itself in stripes
+    return m;
+  };
+  const mHull = mk(null), mSail = look.pirate ? mHull : mk(look.sail), mFlag = mk(look.flag ?? look.sail, true);
   const rig = [];
-  o.traverse((n) => { if (n.isMesh) n.material = m; if (/^(sail|flag)/.test(n.name)) rig.push(n); });
+  o.traverse((n) => { if (n.isMesh) n.material = mHull; });
+  o.traverse((n) => {
+    const m = /^sail/.test(n.name) ? mSail : /^flag/.test(n.name) ? mFlag : null;
+    if (!m) return;
+    rig.push(n);
+    n.traverse((k) => { if (k.isMesh) k.material = m; });
+  });
   return {
     o,
     setBuild(b) { cut.constant = b >= 0.999 ? 1e3 : o.position.y + s * (b < 0.7 ? 0.25 + (b / 0.7) * 3.6 : 3.85 + ((b - 0.7) / 0.3) * 6.4); },
     setRigged(v) { for (const n of rig) n.visible = v; },
-    dispose() { m.dispose(); },
+    dispose() { for (const m of new Set([mHull, mSail, mFlag])) m.dispose(); },
   };
 }
 
