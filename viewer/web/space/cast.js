@@ -4,7 +4,7 @@
 // and claims nothing about any ticket.
 import { Actor } from './actor.js';
 import { plank } from './world.js';
-import { short } from './director.js';
+import { short, LAP } from './director.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -76,7 +76,12 @@ async function wrightDuty(a, w, dir, k) {
   if (!tok) return false;
   const p = tok.pic, title = `“${short(p.title)}”`;
   const side = w.slips[k].spots;
-  if (p.status === 'done') {
+  if (tok.meet != null) {
+    // the inspector is coming with the verdict: the shipwright stays where it will be given
+    a.doing = `waiting for the inspector's word on ${title}`;
+    await a.goTo({ ...side[tok.meet], face: 0 });
+    await a.wait(0.5);
+  } else if (p.status === 'done') {
     a.doing = `seeing ${title} off`;
     await a.goTo(side[pick([3, 7])]);
     a.say('✓', 2.5);
@@ -103,7 +108,7 @@ async function wrightDuty(a, w, dir, k) {
     await a.goTo(pick(side));
     await a.act(pick(['attack-melee-right', 'attack-melee-left', 'interact-right']), rnd(3, 6), { repeat: true });
   } else if (p.status === 'review') {
-    a.doing = p.rigged ? `${title} passed: waiting for the launch` : p.reviewer !== 'away' ? `standing by while ${title} is inspected` : `waiting for the inspector on ${title}`;
+    a.doing = p.rigged ? (p.moored ? `${title} passed: held, at anchor` : `${title} passed: waiting for the launch`) : p.reviewer !== 'away' ? `standing by while ${title} is inspected` : `waiting for the inspector on ${title}`;
     await a.goTo(side[pick([0, 4])]);
     await a.wait(rnd(3, 5));
   } else {
@@ -114,16 +119,21 @@ async function wrightDuty(a, w, dir, k) {
   return true;
 }
 
-// The inspector walks round the hull a reviewer agent is on.
+// The inspector goes round the hull a reviewer agent is on: down one side, back by the street,
+// down the other. A verdict to give (a job) cuts the round short.
 async function inspectorDuty(a, w, dir) {
   const tok = dir.underReview();
   if (!tok) return false;
   const p = tok.pic, title = `“${short(p.title)}”`;
   a.doing = p.reviewer === 'stuck' ? `stuck on the inspection of ${title}` : p.step ? `inspecting ${title}: ${p.step}` : `inspecting ${title}`;
-  await a.goTo(pick(w.slips[tok.slip].spots));
-  if (p.reviewer === 'stuck') { a.say('?', 3); await a.act('emote-no', 2.2); return true; }
-  await a.wait(rnd(1, 2));
-  await a.act('interact-right', rnd(1.5, 3), { repeat: true });
+  const side = w.slips[tok.slip].spots;
+  if (p.reviewer === 'stuck') { await a.goTo(pick(side)); a.say('?', 3); await a.act('emote-no', 2.2); return true; }
+  for (const i of LAP) {
+    if (a.jobs.length) return true;
+    await a.goTo(side[i]);
+    await a.act('interact-right', rnd(1.5, 3), { repeat: true });
+  }
+  tok.lapped = true; // seen all round: with the verdict he goes straight to the shipwright
   return true;
 }
 

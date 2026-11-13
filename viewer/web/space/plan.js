@@ -44,9 +44,12 @@ export const seen = (p) => ({ status: p.status, crit: p.crit.map((c) => ({ ...c 
 export const sameSeen = (a, b) => a.status === b.status && (a.status !== 'review' || a.rigged === b.rigged) && a.rejected === b.rejected
   && a.crit.length === b.crit.length && a.crit.every((c, i) => c.done === b.crit[i].done && c.void === b.crit[i].void);
 
-// One event, played: `see` becomes what the ticket was after it. Says 'pass'
-// or 'reject' when the inspector has a verdict to give. An event with no
+// One event, played: `see` becomes what the ticket was after it. Says which
+// scene of the review it is, if any: 'handed' (given over to a reviewer),
+// 'pass' or 'reject' (the inspector's verdict), 'cheer' (passed with no
+// reviewer: the light lane, or the owner's `k2 accept`). An event with no
 // scene of its own changes nothing here.
+// A hull that passed stays on its slip: only `landed` sends it down the ramp.
 export function play(see, e) {
   const mark = (n, key, value) => { const c = see.crit[Number(n) - 1]; if (c) c[key] = value; };
   switch (e.event) {
@@ -56,7 +59,13 @@ export function play(see, e) {
     case 'check': mark(e.n, 'done', true); return null;
     case 'uncheck': mark(e.n, 'done', false); return null;
     case 'void': mark(e.n, 'void', true); return null;
-    case 'submitted': see.status = 'review'; see.rigged = !!e.passed; return e.passed ? 'pass' : null;
+    case 'submitted':
+      // handed over again while main is brought in after the pass: the sails stay up, no scene
+      if (see.status === 'review' && see.rigged) return null;
+      see.status = 'review';
+      see.rigged = !!e.passed;
+      return e.passed ? 'cheer' : 'handed';
+    case 'accepted': see.status = 'review'; see.rigged = true; return 'cheer';
     case 'amended': see.rigged = false; return null;
     case 'landed': see.status = 'done'; return null;
     case 'verdict':
@@ -127,6 +136,8 @@ export function picture(D) {
       testing: test ? (quiet < 60000 ? 'fresh' : quiet < 300000 ? 'slow' : 'silent') : null,
       asked: mine.some((i) => i.kind === 'question' || i.kind === 'blocking question'),
       held: !!(t.state?.held || t.state?.stopped),
+      // passed and kept from the merge: the ship waits on its slip with the anchor down
+      moored: t.status === 'review' && !!t.state?.passed && !!(t.state?.held || t.state?.stopped),
       rejected: t.rejected || 0,
       order: order.indexOf(t.id) < 0 ? 1e9 : order.indexOf(t.id),
       merge: merge.indexOf(t.id),

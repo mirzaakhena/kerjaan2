@@ -115,6 +115,12 @@ const SHARED = {
   roll: new THREE.CylinderGeometry(0.11, 0.11, 0.62, 8).rotateZ(Math.PI / 2),
   band: new THREE.CylinderGeometry(0.118, 0.118, 0.1, 8).rotateZ(Math.PI / 2),
   plank: new THREE.BoxGeometry(1.7, 0.09, 0.3),
+  shank: new THREE.CylinderGeometry(0.11, 0.11, 1.9, 8),
+  stock: new THREE.CylinderGeometry(0.09, 0.09, 1.3, 8).rotateZ(Math.PI / 2),
+  ring: new THREE.TorusGeometry(0.24, 0.07, 6, 14),
+  arms: new THREE.TorusGeometry(0.8, 0.12, 6, 16, Math.PI).rotateZ(Math.PI),
+  fluke: new THREE.ConeGeometry(0.22, 0.42, 4),
+  chain: new THREE.CylinderGeometry(0.05, 0.05, 1, 6),
 };
 const part = (g, geo, color) => { const m = new THREE.Mesh(geo, mat(color)); m.castShadow = m.receiveShadow = true; g.add(m); };
 export function scroll() {
@@ -127,6 +133,41 @@ export function plank() {
   const g = new THREE.Group();
   part(g, SHARED.plank, C.woodLight);
   return g;
+}
+
+// The anchor of a hull that passed and is held: let down from the bow of the ship on `slip`, it
+// leans on the quay beside the ramp, chained to the bow. `set(0..1)`: stowed .. down.
+const ANCHOR = { size: 1.3, fall: 2.6, lean: 0.5, hawse: new THREE.Vector3(-2.1, 2.3, -1.5) };
+const UP = new THREE.Vector3(0, 1, 0);
+export function makeAnchor(slip) {
+  const o = new THREE.Group();
+  o.position.set(slip.x + 2.4, 0, -1.5);
+  const a = new THREE.Group();
+  a.scale.setScalar(ANCHOR.size);
+  o.add(a);
+  const at = (geo, x, y) => { const m = new THREE.Mesh(geo, mat(C.iron)); m.position.set(x, y, 0); m.castShadow = true; a.add(m); };
+  at(SHARED.arms, 0, 0.92);
+  at(SHARED.shank, 0, 1.07);
+  at(SHARED.stock, 0, 1.75);
+  at(SHARED.ring, 0, 2.22);
+  at(SHARED.fluke, -0.8, 1.02);
+  at(SHARED.fluke, 0.8, 1.02);
+  const chain = new THREE.Mesh(SHARED.chain, mat(C.iron));
+  o.add(chain);
+  const ring = new THREE.Vector3(), run = new THREE.Vector3();
+  const set = (k) => {
+    const lean = ANCHOR.lean * Math.max(0, (k - 0.6) / 0.4); // it settles against the quay, towards the ship
+    a.position.y = (1 - k) * ANCHOR.fall;
+    a.rotation.z = lean;
+    const h = 2.22 * ANCHOR.size;
+    ring.set(-Math.sin(lean) * h, a.position.y + Math.cos(lean) * h, 0);
+    run.subVectors(ring, ANCHOR.hawse);
+    chain.scale.y = run.length();
+    chain.position.copy(ANCHOR.hawse).addScaledVector(run, 0.5);
+    chain.quaternion.setFromUnitVectors(UP, run.normalize());
+  };
+  set(0);
+  return { o, set };
 }
 
 // A ticket's ship. Its size says how large the contract is, its livery (one of
@@ -468,7 +509,7 @@ export function buildWorld(scene) {
 
   return {
     stations, slips, shelfSlots, queueSlots, anchors, crane: craneState, update, move,
-    make: { scroll, plank, crate: () => { const o = spawn('pirate/crate'); o.scale.setScalar(0.5); return o; }, ship: makeShip },
+    make: { scroll, plank, crate: () => { const o = spawn('pirate/crate'); o.scale.setScalar(0.5); return o; }, ship: makeShip, anchor: makeAnchor },
     sea: SEA,
     floatOn(o, draft, sway = 0.5) { afloat.push({ o, y: SEA - draft, phase: rnd() * 6, sway }); },
     floatOff(o) { const i = afloat.findIndex((f) => f.o === o); if (i >= 0) afloat.splice(i, 1); },

@@ -21,6 +21,9 @@ function carryClip(key) {
   return carryClips.get(key);
 }
 
+// Feelings and the inspector's ❌ are drawn as the pictures they are, and larger: they are to be
+// read from where the camera usually stands.
+const FACES = new Set(['🥳', '😄', '😢', '❌', '💬']);
 const bubbles = new Map();
 function bubbleTexture(glyph) {
   if (!bubbles.has(glyph)) {
@@ -37,7 +40,7 @@ function bubbleTexture(glyph) {
     g.fill();
     g.stroke();
     g.fillStyle = { '?': '#c77800', '!': '#1e7bd6', '✓': '#138f67', '✗': '#d1342f' }[glyph] || '#2a2f45';
-    g.font = '700 64px "IBM Plex Sans Condensed", "Arial Narrow", sans-serif';
+    g.font = FACES.has(glyph) ? '70px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif' : '700 64px "IBM Plex Sans Condensed", "Arial Narrow", sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText(glyph, 64, 58);
@@ -120,6 +123,8 @@ export class Actor {
     this.bubble.visible = true;
     this.bubbleLeft = seconds;
     this.bubbleAge = 0;
+    this.bubbleSize = FACES.has(glyph) ? 3.4 : 1.15;
+    this.bubble.position.y = 2.475 + this.bubbleSize / 2; // its point stays above the head
   }
 
   face(angle) { this.heading = angle; }
@@ -174,7 +179,7 @@ export class Actor {
     if (this.bubble.visible) {
       this.bubbleLeft -= dt;
       this.bubbleAge += dt;
-      const s = 1.15 * Math.min(1, this.bubbleAge * 6) * Math.min(1, Math.max(0, this.bubbleLeft * 5));
+      const s = this.bubbleSize * Math.min(1, this.bubbleAge * 6) * Math.min(1, Math.max(0, this.bubbleLeft * 5));
       this.bubble.scale.set(s, s, 1);
       if (this.bubbleLeft <= 0) this.bubble.visible = false;
     }
