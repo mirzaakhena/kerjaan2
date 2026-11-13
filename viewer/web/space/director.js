@@ -31,6 +31,7 @@ export class Director {
     this.ask = null; // set by the page: read the board again soon
     this.turn = 0; // whose hull the inspector goes to next
     this.party = null; // the order boat that has not left yet, and the orders it brings
+    this.walk = null; // the architect's walk to the todo table that orders can still join
     this.sweep = 0;
   }
 
@@ -71,7 +72,7 @@ export class Director {
   }
 
   token(p, see) {
-    const tok = { id: p.id, board: p, see, pic: null, place: null, obj: null, ship: null, slip: -1, anchor: -1, busy: false, gone: 0, shown: 0, breaking: false, todo: [], playing: null, run: 0, odd: false, risen: null };
+    const tok = { id: p.id, board: p, see, pic: null, place: null, obj: null, ship: null, slip: -1, anchor: -1, slot: null, busy: false, gone: 0, shown: 0, breaking: false, todo: [], playing: null, run: 0, odd: false, risen: null };
     this.look(tok);
     tok.shown = tok.pic.build;
     this.tokens.set(p.id, tok);
@@ -143,6 +144,7 @@ export class Director {
     tok.see = seen(tok.board);
     this.look(tok);
     // a hull that stays on its slip is not rebuilt, unless a launch cut short has left it down the ramp
+    // (or a drawing was in somebody's hands)
     if (tok.place !== tok.pic.place || tok.adrift) this.put(tok, tok.pic.place);
     else if (tok.risen) { const done = tok.risen; tok.risen = null; done(); }
   }
@@ -175,6 +177,7 @@ export class Director {
   clear(tok) {
     if (tok.risen) { const done = tok.risen; tok.risen = null; done(); } // nobody waits for a hull that is gone
     if (tok.obj) { this.scene.remove(tok.obj); tok.obj = null; }
+    tok.slot = null;
     if (tok.ship) {
       this.w.floatOff(tok.ship.o);
       this.scene.remove(tok.ship.o);
@@ -218,7 +221,7 @@ export class Director {
         tok.shown = tok.pic.build;
         return;
       }
-      place = 'queue'; // every slip is taken: its drawing waits on the board until one is free
+      place = 'queue'; // every slip is taken: its drawing waits on the todo table until one is free
     }
     if (place === 'shelf' || place === 'queue') {
       tok.obj = this.w.make.scroll();
@@ -244,18 +247,26 @@ export class Director {
     this.layout();
   }
 
-  // Drawings on the shelf and on the queue board take the slots in order.
+  // Drawings on the order board and on the todo table take the slots in order. On the table, in the
+  // order of the queue: in the front row what may start, in the back row what waits for another
+  // ticket. One that changes row or place on the table slides there.
   layout() {
-    const fill = (place, slots, by) => {
-      const list = [...this.tokens.values()].filter((t) => t.place === place && t.obj).sort(by);
-      list.forEach((t, i) => {
-        const s = slots[i];
-        t.obj.visible = !!s;
-        if (s) { t.obj.position.set(s.x, s.y, s.z); t.obj.rotation.set(0, s.ry, 0); }
-      });
-    };
-    fill('shelf', this.w.shelfSlots, (a, b) => (a.id < b.id ? -1 : 1));
-    fill('queue', this.w.queueSlots, (a, b) => a.pic.order - b.pic.order || (a.id < b.id ? -1 : 1));
+    const on = (place, by) => [...this.tokens.values()].filter((t) => t.place === place && t.obj).sort(by);
+    const fill = (list, slots) => list.forEach((t, i) => {
+      const s = slots[i] || null;
+      const was = t.slot;
+      t.slot = s;
+      t.obj.visible = !!s;
+      if (!s || s === was) return;
+      if (was && t.place === 'queue') { this.w.move(t.obj, { x: s.x, y: s.y, z: s.z }, 0.9); return; }
+      t.obj.position.set(s.x, s.y, s.z);
+      t.obj.rotation.set(0, s.ry, 0);
+    });
+    fill(on('shelf', (a, b) => (a.id < b.id ? -1 : 1)), this.w.shelfSlots);
+    const table = on('queue', (a, b) => a.pic.order - b.pic.order || (a.id < b.id ? -1 : 1));
+    for (const t of table) if (t.obj.userData.tie) t.obj.userData.tie(t.pic.waiting);
+    fill(table.filter((t) => !t.pic.waiting), this.w.queueSlots);
+    fill(table.filter((t) => t.pic.waiting), this.w.waitSlots);
   }
 
   // ----- playing the trail: one event of a ticket at a time, each to its end -----
@@ -386,42 +397,49 @@ export class Director {
     return party;
   }
 
-  // shelf -> queue: the draughtsman draws it up and pins it on the board
+  // shelf -> queue: the architect takes the order off the order board and lays it on the todo table.
+  // Orders that became todo about the same time go in one walk: each joins the walk that has not
+  // left the order board yet.
   async plan(tok, live) {
     const { planner } = this.cast;
-    if (planner.jobs.length < BUSY) {
-      await this.job(planner, async (a) => {
-        a.doing = `fetching the order “${short(tok.pic.title)}”`;
+    let walk = this.walk;
+    if (!walk && planner.jobs.length < BUSY) {
+      walk = this.walk = { load: [], done: null };
+      walk.done = this.job(planner, async (a) => {
+        a.doing = 'taking orders off the order board';
         await a.goTo(this.w.stations.shelf);
         await a.act('pick-up', 1.2);
-        if (live() && tok.obj) { this.scene.remove(tok.obj); tok.obj = null; }
+        this.walk = null; // an order that comes now is for the next walk
+        const load = walk.load.filter((x) => x.live());
+        if (!load.length) return;
+        for (const x of load) if (x.tok.obj) { this.scene.remove(x.tok.obj); x.tok.obj = null; x.tok.adrift = true; }
         a.hold(this.w.make.scroll());
-        await a.goTo(this.w.stations.drafting);
-        a.hold(null);
-        a.doing = `drawing the plan for “${short(tok.pic.title)}”`;
-        await a.act('interact-right', 3.5, { repeat: true });
-        a.say('…', 2.5);
-        await a.act('idle', 2.5);
-        await a.act('interact-left', 2.5, { repeat: true });
-        a.hold(this.w.make.scroll());
-        a.doing = `pinning “${short(tok.pic.title)}” on the queue`;
-        await a.goTo({ ...this.w.stations.queue, x: this.w.stations.queue.x - 1 });
-        await a.act('interact-right', 1.2);
+        a.doing = load.length === 1 ? `carrying “${short(load[0].tok.pic.title)}” to the todo table` : `carrying ${load.length} orders to the todo table`;
+        await a.goTo(this.w.stations.queue);
+        a.doing = load.length === 1 ? `laying “${short(load[0].tok.pic.title)}” on the todo table` : `laying ${load.length} orders on the todo table`;
+        for (const x of load) {
+          await a.act('interact-right', 0.8);
+          if (x.live()) this.put(x.tok, 'queue');
+        }
         a.hold(null);
       });
     }
-    if (live()) this.put(tok, 'queue');
+    if (walk) {
+      walk.load.push({ tok, live });
+      await walk.done;
+    }
+    if (live() && tok.place !== 'queue') this.put(tok, 'queue');
   }
 
-  // queue -> slip: the foreman takes the drawing to a free slip and the keel is laid
+  // queue -> slip: the foreman takes the drawing off the todo table to a free slip and the keel is laid
   async start(tok, live) {
     const { foreman, wrights } = this.cast;
     const k = tok.slip; // taken for it in `story`, kept while the foreman walks
     if (k < 0) return this.put(tok, tok.pic.place);
     if (foreman.jobs.length < BUSY) {
       await this.job(foreman, async (a) => {
-        a.doing = `taking “${short(tok.pic.title)}” off the queue`;
-        await a.goTo({ ...this.w.stations.queue, x: this.w.stations.queue.x + 1 });
+        a.doing = `taking “${short(tok.pic.title)}” off the todo table`;
+        await a.goTo({ ...this.w.stations.queue, x: this.w.stations.queue.x + 1.2 });
         await a.act('interact-left', 1.2);
         if (live() && tok.obj) { this.scene.remove(tok.obj); tok.obj = null; }
         a.hold(this.w.make.scroll());
@@ -599,4 +617,26 @@ export class Director {
     }
     return out;
   }
+}
+
+// What the architect does while no ticket is in their hands. For as long as the board says the
+// planner is at work, they stand at the order board and read the orders; while a question of the
+// planner waits for the owner they show a "?", and between two turns of the planner they stay
+// there, still, until every such question is answered. Otherwise this is no duty (cast.js).
+export async function plannerDuty(a, w, dir) {
+  const now = () => (dir && dir.pic ? dir.pic.planner : null);
+  const due = (p) => !!p && (p.reading || p.asks > 0);
+  if (!due(now())) return false;
+  await a.goTo(w.stations.reading);
+  const p = now();
+  if (!due(p)) return true; // over while they walked
+  if (p.asks) a.say('?', 3.4);
+  if (p.reading) {
+    a.doing = p.step ? `reading the orders: ${p.step}` : 'reading the orders';
+    await a.act('interact-right', 2.6, { repeat: true });
+  } else {
+    a.doing = `waiting for the owner's answer to ${p.asks === 1 ? 'a question' : `${p.asks} questions`} about the orders`;
+    await a.act('idle', 2.6);
+  }
+  return true;
 }

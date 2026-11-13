@@ -4,7 +4,7 @@
 // and claims nothing about any ticket.
 import { Actor } from './actor.js';
 import { plank } from './world.js';
-import { short } from './director.js';
+import { short, plannerDuty } from './director.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -30,10 +30,9 @@ const chores = {
   planner: [
     async (a, w) => { a.doing = 'sharpening pencils'; await a.goTo(w.stations.drafting); await a.act('interact-left', rnd(2, 4), { repeat: true }); },
     async (a, w) => { await a.goTo(w.stations.drafting); await think(a, 'studying old drawings'); },
-    async (a, w) => { a.doing = 'reading the queue'; await a.goTo(near(w.stations.queue)); await a.wait(rnd(3, 5)); },
   ],
   foreman: [
-    async (a, w) => { a.doing = 'reading the queue'; await a.goTo(near(w.stations.queue)); await a.wait(rnd(3, 5)); },
+    async (a, w) => { a.doing = 'looking over the todo table'; await a.goTo(near(w.stations.queue)); await a.wait(rnd(3, 5)); },
     async (a, w) => { const k = Math.floor(rnd(0, 4)); a.doing = `looking in on slip ${k + 1}`; await a.goTo(w.slips[k].spots[pick([0, 4])]); await a.wait(rnd(2, 4)); },
     async (a, w) => { a.doing = 'watching the launch ramps'; await a.goTo(w.stations.edge); await a.wait(rnd(3, 5)); },
     async (a, w) => { await a.goTo(near(w.stations.timber, 2)); await think(a, 'counting the timber'); },
@@ -152,7 +151,7 @@ async function keeperDuty(a, w, dir) {
 
 const CAST = [
   { key: 0, name: 'Courier', role: 'courier', at: 'orders', chores: chores.courier },
-  { key: 1, name: 'Draughtsman', role: 'planner', at: 'drafting', chores: chores.planner },
+  { key: 1, name: 'Naval Architect', role: 'planner', at: 'drafting', chores: chores.planner, duty: plannerDuty },
   { key: 2, name: 'Foreman', role: 'foreman', at: 'queue', chores: chores.foreman },
   ...[3, 4, 5, 6].map((key, k) => ({ key, name: `Shipwright ${k + 1}`, role: 'wright', slip: k, chores: chores.wright, duty: wrightDuty })),
   { key: 7, name: 'Inspector', role: 'inspector', at: 'inspection', chores: chores.inspector, duty: inspectorDuty },
