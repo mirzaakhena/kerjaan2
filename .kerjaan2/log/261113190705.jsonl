@@ -40,3 +40,4 @@
 {"t":"2026-11-13 22:21:38","event":"landed","branch":"k2/261113190705-tukang-menjemput-tiketnya-dan","files":["docs/blueprint.md","docs/galangan-padanan.md","tests/viewer.test.mjs","viewer/web/space/cast.js","viewer/web/space/demo.js","viewer/web/space/director.js","viewer/web/space/main.js","viewer/web/space/plan.js","viewer/web/space/space.css","viewer/web/space/world.js"],"session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
 {"t":"2026-11-13 23:08:15","event":"assumption-confirmed","key":"A1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
 {"t":"2026-11-13 23:08:15","event":"assumption-confirmed","key":"A2","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-14 10:27:35","event":"manual-ok","key":"M1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}

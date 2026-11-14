@@ -32,7 +32,7 @@ sepuluh dalam dua baris; bukan paging, bukan pulau terpisah.
 - [x] Bila `max_parallel` berubah selagi halaman terbuka, jumlah dok menyesuaikan dan tidak ada kapal yang hilang.
 - [x] Pada 1, 3, 6, dan 10 dok tidak ada dok, derek, mercusuar, atau jalur jalan yang saling bertumpuk.
 - [x] Mode `?demo` bisa dibuka dengan jumlah dok yang berbeda-beda. `docs/galangan-padanan.md` diperbarui.
-- [ ] (owner) Galangan dengan 3, 6, dan 10 dok terlihat rapi di layar lebar dan di HP.
+- [x] (owner) Galangan dengan 3, 6, dan 10 dok terlihat rapi di layar lebar dan di HP.
 
 ## Out of scope
 
@@ -73,11 +73,12 @@ untuk tukang tambahan: pakai karakter yang sudah ada.
 - Papan nama tiket dipindah dari sisi kiri dok ke tengah kepala landasan, karena di sisi ia menghalangi lorong dan landasan baris belakang.
 
 ## Manual checks
-- M1 [waiting] (item 7) 1. Jalankan k2 view dari sumber repo ini (setelah tiket ini masuk main) dan buka /p/kerjaan2/space?demo&docks=3 di layar lebar.
+- M1 [ok] (item 7) 1. Jalankan k2 view dari sumber repo ini (setelah tiket ini masuk main) dan buka /p/kerjaan2/space?demo&docks=3 di layar lebar.
   2. Lihat: tiga dok satu baris, tiga Shipwright di daftar kiri, tidak ada yang bertumpuk.
   3. Klik tautan 6 lalu 10 di catatan demo kuning: enam dok satu baris; sepuluh dok dua baris (6 di depan, 4 di belakang yang landasannya lewat di sela dok depan), derek dan mercusuar di ujung timur, dermaga pos di barat.
   4. Tunggu sampai satu tiket mulai: papan nama muncul di dok kosong, lalu tukang dok itu berjalan ke papan QUEUE, membawa gulungan kembali, baru lunas muncul.
   5. Ulangi langkah 1-3 di HP (atau jendela sempit): seluruh pulau terlihat dengan tombol Whole yard, daftar pemeran di bawah bisa digeser. Yang diharapkan: pada 3, 6, dan 10 dok galangan terlihat rapi di kedua ukuran.
+  Checked by owner, 2026-11-14
 
 ## Handoff
 Galangan: 'started' kini hanya menyiapkan dok (tempat baru 'ready' di plan.js: slip dipesan, gulungan tetap di papan QUEUE); 'agent' worker membuat tukang dok itu menjemput gulungan (director.fetch), lunas sesudah ia tiba. Adegan 'start' Foreman diganti 'prepare' dan 'fetch'. Jumlah dok = max_parallel: yardOf (plan.js) menghitung tata letak, world.setDocks membangun ulang dok dan menggeser bagian back/east/west, director.fit menyesuaikan slipOf dan tukang (cast.setWrights). Jangan rusak: 4 dok harus persis galangan lama; slip dibongkar hanya dari ujung dan tidak selagi kapal meluncur; stations dan slot diubah di tempat, jangan diganti objeknya; wadah todo masih stations.queue.

@@ -48,7 +48,7 @@ dan parkir begitu kapal lulus. Derek besar di dekat mercusuar tidak ada lagi.
 - [x] Derek besar di dekat mercusuar tidak ada lagi. Crane operator tetap ada di daftar pemeran, berdiri di dekat kapal yang mendapat giliran merge, dan pekerjaan kecilnya tidak lagi menyebut derek besar.
 - [x] Bila jumlah dok berubah selagi halaman terbuka, derek ikut menyesuaikan bersama doknya.
 - [x] Mode `?demo` memperlihatkan derek bekerja, mengantar potongan, dan parkir. `docs/galangan-padanan.md` diperbarui, dan ketiga keputusan pemilik di atas tercatat di `docs/galangan-tahap2.md`.
-- [ ] (owner) Derek di tiap dok enak ditonton dan tidak membuat dok terasa sempit pada 4, 6, dan 10 dok, di layar lebar dan di HP.
+- [x] (owner) Derek di tiap dok enak ditonton dan tidak membuat dok terasa sempit pada 4, 6, dan 10 dok, di layar lebar dan di HP.
 
 ## Out of scope
 
@@ -59,24 +59,28 @@ pemilik). Bentuk derek selain derek putar klasik.
 <!-- k2:record — written by k2 only; do not edit by hand -->
 
 ## Assumptions
-- A1 [unseen] Derek mengambil bahan dari tumpukan peti di atas perancah dok itu sendiri dan hanya berputar sekitar 22 derajat (dari arah laut ke buritan kapalnya), bukan mengayun penuh dari tepi jalan seperti di mockup F4. Tempat berdiri derek tetap persis F4.
+- A1 [confirmed] Derek mengambil bahan dari tumpukan peti di atas perancah dok itu sendiri dan hanya berputar sekitar 22 derajat (dari arah laut ke buritan kapalnya), bukan mengayun penuh dari tepi jalan seperti di mockup F4. Tempat berdiri derek tetap persis F4.
   Why: Diukur dengan model kapal asli: ayunan penuh dari tepi jalan membuat pemberat lewat di atas kapal tetangga yang layarnya sudah terpasang pada 5 dan 6 dok, dan ujung lengan mengenai tiang utama kapalnya sendiri; tiket melarang lengan menembus apa pun.
   If wrong: Ubah STACK, HULL, dan SWAY di viewer/web/space/crane.js (titik ambil dan sudut putar); uji 'no arm, cable or piece' akan menunjukkan apa yang tersentuh.
-- A2 [unseen] Worker yang macet (stuck) dihitung tidak bekerja: derek dok itu diam, sama seperti tukangnya yang berhenti memalu.
+  Confirmed by owner, 2026-11-14
+- A2 [confirmed] Worker yang macet (stuck) dihitung tidak bekerja: derek dok itu diam, sama seperti tukangnya yang berhenti memalu.
   Why: Tiket meminta derek diam bila tidak ada agen yang bekerja; agen macet tidak terlihat bekerja di galangan.
   If wrong: Di craneGoal (viewer/web/space/plan.js) anggap worker 'stuck' sebagai bekerja.
-- A3 [unseen] Saat menunggu kriteria berikutnya derek membawa satu potong ke atas lambung, menahannya, lalu membawanya kembali ke tumpukan dan mengulang; potongan hanya ditinggal di lambung saat kriteria terpenuhi.
+  Confirmed by owner, 2026-11-14
+- A3 [confirmed] Saat menunggu kriteria berikutnya derek membawa satu potong ke atas lambung, menahannya, lalu membawanya kembali ke tumpukan dan mengulang; potongan hanya ditinggal di lambung saat kriteria terpenuhi.
   Why: Supaya ayunan biasa dan pengantaran potongan terlihat berbeda, dan lambung tidak tampak diisi tanpa kriteria.
   If wrong: Ubah cabang 'work' di Crane.plan (viewer/web/space/crane.js).
+  Confirmed by owner, 2026-11-14
 
 ## Decisions
 - Derek dibatasi berputar dari arah laut sampai buritan kapalnya sendiri dan mengambil bahan dari atas perancah: dengan begitu tidak perlu aturan giliran antarderek, dan tidak ada lengan atau pemberat yang lewat di atas kapal lain. Tinggi geladak tempat potongan diletakkan (DECK) diukur dari model kapal dan dijaga uji.
 
 ## Manual checks
-- M1 [waiting] (item 8) 1. Sesudah tiket ini masuk main: /plugin update kerjaan2, buka sesi baru, jalankan k2 view, buka halaman Shipyard sebuah papan, klik Demo.
+- M1 [ok] (item 8) 1. Sesudah tiket ini masuk main: /plugin update kerjaan2, buka sesi baru, jalankan k2 view, buka halaman Shipyard sebuah papan, klik Demo.
   2. Tonton sekitar dua menit pada 4 dok: derek di dok yang tukangnya bekerja mengayun peti ke lambung; saat lambung naik, tepat sebelumnya derek menurunkan satu peti ke dalamnya; derek di samping kapal berlayar menghadap laut dan diam.
   3. Klik tautan Slips 6 lalu 10 di catatan demo dan ulangi.
   4. Ulangi di HP (atau jendela sempit). Yang seharusnya terlihat: tiap dok punya satu derek kuning di sudut belakang kanannya, dok tidak terasa sempit, dan tidak ada lengan atau peti yang menembus kapal, layar, atau orang.
+  Checked by owner, 2026-11-14
 
 ## Handoff
 Tiap dok kini punya derek sendiri (viewer/web/space/crane.js: tempat, gerak, mesin keadaan work/hold/park, murni tanpa three). plan.js: yardOf memberi cranes, craneGoal menentukan tujuan dari gambaran tiket. world.js menggambar derek di slipAt dan menyimpan world.cranes per indeks dok lintas setDocks; derek besar dan stations.crane hilang (gantinya stations.mooring). director.js: check menunggu crane.deliver sebelum lambung naik (tok.wait), layar hanya dipasang bila derek parkir, launch menunggu parkir. Jangan dirusak: derek hanya berputar antara 0 dan -0,38 rad; layar tidak boleh tampil selagi derek belum parkir; janji deliver dan whenParked harus selalu selesai (cancel, retire).

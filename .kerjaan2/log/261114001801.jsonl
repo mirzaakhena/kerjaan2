@@ -24,3 +24,7 @@
 {"t":"2026-11-14 01:10:38","event":"agent","role":"reviewer","agent":"af00261171a6221ab","step":"integrate:1:reviewer","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
 {"t":"2026-11-14 01:11:14","event":"verdict","result":"pass","integration":true,"commit":"a2f0ab6","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e","by":"reviewer:af00261171a6221ab"}
 {"t":"2026-11-14 01:11:25","event":"landed","branch":"k2/261114001801-derek-di-tiap-dok","files":["docs/galangan-padanan.md","docs/galangan-tahap2.md","tests/viewer.test.mjs","viewer/web/space/cast.js","viewer/web/space/crane.js","viewer/web/space/director.js","viewer/web/space/plan.js","viewer/web/space/world.js"],"session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-14 10:27:35","event":"manual-ok","key":"M1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-14 10:27:36","event":"assumption-confirmed","key":"A1","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-14 10:27:36","event":"assumption-confirmed","key":"A2","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}
+{"t":"2026-11-14 10:27:36","event":"assumption-confirmed","key":"A3","session":"8d42aae9-1e0c-48fb-81a4-8830384e089e"}

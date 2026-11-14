@@ -37,7 +37,7 @@ menunggu tiket lain di baris belakang.
 - [x] Tiket todo yang harus menunggu tiket lain diletakkan di baris belakang, dan maju ke baris depan begitu tidak lagi menunggu.
 - [x] Di daftar pemeran, si perencana bernama Naval Architect; Draughtsman tidak ada lagi.
 - [x] Mode `?demo` memperlihatkan perencana membaca, bertanya, dan memindahkan tiket. `docs/galangan-padanan.md` diperbarui.
-- [ ] (owner) Perencana dan meja todo enak ditonton; baris depan dan baris belakang mudah dibedakan.
+- [x] (owner) Perencana dan meja todo enak ditonton; baris depan dan baris belakang mudah dibedakan.
 
 ## Out of scope
 
@@ -80,11 +80,12 @@ ruang pamer, pilihan lain ditunda.
 - Baris meja todo dan keadaan planner dibaca dari keadaan papan, bukan dari linimasa: tampil seketika, seperti urutan antrean. Hanya perpindahan ke todo yang berupa adegan.
 
 ## Manual checks
-- M1 [waiting] (item 7) 1. Jalankan k2 view lalu buka /p/<proyek>/space?demo.
+- M1 [ok] (item 7) 1. Jalankan k2 view lalu buka /p/<proyek>/space?demo.
   2. Tunggu sekitar 10 detik: Naval Architect berjalan ke samping gudang ORDERS dan membaca.
   3. Sekitar detik ke-25 ia diam dengan balon ?, lalu membaca lagi.
   4. Sekitar detik ke-45 ia membawa gulungan ke meja bertanda TODO di antara gudang DRAWINGS dan INSPECTION.
   5. Dekatkan kamera ke meja itu: gulungan berpita merah di baris depan (dekat laut), berpita abu-abu di baris belakang. Yang diharapkan: perencana dan meja enak ditonton, dan kedua baris mudah dibedakan.
+  Checked by owner, 2026-11-14
 
 ## Handoff
 Draughtsman menjadi Naval Architect dengan tugas baru (plannerDuty di director.js): membaca di samping papan pesanan selama live.planner ada, balon ? selama ada pertanyaan planner yang belum terjawab. Snapshot memberi plannerAsks per tiket (kejadian question yang by-nya planner:). Papan QUEUE diganti meja todo: world.queueSlots baris depan, world.waitSlots baris belakang, masing-masing 8; pic.waiting (plan.js) menentukan baris. Adegan plan kini satu jalan untuk serombongan (dir.walk). Jangan rusak: nama tempat 'queue' dan stations.queue tetap dipakai adegan start; tok.slot diisi layout; demo membatasi todo agar muat di meja.

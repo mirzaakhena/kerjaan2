@@ -35,7 +35,7 @@ main; selama ditahan atau dihentikan, jangkarnya turun.
 - [x] Kapal hanya meluncur dan berlabuh saat tiketnya mendarat (`landed`), tidak saat lulus.
 - [x] Kapal lulus yang ditahan atau dihentikan menunggu dengan jangkar turun; jangkar naik lagi begitu dilepas.
 - [x] Mode `?demo` memperlihatkan satu tiket lulus, satu ditolak lalu lulus, dan satu ditahan. `docs/galangan-padanan.md` diperbarui.
-- [ ] (owner) Senang, sedih, dan ❌ terbaca jelas dari jarak kamera biasa.
+- [x] (owner) Senang, sedih, dan ❌ terbaca jelas dari jarak kamera biasa.
 
 ## Out of scope
 
@@ -77,12 +77,13 @@ masuk sebelum merge (belum diputuskan pemilik).
 - Vonis memakai tiga pekerjaan berurutan (Shipwright ke titik temu, Inspector, lalu reaksi Shipwright) tanpa saling menunggu di dalam pekerjaan, supaya dua pemeran tidak pernah saling mengunci; di antaranya Shipwright ditahan di tempat oleh tok.meet.
 
 ## Manual checks
-- M1 [waiting] (item 8) 1. Sesudah tiket ini mendarat: jalankan 'k2 view' dari akar repo ini (sumbernya, bukan salinan plugin di cache).
+- M1 [ok] (item 8) 1. Sesudah tiket ini mendarat: jalankan 'k2 view' dari akar repo ini (sumbernya, bukan salinan plugin di cache).
   2. Buka halaman galangan sebuah proyek lalu tekan tombol 'Demo' (alamat berakhiran /space?demo).
   3. Jangan gerakkan kamera (tampilan 'Whole yard').
   4. Tunggu kira-kira satu menit: Inspector mendatangi kapal di dok 2, balon 💬 lalu ✓ muncul, layar dipasang, dan Shipwright 2 meloncat dengan balon 😄.
   5. Tunggu sampai kira-kira menit ketiga: Shipwright 1 meloncat dengan balon 🥳 saat menyerahkan, lalu Inspector memberi balon ❌ dan Shipwright 1 membalas dengan balon 😢 sebelum kembali memalu.
   6. Yang harus terlihat: dari kamera seluruh galangan, ketiga balon itu (senang, sedih, ❌) bisa dibedakan tanpa memperbesar.
+  Checked by owner, 2026-11-14
 
 ## Handoff
 Review kini adegan. plan.js: play() mengembalikan 'handed', 'pass', 'reject', atau 'cheer' (lulus tanpa reviewer: jalur light dan accepted); submitted sesudah lulus tidak mengubah apa pun; picture() memberi 'moored'. director.js: handed/cheer/verdict memakai antrean kerja Shipwright dan Inspector; layar yang tampil adalah tok.rig (naik di adegan lulus, bukan saat kejadian diputar); tok.stay menahan lambung sampai ❌; moor() menurunkan jangkar dari keadaan papan; batas BUSY tidak berlaku lagi untuk vonis, dan job() mengurutkan menurut waktu kejadian. Jangan rusak: peluncuran hanya dari landed, dan tok.meet yang menahan Shipwright di titik temu (cast.js). Demo bergiliran: lulus, ditolak lalu lulus, ditahan.

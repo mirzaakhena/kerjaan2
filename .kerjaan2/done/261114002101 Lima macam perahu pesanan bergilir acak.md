@@ -42,7 +42,7 @@ mengambil peti, perahu pergi ke sisi lain dan menghilang.
 - [x] Kapal tunda dan kapal tarik hiasan tidak ada lagi di pelabuhan, sehingga bentuk itu hanya terlihat saat membawa pesanan; perahu hiasan lainnya tetap.
 - [x] Hanya model yang benar-benar dimuat yang ikut disimpan di viewer.
 - [x] Mode `?demo` memperlihatkan perahu yang berganti-ganti dari rombongan ke rombongan. `docs/galangan-padanan.md` diperbarui, dan `docs/galangan-tahap2.md` mencatat dua keputusan pemilik: kedua hiasan itu dihapus, dan usul "kapal tunda sebagai tanda merge" dicoret.
-- [ ] (owner) Kelima perahu enak ditonton saat datang, berlabuh, dan pergi.
+- [x] (owner) Kelima perahu enak ditonton saat datang, berlabuh, dan pergi.
 
 ## Out of scope
 
@@ -52,21 +52,25 @@ menurut besar rombongan.
 <!-- k2:record — written by k2 only; do not edit by hand -->
 
 ## Assumptions
-- A1 [unseen] Perahu rombongan ditentukan oleh hash ID tiket pertama rombongan itu, bukan angka acak per halaman
+- A1 [confirmed] Perahu rombongan ditentukan oleh hash ID tiket pertama rombongan itu, bukan angka acak per halaman
   Why: Hanya dengan begitu dua halaman yang terbuka memperlihatkan perahu yang sama untuk rombongan yang sama
   If wrong: Ganti boatOf di viewer/web/space/plan.js
-- A2 [unseen] Saat merapat perahu berputar di lepas dermaga lalu bergeser menyamping ke tempat labuhnya; haluan searah laju sampai titik putar itu dan saat pergi
+  Confirmed by owner, 2026-11-14
+- A2 [confirmed] Saat merapat perahu berputar di lepas dermaga lalu bergeser menyamping ke tempat labuhnya; haluan searah laju sampai titik putar itu dan saat pergi
   Why: Perahu harus berlabuh dengan haluan ke laut supaya bisa memutari ujung dermaga, dan kapal tarik terlalu panjang untuk berbelok sambil merapat tanpa menyentuh dermaga
   If wrong: Ubah kaki-kaki lintasan di courseOf (plan.js); uji lintasan menolak yang menembus dermaga
-- A3 [unseen] Dua model perahu dipindah dari kits ruang pamer ke kits viewer (bukan disalin), dan mock.js memuatnya dari viewer
+  Confirmed by owner, 2026-11-14
+- A3 [confirmed] Dua model perahu dipindah dari kits ruang pamer ke kits viewer (bukan disalin), dan mock.js memuatnya dari viewer
   Why: Menghindari dua salinan berkas yang sama
   If wrong: Salin kembali ke docs/mockups/galangan/kits dan kembalikan daftar di mock.js
+  Confirmed by owner, 2026-11-14
 
 ## Manual checks
-- M1 [waiting] (item 8) 1. Jalankan k2 view, buka halaman galangan proyek ini dan tambahkan ?demo pada alamatnya.
+- M1 [ok] (item 8) 1. Jalankan k2 view, buka halaman galangan proyek ini dan tambahkan ?demo pada alamatnya.
   2. Tunggu rombongan pertama: perahu layar datang dari ujung laut, berputar, merapat; Courier mengambil peti; perahu memutari ujung dermaga dan menghilang.
   3. Biarkan beberapa menit: berikutnya kapal tunda jingga, kapal tunda hijau, kapal tarik biru, lalu perahu dayung.
   4. Seharusnya terlihat: kelimanya enak ditonton saat datang, berlabuh dan pergi, dan tidak ada lagi kapal tunda atau kapal tarik hiasan di pelabuhan.
+  Checked by owner, 2026-11-14
 
 ## Handoff
 Perahu pesanan kini satu dari lima lambung (BOATS di plan.js), dipilih boatOf dari ID tiket pertama rombongan; director meneruskannya ke world.mailIn(pace, kind). Lintasan tiap lambung dihitung courseOf (plan.js) dan world.js hanya memutarnya; PIER dan BUOY di plan.js adalah letak dermaga dan pelampung yang juga dipakai world.js. Jejak dermaga di footprints melebar mengikuti lambung terlebar. Kapal tunda keliling teluk dan kapal tarik dekat mercusuar dihapus. Jangan sampai rusak: uji lintasan (dermaga, daratan, pelampung, jalur luncur pada 1-10 dok), kesamaan perahu di dua halaman, dan giliran lima perahu di demo.
