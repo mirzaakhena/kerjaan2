@@ -17,3 +17,4 @@ What earlier tickets learned about this project. Newest last; k2 keeps the last 
 - Galangan: perahu pesanan dan lintasannya ada di plan.js (BOATS, boatOf, courseOf, PIER, BUOY); lambung baru ditambah di BOATS dan KIT, dan uji lintasan memeriksanya terhadap dermaga dan jalur luncur.
 - k2 test hanya menampilkan ekor keluaran: untuk membaca kegagalan pakai --test-reporter=tap --test-reporter-destination=<berkas di scratchpad>, dan beri --test-timeout supaya uji yang menunggu selamanya tidak menggantung.
 - Galangan: derek tiap dok ada di crane.js (murni); stagedYard({ cranes: true }) memberi derek asli, dan adegan yang menunggu derek butuh dir.frame berjalan selagi settle() menunggu; bentuk kapal asli: hullsBerthed() di uji.
+- Viewer: perpindahan kolom yang ditulis core harus juga dikenali columnAfter di viewer/snapshot.mjs, kalau tidak replay tab Board memakai langkah 'untracked' di akhir.

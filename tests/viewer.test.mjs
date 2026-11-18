@@ -3288,3 +3288,113 @@ test('the demo shows the cranes at work, a piece set down for a criterion met, a
   assert.equal(early, 0, 'a sail was up beside a crane that was not parked');
   assert.deepEqual(errors, []);
 });
+
+// ----- the replay of the whole board -----
+
+const replayModel = () => {
+  const box = {};
+  vm.runInNewContext(fs.readFileSync(path.join(path.dirname(K2), '..', 'viewer', 'web', 'replay.js'), 'utf8'), { window: box });
+  return box.K2Replay;
+};
+const columnsAt = (model, t) => Object.fromEntries([...model.at(t)].map(([id, x]) => [id, x.status]));
+
+test('the history of a board: every column each ticket went through, rejections and a cancel included, ending where the board is now', async () => {
+  const root = workspace();
+  const r = repo(root, 'toko');
+  const back = plainTicket(r, 'Ditolak lalu berlabuh');
+  const gone = plainTicket(r, 'Dibatalkan');
+  const hand = plainTicket(r, 'Dipindah tanpa jejak');
+  const idle = ticket(r, 'Masih di backlog', { status: 'backlog' });
+  handOver(r, back);
+  assert.equal(r.k('agent', back, 'reviewer', 'r1').code, 0);
+  assert.match(r.k('verdict', back, 'reject', '--fail', '1', '--note', 'belum').out, /SENT BACK/);
+  const wt = wtOf(r, back);
+  fs.writeFileSync(path.join(wt, `${back}.txt`), 'baru lagi\n');
+  sh(wt, 'git', ['commit', '-qam', 'fix']);
+  assert.equal(r.k('check', back, '1', 'terlihat').code, 0);
+  assert.equal(sh(wt, K2, ['submit', back]).code, 0);
+  assert.equal(r.k('agent', back, 'reviewer', 'r1').code, 0);
+  assert.match(r.k('verdict', back, 'pass', '--note', '1: ok').out, /PASSED/);
+  assert.match(r.k('land', back).out, /LANDED/);
+  assert.equal(r.k('move', gone, 'cancel', '--why', 'tidak jadi').code, 0);
+  // moved by hand: the trail never heard of it
+  const from = fs.readdirSync(path.join(r.dir, '.kerjaan2', 'todo')).find((n) => n.startsWith(hand));
+  fs.mkdirSync(path.join(r.dir, '.kerjaan2', 'review'), { recursive: true });
+  fs.renameSync(path.join(r.dir, '.kerjaan2', 'todo', from), path.join(r.dir, '.kerjaan2', 'review', from));
+
+  const s = await serve(root);
+  const logs = written(r);
+  const res = await get(s, '/api/p/toko/history');
+  assert.equal(res.status, 200);
+  const h = res.body;
+  assert.deepEqual(written(r), logs, 'reading the history writes nothing');
+  const steps = Object.fromEntries(h.tickets.map((t) => [t.id, t.steps.map((x) => `${x.status}:${x.event}`)]));
+  assert.deepEqual(steps[back], ['todo:created', 'in_progress:started', 'review:submitted', 'in_progress:verdict', 'review:submitted', 'done:landed']);
+  assert.deepEqual(steps[gone], ['todo:created', 'cancel:moved']);
+  assert.deepEqual(steps[hand], ['todo:created', 'review:untracked']);
+  assert.deepEqual(steps[idle], ['backlog:created']);
+  for (const t of h.tickets) assert.equal(t.steps.at(-1).status, t.status, t.id);
+  assert.equal(h.events.length, logs.length, 'every line of every trail');
+  for (let i = 1; i < h.events.length; i++) assert.ok(h.events[i - 1].at <= h.events[i].at, 'oldest first');
+  assert.ok(h.events.every((e) => !('session' in e) && /^\d{12}$/.test(e.ticket)));
+  assert.equal((await get(s, '/api/p/nowhere/history')).status, 404);
+  assert.equal((await get(s, '/api/p/toko/history/extra')).status, 404);
+
+  // played: an empty board first, every move in time order, the board of now at the end
+  const m = replayModel().make(h);
+  assert.deepEqual(columnsAt(m, m.real(0)), {}, 'before the first ticket the board is empty');
+  assert.deepEqual(columnsAt(m, m.real(m.length)), Object.fromEntries(h.tickets.map((t) => [t.id, t.status])));
+  const seen = [];
+  let was = {};
+  for (let v = 0; v <= m.length; v += 250) {
+    const now = columnsAt(m, m.real(v));
+    for (const [id, st] of Object.entries(now)) if (was[id] !== st) seen.push(`${id} ${st}`);
+    was = now;
+  }
+  for (const [id, cols] of [[back, ['todo', 'in_progress', 'review', 'in_progress', 'review', 'done']], [gone, ['todo', 'cancel']]]) {
+    const mine = seen.filter((x) => x.startsWith(id)).map((x) => x.slice(13));
+    // a move inside one second may share a frame with the next; the order holds
+    assert.deepEqual(mine.filter((x) => cols.includes(x)), mine);
+    assert.equal(mine.at(-1), cols.at(-1));
+  }
+  // the page loads the replay
+  assert.match((await get(s, '/p/toko/')).body, /\/assets\/replay\.js/);
+});
+
+test('the replay clock: quiet stretches are short, scrubbing shows the board of that very moment', () => {
+  const H = 3600000, t0 = Date.UTC(2026, 10, 1, 9);
+  const step = (at, status, event) => ({ at, status, event });
+  const ev = (ticket, at, event, extra = {}) => ({ ticket, at, event, t: '', ...extra });
+  const h = {
+    now: t0 + 80 * H,
+    tickets: [
+      { id: '261101090001', title: 'a', status: 'done', fm: { lane: 'light' }, steps: [step(t0, 'todo', 'created'), step(t0 + 10 * 60000, 'in_progress', 'started'), step(t0 + 72 * H, 'done', 'landed')] },
+      { id: '261101090002', title: 'b', status: 'cancel', fm: { lane: 'light' }, steps: [step(t0 + 60000, 'backlog', 'created'), step(t0 + 72 * H + 5000, 'cancel', 'moved')] },
+    ],
+    events: [ev('261101090001', t0, 'created'), ev('261101090002', t0 + 60000, 'created'), ev('261101090001', t0 + 10 * 60000, 'started'), ev('261101090001', t0 + 20 * 60000, 'check', { n: 1 }),
+      ev('261101090001', t0 + 72 * H, 'landed'), ev('261101090002', t0 + 72 * H + 5000, 'moved', { to: 'cancel' })],
+  };
+  const R = replayModel();
+  const m = R.make(h);
+  assert.equal(m.start, t0 - R.LEAD);
+  assert.equal(m.end, t0 + 72 * H + 5000);
+  assert.ok(m.length < 40 * 60000, `three days of history play as ${m.length / 60000} minutes`);
+  assert.equal(m.length, R.LEAD + 60000 + 3 * R.QUIET + 5000, 'the gaps of 9 minutes, 10 minutes and three days each play as the quiet most');
+  // the quiet stretch is said, and the clock runs through it in order
+  const mid = m.virt(t0 + 20 * 60000) + R.QUIET / 2;
+  assert.deepEqual({ ...m.quietAt(mid) }, { from: t0 + 20 * 60000, to: t0 + 72 * H });
+  assert.equal(m.quietAt(m.virt(t0 + 30000)), null, "a gap of a minute is played as it was");
+  for (let v = 1000; v <= m.length; v += 1000) assert.ok(m.real(v) >= m.real(v - 1000));
+  for (const t of [t0, t0 + 60000, t0 + 10 * 60000, t0 + 72 * H, t0 + 72 * H + 5000]) assert.ok(Math.abs(m.real(m.virt(t)) - t) < 1, 'virt and real agree');
+  // a point on the bar: exactly the board of that moment
+  assert.deepEqual(columnsAt(m, t0 - 1), {});
+  assert.deepEqual(columnsAt(m, t0), { '261101090001': 'todo' });
+  assert.deepEqual(columnsAt(m, t0 + 30 * 60000), { '261101090001': 'in_progress', '261101090002': 'backlog' });
+  assert.equal(m.at(t0 + 30 * 60000).get('261101090001').last.event, 'check');
+  assert.deepEqual(columnsAt(m, m.real(m.virt(t0 + 72 * H))), { '261101090001': 'done', '261101090002': 'backlog' });
+  assert.deepEqual(columnsAt(m, m.real(m.length)), { '261101090001': 'done', '261101090002': 'cancel' });
+  // a board with no trail at all has nothing to play and ends at once
+  const none = R.make({ now: t0, tickets: [], events: [] });
+  assert.equal(none.length, 0);
+  assert.deepEqual(columnsAt(none, none.real(0)), {});
+});

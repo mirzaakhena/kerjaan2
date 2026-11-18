@@ -128,6 +128,20 @@ a { color: var(--accent); text-decoration: none } a:hover { text-decoration: und
 .card .state { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted) }
 .more { border: 0; background: none; color: var(--accent); padding: 6px }
 
+/* the replay: amber and striped, so history is never taken for the board now */
+.replay-btn { color: var(--warn-ink); border-color: var(--warn-line) }
+.replay { flex: none; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--warn-line); background: var(--warn-bg); color: var(--warn-ink) }
+.replay .rtag { font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: 12px; padding: 2px 8px; border-radius: 4px; background: var(--in_progress); color: var(--panel) }
+.replay .rclock { font: 600 17px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; min-width: 11.5em }
+.replay input[type="range"] { flex: 1 1 14em; min-width: 10em; accent-color: var(--in_progress) }
+.replay .rnote { font-size: 13px; flex-basis: 100%; order: 9; min-height: 1.4em } .replay .rnote.bad { color: var(--bad); flex-basis: auto; order: 0 }
+.replay .rspan { font: 11px var(--mono); color: var(--muted); order: 8 }
+.replay select { padding: 3px 8px }
+.board.replaying { padding: 6px; border-radius: 12px; background: repeating-linear-gradient(135deg, var(--warn-bg) 0 12px, transparent 12px 24px); outline: 2px dashed var(--warn-line); outline-offset: -2px }
+.card.born { animation: born .5s ease-out } @keyframes born { from { opacity: 0; transform: scale(.92) } }
+.card.ghost { position: fixed; z-index: 30; margin: 0; pointer-events: none; box-shadow: var(--shadow); border-color: var(--in_progress) }
+@media (prefers-reduced-motion: reduce) { .card.born { animation: none } }
+
 /* history */
 .hist { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 10fr); gap: 12px }
 .hist-left { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto } .hist-left > * { flex: none }
