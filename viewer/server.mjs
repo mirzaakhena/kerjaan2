@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomBytes } from 'node:crypto';
 import { die, parseArgs, run } from '../core/util.mjs';
-import { scanProjects, isBoard, MAX_DEPTH, openProject, boardSignature, boardState, liveState, ticketDetail, projectCard, trailSince, samePoint } from './snapshot.mjs';
+import { scanProjects, isBoard, MAX_DEPTH, openProject, boardSignature, boardState, liveState, ticketDetail, projectCard, trailSince, samePoint, boardHistory } from './snapshot.mjs';
 
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), 'web');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.glb': 'model/gltf-binary' };
@@ -176,6 +176,8 @@ export function startServer({ root, port = DEFAULT_PORT, lan = false, depth = 1,
           if (!p) return json(res, { error: `no board named "${parts[2]}" under ${root}` }, 404);
           if (parts[3] === 'state' && parts.length === 4) return send(res, 200, stateBody(p));
           if (parts[3] === 'events' && parts.length === 4) return events(req, res, p);
+          // The whole history at once, for the replay of the board; the trail above stays short.
+          if (parts[3] === 'history' && parts.length === 4) return json(res, boardHistory(p));
           if (parts[3] === 'timeline' && parts.length === 4) return json(res, timeline(p, url.searchParams.get('since')));
           if (parts[3] === 'ticket' && parts.length === 5) {
             const t = ticketDetail(p, parts[4]);

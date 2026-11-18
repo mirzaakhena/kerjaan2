@@ -59,7 +59,7 @@
     const url = `${location.pathname}${q.toString() ? `?${q}` : ''}`;
     history[push ? 'pushState' : 'replaceState'](null, '', url);
   }
-  window.addEventListener('popstate', () => { ui = read(); render(); openDrawer(); });
+  window.addEventListener('popstate', () => { ui = read(); if (ui.tab !== 'board') closeReplay(); render(); openDrawer(); });
 
   // ----- small pieces -----
   const tid = (id) => `<span class="tid" title="${id}">${id.slice(0, 8)}·<b>${id.slice(8)}</b></span>`;
@@ -213,32 +213,174 @@
     if (t.status === 'todo') { const i = D.queue.order.indexOf(t.id); return i >= 0 ? `<span class="state">queue no. ${i + 1}</span>` : ''; }
     return '';
   }
-  function viewBoard() {
+  // The board's columns: the live board, or, in a replay, the board as it was.
+  function columns(rs) {
     const needle = ui.q.toLowerCase();
     const match = (t) => (!ui.lane || t.fm.lane === ui.lane) && (!needle || t.title.toLowerCase().includes(needle) || t.id.includes(needle));
-    const cols = STATUSES.filter((s) => !ui.hide.has(s)).map((s) => {
-      let list = D.tickets.filter((t) => t.status === s && match(t));
-      if (s === 'done') list = list.sort((a, b) => (b.landed || 0) - (a.landed || 0) || b.id.localeCompare(a.id));
-      if (s === 'todo') list = list.sort((a, b) => D.queue.order.indexOf(a.id) - D.queue.order.indexOf(b.id));
+    return STATUSES.filter((s) => !ui.hide.has(s)).map((s) => {
+      let list;
+      if (rs) {
+        // newest in the column first: a card that arrives is seen arriving
+        list = [...R.model.tickets.values()].filter((t) => rs.get(t.id)?.status === s && match(t)).sort((a, b) => rs.get(b.id).since - rs.get(a.id).since || b.id.localeCompare(a.id));
+      } else {
+        list = D.tickets.filter((t) => t.status === s && match(t));
+        if (s === 'done') list = list.sort((a, b) => (b.landed || 0) - (a.landed || 0) || b.id.localeCompare(a.id));
+        if (s === 'todo') list = list.sort((a, b) => D.queue.order.indexOf(a.id) - D.queue.order.indexOf(b.id));
+      }
       const shown = s === 'done' && !doneAll ? list.slice(0, DONE_SHOWN) : list;
       return `<section class="panel col" data-s="${s}">
         <div class="panel-head"><h2>${s.replace('_', ' ')}</h2><span class="count">${list.length}</span></div>
-        <div class="scroll cards" data-keep="c-${s}">${shown.map((t) => `<button class="card ${t.run ? 'running' : ''}" data-open="${t.id}">
+        <div class="scroll cards" data-keep="c-${s}">${shown.map((t) => (rs ? replayCard(t, rs.get(t.id)) : `<button class="card ${t.run ? 'running' : ''}" data-open="${t.id}">
             <span class="toprow"><span>${tid(t.id)}</span><span>${esc(t.fm.type)}${t.fm.priority !== 'medium' ? ' · ' + esc(t.fm.priority) : ''}</span></span>
             <span class="ctitle">${esc(t.title)}</span>
             <span class="row">${lane(t.fm.lane)}${t.fm.solo === 'true' ? '<span class="tag">solo</span>' : ''}${(t.fm.labels || []).map((l) => `<span class="tag">${esc(l)}</span>`).join('')}${pills(t)}</span>
             ${badges(t, true) ? `<span class="row">${badges(t, true)}</span>` : ''}
             ${cardState(t)}
-          </button>`).join('') || '<p class="empty">nothing here</p>'}
+          </button>`)).join('') || '<p class="empty">nothing here</p>'}
           ${shown.length < list.length ? `<button class="more" data-done-all>Show ${list.length - shown.length} more</button>` : ''}</div>
       </section>`;
     }).join('');
+  }
+  // A card in a replay says only what was true then: the last line of its trail.
+  function replayCard(t, at) {
+    const [what] = at.step === 'untracked' && (!at.last || at.last.at <= at.since) ? ['Moved outside the trail'] : at.last ? eventText(at.last) : ['–'];
+    return `<button class="card" data-open="${t.id}" data-rid="${t.id}">
+        <span class="toprow"><span>${tid(t.id)}</span><span>${esc(t.fm.type)}${t.fm.priority && t.fm.priority !== 'medium' ? ' · ' + esc(t.fm.priority) : ''}</span></span>
+        <span class="ctitle">${esc(t.title)}</span>
+        <span class="row">${lane(t.fm.lane)}</span>
+        <span class="state">${esc(what)}${at.last ? ` · ${esc(stamp(at.last.at).slice(5, 16))}` : ''}</span>
+      </button>`;
+  }
+  function viewBoard() {
+    const rs = R?.model ? R.model.at(R.model.real(R.v)) : null;
+    const count = (s) => (rs ? [...rs.values()].filter((x) => x.status === s).length : D.tickets.filter((t) => t.status === s).length);
     return `<div class="tools">
         <input class="field" type="search" id="f-q" placeholder="Search title or ID…" value="${esc(ui.q)}" aria-label="Search title or ID">
         <select class="field" id="f-lane" aria-label="Lane"><option value="">all lanes</option>${['light', 'standard', 'strict'].map((l) => `<option ${ui.lane === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
-        <span class="label">Columns</span>${STATUSES.map((s) => `<button class="colbtn" data-s="${s}" data-col="${s}" aria-pressed="${!ui.hide.has(s)}"><i></i>${s.replace('_', ' ')} <b>${D.tickets.filter((t) => t.status === s).length}</b></button>`).join('')}
+        <span class="label">Columns</span>${STATUSES.map((s) => `<button class="colbtn" data-s="${s}" data-col="${s}" aria-pressed="${!ui.hide.has(s)}"><i></i>${s.replace('_', ' ')} <b data-count="${s}">${count(s)}</b></button>`).join('')}
+        ${R ? '' : '<button class="colbtn replay-btn" id="r-open" title="Play the whole history of this board, from before its first ticket to now">▶ Replay</button>'}
       </div>
-      <div class="board">${cols || '<p class="empty">Every column is hidden.</p>'}</div>`;
+      ${R ? replayBar() : ''}
+      <div class="board ${R ? 'replaying' : ''}" id="board">${columns(rs) || '<p class="empty">Every column is hidden.</p>'}</div>`;
+  }
+
+  // ----- the replay of the board -----
+  // History-milliseconds per real millisecond.
+  const SPEEDS = [[60, '1 min/s'], [300, '5 min/s'], [1200, '20 min/s'], [3600, '1 h/s']];
+  const HOLD = 1200; // ms the empty board is shown before the first ticket arrives
+  const SKIP_SAID = 10 * 60000; // a skipped stretch this long or longer is said on the bar
+  let R = null; // { model, v, playing, speed, last, dragging, shown, flying, newer, raf }
+  const stamp = (ms) => { const d = new Date(ms); return `${dayOf(ms)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+  function replayBar() {
+    if (R.error) return `<div class="replay" id="replay"><span class="rtag">Replay</span><span class="rnote bad">${esc(R.error)}</span><button class="colbtn" id="r-exit">Back to live</button></div>`;
+    if (!R.model) return `<div class="replay" id="replay"><span class="rtag">Replay</span><span class="rnote">Reading the whole history…</span><button class="colbtn" id="r-exit">Back to live</button></div>`;
+    const m = R.model;
+    return `<div class="replay" id="replay" role="group" aria-label="Replay of the board's history">
+        <span class="rtag" title="What the board shows is its history, not the board now">Replay · history</span>
+        <button class="colbtn" id="r-play" aria-label="Play">▶ Play</button>
+        <select class="field" id="r-speed" aria-label="Speed">${SPEEDS.map(([v, label]) => `<option value="${v}" ${v === R.speed ? 'selected' : ''}>${label}</option>`).join('')}</select>
+        <span class="rclock" id="r-clock" aria-live="off"></span>
+        <input type="range" id="r-pos" min="0" max="${m.length}" step="1" value="${R.v}" aria-label="Point in the history">
+        <span class="rnote" id="r-note"></span>
+        <button class="colbtn" id="r-exit">Back to live</button>
+        <span class="rspan">${esc(stamp(m.start + 3000).slice(0, 16))} → ${esc(stamp(m.end).slice(0, 16))} · ${m.events.length} events</span>
+      </div>`;
+  }
+  function openReplay() {
+    R = { model: null, v: 0, playing: false, speed: 300, last: 0, dragging: false, shown: new Map(), flying: new Set(), newer: false, raf: 0 };
+    const mine = R;
+    render();
+    api(`/api/p/${encodeURIComponent(PROJECT)}/history`).then((h) => {
+      if (R !== mine) return;
+      R.model = window.K2Replay.make(h);
+      R.playing = true;
+      R.wait = HOLD;
+      render();
+      play();
+    }).catch((e) => { if (R === mine) { R.error = e.message; render(); } });
+  }
+  function closeReplay() {
+    if (!R) return;
+    cancelAnimationFrame(R.raf);
+    for (const g of document.querySelectorAll('.ghost')) g.remove();
+    R = null;
+  }
+  function play() {
+    if (!R?.model) return;
+    cancelAnimationFrame(R.raf);
+    R.last = 0;
+    const step = (ts) => {
+      if (!R?.model || !R.playing) return;
+      const dt = R.last ? ts - R.last : 0;
+      // the empty board, and the end of a replay played again, are held a moment before the clock runs
+      if (R.wait > 0) R.wait -= dt;
+      else if (!R.dragging) R.v = Math.min(R.model.length, R.v + dt * R.speed);
+      R.last = ts;
+      if (R.v >= R.model.length) R.playing = false;
+      paintReplay(true);
+      if (R.playing) R.raf = requestAnimationFrame(step);
+    };
+    R.raf = requestAnimationFrame(step);
+  }
+  // The clock, the bar, and the cards when the board of that moment differs from the one shown.
+  function paintReplay(animate) {
+    if (!R?.model || ui.tab !== 'board') return;
+    const m = R.model, t = m.real(R.v), rs = m.at(t);
+    const c = $('#r-clock'); if (c) c.textContent = stamp(t);
+    const pos = $('#r-pos'); if (pos && !R.dragging) pos.value = R.v;
+    const pb = $('#r-play');
+    if (pb) { const label = R.playing ? 'Pause' : R.v >= m.length ? 'Play again' : 'Play'; pb.textContent = `${R.playing ? '❚❚' : '▶'} ${label}`; pb.setAttribute('aria-label', label); }
+    const q = m.quietAt(R.v), note = $('#r-note');
+    if (note) {
+      note.textContent = q && q.to - q.from >= SKIP_SAID ? `⏩ ${dur(q.to - q.from)} with no event, skipped` : R.v >= m.length ? 'This is the board as it was when the replay opened.' : '';
+      if (R.newer) note.textContent += `${note.textContent ? ' · ' : ''}The board moved since: back to live shows it.`;
+    }
+    const sig = [...rs].map(([id, x]) => `${id}:${x.status}:${x.last ? x.last.at + x.last.event : ''}`).join('|');
+    if (sig === R.sig) return;
+    R.sig = sig;
+    const board = $('#board');
+    if (!board) return;
+    const before = new Map();
+    if (animate) for (const el of board.querySelectorAll('[data-rid]')) before.set(el.dataset.rid, el.getBoundingClientRect());
+    const kept = {};
+    for (const el of board.querySelectorAll('[data-keep]')) kept[el.dataset.keep] = el.scrollTop;
+    board.innerHTML = columns(rs) || '<p class="empty">Every column is hidden.</p>';
+    for (const el of board.querySelectorAll('[data-keep]')) if (kept[el.dataset.keep] !== undefined) el.scrollTop = kept[el.dataset.keep];
+    for (const s of STATUSES) { const b = $(`[data-count="${s}"]`); if (b) b.textContent = [...rs.values()].filter((x) => x.status === s).length; }
+    const was = R.shown;
+    R.shown = new Map([...rs].map(([id, x]) => [id, x.status]));
+    for (const id of R.flying) { const el = board.querySelector(`[data-rid="${id}"]`); if (el) el.style.visibility = 'hidden'; }
+    if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    for (const [id, status] of R.shown) {
+      const el = board.querySelector(`[data-rid="${id}"]`);
+      if (!el) continue;
+      if (!was.has(id)) { el.classList.add('born'); continue; }
+      const from = before.get(id);
+      if (was.get(id) === status || !from) continue;
+      fly(id, el, from);
+    }
+  }
+  // A card that changed column flies from where it was to where it is now.
+  function fly(id, el, from) {
+    const to = el.getBoundingClientRect();
+    const g = el.cloneNode(true);
+    g.classList.add('ghost');
+    g.removeAttribute('data-open');
+    g.style.cssText = `left:${from.left}px;top:${from.top}px;width:${from.width}px`;
+    document.body.append(g);
+    el.style.visibility = 'hidden';
+    R.flying.add(id);
+    const mine = R;
+    const done = () => {
+      g.remove();
+      if (R !== mine) return;
+      R.flying.delete(id);
+      const now = document.querySelector(`#board [data-rid="${id}"]`);
+      if (now) now.style.visibility = '';
+    };
+    const a = g.animate([{ transform: 'translate(0, 0)' }, { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px)` }], { duration: 650, easing: 'cubic-bezier(.4, 0, .2, 1)' });
+    a.onfinish = done;
+    a.oncancel = done;
   }
 
   // ----- history -----
@@ -425,6 +567,13 @@
     if (active !== null) { const el = $('#f-q'); if (el) { el.focus(); el.setSelectionRange(active, active); } }
     document.title = PROJECT ? `${D && D.inbox.length ? `(${D.inbox.length}) ` : ''}${PROJECT} · k2` : 'k2';
     tick();
+    if (R?.model && ui.tab === 'board') { R.sig = null; paintReplay(false); }
+  }
+  // The board was read again. A replay on show is left as it is: what is new
+  // waits for the way back to the live board.
+  function redraw() {
+    if (R && ui.tab === 'board' && $('#replay')) { renderTop(); tick(); paintReplay(false); return; }
+    render();
   }
   function tick() {
     const n = now();
@@ -450,7 +599,7 @@
     if (loading) { again = true; return loading; }
     loading = api(`/api/p/${encodeURIComponent(PROJECT)}/state`).then((s) => { D = s; skew = s.now - Date.now(); problem = ''; })
       .catch((e) => { problem = e.message; })
-      .finally(() => { loading = null; render(); if (again) { again = false; return loadState(); } });
+      .finally(() => { loading = null; redraw(); if (again) { again = false; return loadState(); } });
     return loading;
   }
   function follow() {
@@ -462,7 +611,7 @@
       tick();
       if (es.readyState === EventSource.CLOSED) { es.close(); setTimeout(follow, 3000); loadState(); }
     };
-    es.addEventListener('board', () => { loadState().then(() => { if (ui.ticket) openDrawer(false); }); });
+    es.addEventListener('board', () => { if (R) R.newer = true; loadState().then(() => { if (ui.ticket) openDrawer(false); }); });
     es.addEventListener('live', (e) => { if (!D) return; D.live = JSON.parse(e.data); skew = D.live.now - Date.now(); if (ui.tab === 'control') render(); else { renderTop(); tick(); } });
   }
 
@@ -483,7 +632,14 @@
     const j = e.target.closest('[data-jump]');
     if (j) { jump(j.dataset.jump); return; }
     const tab = e.target.closest('[data-tab]');
-    if (tab) { go({ tab: tab.dataset.tab }); render(); return; }
+    if (tab) { if (tab.dataset.tab !== 'board') closeReplay(); go({ tab: tab.dataset.tab }); render(); return; }
+    if (e.target.closest('#r-open')) { openReplay(); return; }
+    if (e.target.closest('#r-exit')) { closeReplay(); render(); return; }
+    if (e.target.closest('#r-play') && R?.model) {
+      if (R.playing) { R.playing = false; cancelAnimationFrame(R.raf); paintReplay(false); return; }
+      if (R.v >= R.model.length) { R.v = 0; R.wait = HOLD; paintReplay(false); }
+      R.playing = true; play(); return;
+    }
     const col = e.target.closest('[data-col]');
     if (col) { const hide = new Set(ui.hide); hide.has(col.dataset.col) ? hide.delete(col.dataset.col) : hide.add(col.dataset.col); go({ hide }, false); render(); return; }
     if (e.target.closest('[data-done-all]')) { doneAll = true; render(); }
@@ -497,7 +653,13 @@
   document.addEventListener('input', (e) => {
     if (e.target.id === 'f-q') { go({ q: e.target.value }, false); render(); }
     if (e.target.id === 'f-lane') { go({ lane: e.target.value }, false); render(); }
+    // scrubbing shows the board of that moment at once, with no card flying
+    if (e.target.id === 'r-pos' && R?.model) { R.v = Number(e.target.value); paintReplay(false); }
   });
+  document.addEventListener('change', (e) => { if (e.target.id === 'r-speed' && R) R.speed = Number(e.target.value); });
+  document.addEventListener('pointerdown', (e) => { if (e.target.id === 'r-pos' && R) R.dragging = true; });
+  document.addEventListener('pointerup', () => { if (R) R.dragging = false; });
+  document.addEventListener('pointercancel', () => { if (R) R.dragging = false; });
   document.addEventListener('change', (e) => { if (e.target.id === 'project') location.href = `/p/${encodeURIComponent(e.target.value)}/`; });
 
   setInterval(tick, 1000);

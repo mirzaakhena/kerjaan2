@@ -62,13 +62,15 @@ dilihat ada di bagian "Galangan" pada akhir `docs/blueprint.md`.
 | `viewer/transcript.mjs` | langkah terakhir agen dari transkrip Claude Code |
 | `viewer/web/app.js` | semua halaman; tab, saringan, dan tiket terbuka ada di alamat |
 | `viewer/web/trail.js` | arti tiap baris jejak, dipakai halaman dan diuji |
+| `viewer/web/replay.js` | jam replay tab Board (murni): papan pada waktu mana pun, jeda sepi dipadatkan |
 | `viewer/web/style.css` | gaya; warna sebagai token, terang dan gelap |
 | `viewer/web/fonts/` | IBM Plex (lisensi OFL, `LICENSE.txt` ikut) |
 
 Alamat: `/` daftar proyek · `/p/<proyek>/` halaman proyek
 (`?tab=board|history`, `?q=`, `?lane=`, `?hide=`, `?t=<id>&pane=record|timeline`)
 · `/api/projects` · `/api/p/<proyek>/state` · `/api/p/<proyek>/ticket/<id>`
-· `/api/p/<proyek>/events` · `/api/p/<proyek>/timeline?since=<titik>`.
+· `/api/p/<proyek>/events` · `/api/p/<proyek>/timeline?since=<titik>`
+· `/api/p/<proyek>/history`.
 
 `timeline` menjawab `{ now, point, reread, events }`: kejadian linimasa semua
 tiket papan itu sesudah `since`, terlama dulu, tiap kejadian dengan `ticket`
@@ -77,6 +79,13 @@ berikutnya. Titik yang tidak dikenali, lebih dari 10 menit ke belakang, atau
 dari papan yang sudah diganti: tanpa sejarah, `reread: true` (halaman membaca
 ulang `state`). Titik hanya hidup di ingatan server; server yang dinyalakan
 ulang tidak mengenal titik lama.
+
+`history` menjawab seluruh sejarah sekaligus untuk replay tab Board:
+`{ now, end, tickets, events }`. Tiap tiket membawa `steps` (kolom yang
+dilaluinya, dihitung `columnAfter` dari jejak); tiket yang jejaknya tidak
+berakhir di kolomnya sekarang diberi langkah `untracked` di akhir, sehingga
+replay selalu berakhir persis di papan saat dibuka. Replay tidak masuk alamat
+dan berhenti saat tab berganti.
 
 Data untuk mencoba: `/Users/mirza/Workspace/k2-akunting/.kerjaan2/` (jangan
 ditulis kecuali lewat sesi sungguhannya sendiri).

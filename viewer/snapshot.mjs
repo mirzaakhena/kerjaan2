@@ -217,6 +217,59 @@ export const samePoint = (a, b) => {
   return ka.length === Object.keys(b.at).length && ka.every((id) => b.at[id] && b.at[id].ino === a.at[id].ino && b.at[id].end === a.at[id].end);
 };
 
+// ----- the whole history, for the replay of the board -----
+
+// The column a ticket is in after each line of its trail, as `core/` moves
+// it: `null` when the line moves nothing. `was` is the column before.
+export function columnAfter(e, was) {
+  switch (e.event) {
+    case 'created': return B.STATUSES.includes(e.status) ? e.status : 'backlog';
+    case 'moved': return B.STATUSES.includes(e.to) ? e.to : null;
+    case 'started': return 'in_progress';
+    case 'submitted': return 'review';
+    case 'accepted': return 'review';
+    case 'landed': return 'done';
+    case 'verdict': return e.result !== 'pass' && !e.integration ? 'in_progress' : null;
+    // an amended contract, or a blocking answer other than what was built, sends a ticket in review back
+    case 'amended': return was === 'review' ? 'in_progress' : null;
+    case 'answer': return e.agrees === false && was === 'review' ? 'in_progress' : null;
+    default: return null;
+  }
+}
+
+// Every ticket on the board with the columns it went through, and every line
+// of every trail, oldest first. A ticket whose trail does not end in the
+// column it is in now (moved by hand, or older than its trail) is put there
+// at the end, marked `untracked`: the replay always ends where the board is.
+export function boardHistory(project) {
+  const board = openProject(project);
+  const { tickets } = B.loadAll(board);
+  const events = [];
+  let last = -Infinity;
+  const out = tickets.map((t) => {
+    const log = B.readLog(board, t.id).filter((e) => e && typeof e === 'object' && typeof e.event === 'string').map((e) => ({ ...e, at: ms(e.t) })).filter((e) => Number.isFinite(e.at))
+      .sort((a, b) => a.at - b.at); // by time, a ticket's own order kept within one second
+    const steps = [];
+    let col = null;
+    for (const e of log) {
+      const { session, ...rest } = e;
+      events.push({ ...rest, ticket: t.id });
+      last = Math.max(last, e.at);
+      // a trail that does not begin with `created` (an older ticket) begins where its first line is
+      const next = columnAfter(e, col) || (col === null ? 'backlog' : null);
+      if (next && next !== col) steps.push({ at: e.at, status: next, event: e.event });
+      if (next) col = next;
+    }
+    return { id: t.id, title: t.title, status: t.status, fm: { lane: t.fm.lane, type: t.fm.type, priority: t.fm.priority }, steps };
+  });
+  if (!Number.isFinite(last)) last = Date.now();
+  for (const t of out) {
+    if (!t.steps.length || t.steps[t.steps.length - 1].status !== t.status) t.steps.push({ at: last, status: t.status, event: 'untracked' });
+  }
+  events.sort((a, b) => a.at - b.at);
+  return { project: project.name, now: Date.now(), end: last, tickets: out, events };
+}
+
 // ----- the board -----
 
 const rel = (board, p) => (p ? path.relative(board.root, p) : null);
