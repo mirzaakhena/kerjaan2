@@ -17,3 +17,5 @@
 {"t":"2026-11-18 12:42:20","event":"agent","role":"reviewer","agent":"a5f43e67b281f057a","step":"review:1:0:0","session":"d11c52d9-e9d0-41b2-b26b-52c956f9d1b0"}
 {"t":"2026-11-18 12:46:39","event":"verdict","result":"pass","round":1,"commit":"e44e2d3","session":"d11c52d9-e9d0-41b2-b26b-52c956f9d1b0","by":"reviewer:a5f43e67b281f057a"}
 {"t":"2026-11-18 12:46:56","event":"landed","branch":"k2/261118121501-replay-seluruh-papan-di","files":["docs/handoff-viewer.md","tests/viewer.test.mjs","viewer/server.mjs","viewer/snapshot.mjs","viewer/web/app.js","viewer/web/index.html","viewer/web/replay.js","viewer/web/style.css"],"session":"d11c52d9-e9d0-41b2-b26b-52c956f9d1b0"}
+{"t":"2026-11-18 12:53:15","event":"assumption-confirmed","key":"A1","session":"d11c52d9-e9d0-41b2-b26b-52c956f9d1b0"}
+{"t":"2026-11-18 12:53:15","event":"assumption-confirmed","key":"A2","session":"d11c52d9-e9d0-41b2-b26b-52c956f9d1b0"}

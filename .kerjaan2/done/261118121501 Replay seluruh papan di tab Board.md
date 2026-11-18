@@ -44,12 +44,14 @@ rentang waktu yang dipilih.
 <!-- k2:record — written by k2 only; do not edit by hand -->
 
 ## Assumptions
-- A1 [unseen] Kecepatan replay dinyatakan sebagai menit sejarah per detik (1 min/s, 5 min/s, 20 min/s, 1 h/s), bawaan 5 min/s; jeda tanpa kejadian lebih dari 3 menit diputar sebagai 3 menit sejarah.
+- A1 [confirmed] Kecepatan replay dinyatakan sebagai menit sejarah per detik (1 min/s, 5 min/s, 20 min/s, 1 h/s), bawaan 5 min/s; jeda tanpa kejadian lebih dari 3 menit diputar sebagai 3 menit sejarah.
   Why: Papan kerjaan2 dengan sejarah 5 hari jadi sekitar 35 detik pada bawaan, cukup untuk mengikuti tiap perpindahan.
   If wrong: Ubah SPEEDS dan default speed di viewer/web/app.js, atau QUIET di viewer/web/replay.js.
-- A2 [unseen] Kartu replay hanya memperlihatkan nomor, judul, jalur, dan kejadian jejak terakhirnya pada saat itu, bukan lencana dan pil Done when hari ini.
+  Confirmed by owner, 2026-11-18
+- A2 [confirmed] Kartu replay hanya memperlihatkan nomor, judul, jalur, dan kejadian jejak terakhirnya pada saat itu, bukan lencana dan pil Done when hari ini.
   Why: Lencana dan pil adalah keadaan sekarang; menampilkannya di sejarah akan menyesatkan.
   If wrong: Tambahkan pil atau lencana di replayCard di viewer/web/app.js.
+  Confirmed by owner, 2026-11-18
 
 ## Manual checks
 - M1 [waiting] (item 8) 1. Setelah /plugin update kerjaan2, jalankan k2 view di repo kerjaan2 dan buka http://127.0.0.1:4322/p/kerjaan2/?tab=board
